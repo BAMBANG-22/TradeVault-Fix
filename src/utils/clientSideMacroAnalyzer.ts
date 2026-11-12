@@ -177,7 +177,26 @@ export async function executeClientSideMacroAnalysis(
 
   // Preserve live calendar events from client or server (including server Google Search Grounding fallback)
   if (calendarEvents.length > 0 && calendarEvents.every((e) => e.isLiveFeed)) {
-    analyzedSnapshot.calendarEvents = calendarEvents;
+    const serverActualMap = new Map<string, { actual: string; actualNum: number | null }>();
+    if (Array.isArray(analyzedSnapshot.calendarEvents)) {
+      for (const sEv of analyzedSnapshot.calendarEvents) {
+        if (sEv.actual && sEv.actual.trim()) {
+          serverActualMap.set(sEv.title.trim().toLowerCase(), {
+            actual: sEv.actual.trim(),
+            actualNum: sEv.actualNum ?? null,
+          });
+        }
+      }
+    }
+    analyzedSnapshot.calendarEvents = calendarEvents.map((cEv) => {
+      if (!cEv.actual || !cEv.actual.trim()) {
+        const enriched = serverActualMap.get(cEv.title.trim().toLowerCase());
+        if (enriched) {
+          return { ...cEv, actual: enriched.actual, actualNum: enriched.actualNum };
+        }
+      }
+      return cEv;
+    });
     analyzedSnapshot.isCalendarLiveFeed = true;
   } else {
     analyzedSnapshot.isCalendarLiveFeed =
