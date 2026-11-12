@@ -404,10 +404,25 @@ export const MacroNewsView: React.FC = () => {
   const topBreaking: BreakingNewsHeadline | null =
     snapshot.topBreakingAlert || snapshot.breakingNews[0] || null;
 
+  const us02yPulse: IntermarketAssetPulse = snapshot.intermarketPulse.us02y || {
+    symbol: 'US02Y',
+    yahooTicker: '2YY=F',
+    name: 'US 2Y Treasury Yield',
+    price: 4.25,
+    previousClose: 4.25,
+    change: 0,
+    changePercent: 0,
+    direction: 'FLAT',
+    goldCorrelationEffect: 'NEUTRAL',
+    summaryId: 'US02Y mendatar',
+    summaryEn: 'US02Y flat',
+    updatedAt: new Date().toISOString(),
+  };
   const intermarketList: IntermarketAssetPulse[] = [
     snapshot.intermarketPulse.dxy,
-    snapshot.intermarketPulse.usoil,
+    us02yPulse,
     snapshot.intermarketPulse.us10y,
+    snapshot.intermarketPulse.usoil,
   ];
 
   const primaryEv = activeMatrix.primaryEvent;
@@ -1087,7 +1102,31 @@ export const MacroNewsView: React.FC = () => {
               MIXED / WHIPSAW ({activeMatrix.mixedProbability}%)
             </div>
           </div>
-        </div>
+                </div>
+
+        {/* Institutional Desk Thesis & Proportional 3 FOMC Pillars Mode */}
+        {(activeMatrix.institutionalDeskThesisId || activeMatrix.institutionalDeskThesisEn) && (
+          <div
+            data-testid="institutional-desk-thesis"
+            className="mt-3 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E2328] p-4 space-y-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
+                {tr('Tesis Meja Institusi (Institutional Desk Thesis)', 'Institutional Desk Thesis')}
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white dark:bg-[#0B0A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
+                {activeMatrix.evaluationMode === 'FOMC_MEETING'
+                  ? tr('Mode: Rekap Penuh 3 Pilar FOMC', 'Mode: Full 3 FOMC Pillars Recap')
+                  : tr('Mode: Fokus Pilar Spesifik (3 Pilar = Latar Belakang)', 'Mode: Specific Pillar Focus (3 Pillars = Background)')}
+              </span>
+            </div>
+            <p className="text-xs sm:text-[13px] text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed font-medium">
+              {isEn
+                ? (activeMatrix.institutionalDeskThesisEn || activeMatrix.institutionalDeskThesisId)
+                : (activeMatrix.institutionalDeskThesisId || activeMatrix.institutionalDeskThesisEn)}
+            </p>
+          </div>
+        )}
 
         {/* Bottom Row: Automatic Execution Tactic (2-Second Instant Read) */}
         <div
@@ -1225,12 +1264,12 @@ export const MacroNewsView: React.FC = () => {
             </h2>
           </div>
           <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-            {tr('Konfirmasi DXY, USOIL, & US10Y', 'DXY, USOIL, & US10Y Confirmation')}
+            {tr('Konfirmasi DXY, US02Y, US10Y, & USOIL', 'DXY, US02Y, US10Y, & USOIL Confirmation')}
           </span>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          {intermarketList.map((item) => {
+        <div className="grid grid-cols-2 gap-3">
+            {intermarketList.map((item) => {
             const isUp = item.direction === 'UP';
             const isDown = item.direction === 'DOWN';
 
