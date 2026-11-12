@@ -1227,6 +1227,7 @@ export function computeDeterministicMacroSnapshot(params: {
   calendarEvents: MacroCalendarEvent[];
   intermarketPulse: {
     dxy: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
     usoil: IntermarketAssetPulse;
     us10y: IntermarketAssetPulse;
   };
@@ -1372,90 +1373,8 @@ export function computeDeterministicMacroSnapshot(params: {
   const buyArguments: PillarArgumentItem[] = [];
   const sellArguments: PillarArgumentItem[] = [];
 
-  // 1. Evaluate all events in the release cluster & across the 3 FOMC Pillars
-  let clusterBuyCount = 0;
-  let clusterSellCount = 0;
-  let clusterMixedCount = 0;
-
-  for (const ev of allClusterEvents) {
-    const weight = ev.impact === 'High' ? 28 : 16;
-    if (ev.eventBiasForGold === 'BUY') {
-      buyScore += weight;
-      clusterBuyCount += 1;
-      buyArguments.push({
-        pillar: ev.pillar,
-        tag: `${ev.pillar} • ${ev.title}`,
-        textId: ev.biasReasonId,
-        textEn: ev.biasReasonEn,
-      });
-    } else if (ev.eventBiasForGold === 'SELL') {
-      sellScore += weight;
-      clusterSellCount += 1;
-      sellArguments.push({
-        pillar: ev.pillar,
-        tag: `${ev.pillar} • ${ev.title}`,
-        textId: ev.biasReasonId,
-        textEn: ev.biasReasonEn,
-      });
-    } else {
-      whipsawScore += 16;
-      clusterMixedCount += 1;
-    }
-  }
-
-  // Also include broader weekly FOMC Pillar & Supporting Reference context (Claims, ADP, JOLTS, etc.)
-  for (const ev of workingCalendarEvents) {
-    if (allClusterEvents.some((c) => c.id === ev.id)) continue;
-    if (isFedSpeechEvent(ev.title)) continue;
-    const isSupporting = isSupportingReferenceEvent(ev);
-    const contextWeight = isSupporting ? 8 : 10;
-    const tagPrefix = isSupporting ? `KONTEKS PENDUKUNG (${ev.pillar})` : ev.pillar;
-    if (ev.eventBiasForGold === 'BUY' && buyArguments.length < 4) {
-      buyScore += contextWeight;
-      buyArguments.push({
-        pillar: ev.pillar,
-        tag: `${tagPrefix} • ${ev.title}`,
-        textId: ev.biasReasonId,
-        textEn: ev.biasReasonEn,
-      });
-    } else if (ev.eventBiasForGold === 'SELL' && sellArguments.length < 4) {
-      sellScore += contextWeight;
-      sellArguments.push({
-        pillar: ev.pillar,
-        tag: `${tagPrefix} • ${ev.title}`,
-        textId: ev.biasReasonId,
-        textEn: ev.biasReasonEn,
-      });
-    }
-  }
-
-  // 2. Check Simultaneous Release alignment vs conflict
-  let simultaneousAlignment: PreNewsScenarioMatrix['simultaneousAlignment'] = 'SINGLE';
-  if (isSimultaneousRelease) {
-    const hasBuy = clusterBuyCount > 0;
-    const hasSell = clusterSellCount > 0;
-    const hasMixed = clusterMixedCount > 0;
-    if ((hasBuy && hasSell) || (hasMixed && (hasBuy || hasSell))) {
-      simultaneousAlignment = 'CONFLICTING_WHIPSAW';
-      whipsawScore += 45;
-    } else if (hasSell && !hasBuy) {
-      simultaneousAlignment = 'ALIGNED_SELL';
-      sellScore += 18;
-    } else if (hasBuy && !hasSell) {
-      simultaneousAlignment = 'ALIGNED_BUY';
-      buyScore += 18;
-    }
-  }
-
-  // Detect Mode A (Individual Release) vs Mode B (FOMC Meeting: Rate Decision, Statement, Dot Plot)
-  const isFomcMeetingEvent =
-    primaryEvent.pillar === 'POLICY' ||
-    /\b(FOMC RATE|FEDERAL FUNDS|FOMC STATEMENT|ECONOMIC PROJECTIONS|DOT PLOT|RATE DECISION)\b/i.test(
-      primaryEvent.title
-    );
-  const evaluationMode: 'INDIVIDUAL_RELEASE' | 'FOMC_MEETING' = isFomcMeetingEvent
-    ? 'FOMC_MEETING'
-    : 'INDIVIDUAL_RELEASE';
+  const isFoncMeetingEvent = primaryEvent.pillar === 'POLICY' || /\b(FOMC RATE|FEDERAL FUNDS|FOMC STATEMENT|ECONOMIC PROJECTIONS|DOT PLOT|RATE DECISION)\b/i.test(primaryEvent.title);
+  const evaluationMode: 'INDIVIDUAL_RELEASE' | 'FOMC_MEETING' = isFoncMeetingEvent ? 'FOMC_MEETING' : 'INDIVIDUAL_RELEASE';
 
   // 1. Evaluate all events in the release cluster & across the 3 FOMC Pillars
   let clusterBuyCount = 0;
@@ -1608,6 +1527,23 @@ export function computeDeterministicMacroSnapshot(params: {
           textEn: ev.biasReasonEn,
         });
       }
+    }
+  }
+
+  let simultaneousAlignment: PreNewsScenarioMatrix['simultaneousAlignment'] = 'SINGLE';
+  if (isSimultaneousRelease) {
+    const hasBuy = clusterBuyCount > 0;
+    const hasSell = clusterSellCount > 0;
+    const hasMixed = clusterMixedCount > 0;
+    if ((hasBuy && hasSell) || (hasMixed && (hasBuy || hasSell))) {
+      simultaneousAlignment = 'CONFLICTING_WHIPSAW';
+      whipsawScore += 45;
+    } else if (hasSell && !hasBuy) {
+      simultaneousAlignment = 'ALIGNED_SELL';
+      sellScore += 18;
+    } else if (hasBuy && !hasSell) {
+      simultaneousAlignment = 'ALIGNED_BUY';
+      buyScore += 18;
     }
   }
 
