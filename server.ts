@@ -1522,6 +1522,53 @@ app.get('/api/macro-news/feeds', async (_req, res) => {
 });
 
 // Full Macro News & Pre-News Scenario Matrix Analyzer
+
+async function fetchPastActualsViaGoogleSearch(missingEvents: MacroCalendarEvent[]): Promise<Record<string, string>> {
+  const apiKey = getMacroGeminiApiKey();
+  if (!apiKey || missingEvents.length === 0) return {};
+  const listDesc = missingEvents
+    .map((e) => `- "${e.title}" (Scheduled: ${e.date}, Forecast: ${e.forecast || "N/A"}, Previous: ${e.previous || "N/A"})`)
+    .join("\n");
+  const prompt = `Search the web for the official released ACTUAL economic data values for these US USD economic indicators that have already been published:\n${listDesc}\n\nReturn ONLY a raw JSON object mapping the exact event title to its released actual value string (for example: {"Core CPI m/m": "0.3%", "CPI m/m": "0.2%"}). If an event has genuinely not been released yet, omit it. Do not include markdown fences or explanation.`;
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          tools: [{ google_search: {} }],
+          generationConfig: { temperature: 0.1 }
+        })
+      }
+    );
+    if (!res.ok) {
+      console.error("[ActualSearch] HTTP", res.status, await res.text());
+      return {};
+    }
+    const data = await res.json();
+    const rawText = (data?.candidates?.[0]?.content?.parts || [])
+      .map((p: any) => p.text || "")
+      .join("")
+      .trim();
+    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return {};
+    const parsed = JSON.parse(jsonMatch[0]);
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "string" && v.trim() && v.trim() !== "-" && !/menunggu|pending|n\/a/i.test(v)) {
+        out[k.trim().toLowerCase()] = v.trim();
+      }
+    }
+    console.log("[ActualSearch] Berhasil menarik actual rilis masa lalu:", out);
+    return out;
+  } catch (err) {
+    console.error("[ActualSearch] Error:", err);
+    return {};
+  }
+}
+
 app.post('/api/macro-news/analyze', async (req, res) => {
   try {
     const {
