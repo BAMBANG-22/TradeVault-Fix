@@ -843,7 +843,9 @@ export const MacroNewsView: React.FC = () => {
                             : 'text-[#22D3EE]'
                         }`}
                       >
-                        {ev.eventBiasForGold}
+                        {activeMatrix.dynamicPivotTriggered && ev.eventBiasForGold !== activeMatrix.dominantBias && ev.eventBiasForGold !== 'MIXED'
+                          ? tr(`KONSENSUS: ${ev.eventBiasForGold} (OVERRIDDEN)`, `CONSENSUS: ${ev.eventBiasForGold} (OVERRIDDEN)`)
+                          : ev.eventBiasForGold}
                       </span>
                     </div>
 

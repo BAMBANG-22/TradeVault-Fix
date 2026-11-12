@@ -1102,9 +1102,39 @@ async function fetchForexFactoryUsdCalendar(): Promise<MacroCalendarEvent[]> {
     ]);
 
     let combinedRaw = [...thisWeekList, ...nextWeekList];
+    const nowTs = Date.now();
+    const hasMissingPastActual = combinedRaw.some((item: any) => {
+      const impact = String(item.impact || "").toLowerCase();
+      const act = String(item.actual ?? "").trim();
+      const evTs = new Date(item.date || 0).getTime();
+      return impact === "high" && !act && !isNaN(evTs) && evTs < nowTs - 5 * 60 * 1000;
+    });
+
     if (combinedRaw.length === 0) {
       // Fallback to Gemini Google Search Grounding if all direct & proxy feeds are blocked
       combinedRaw = await fetchForexFactoryCalendarViaGoogleSearch();
+    } else if (hasMissingPastActual) {
+      // Enrich past High-Impact releases whose actual values are still empty in the public feed
+      const enrichedRaw = await fetchForexFactoryCalendarViaGoogleSearch();
+      if (Array.isArray(enrichedRaw) && enrichedRaw.length > 0) {
+        const enrichedMap = new Map<string, string>();
+        for (const eItem of enrichedRaw) {
+          const eAct = String(eItem.actual ?? "").trim();
+          if (eAct) {
+            enrichedMap.set(String(eItem.title || "").trim().toLowerCase(), eAct);
+          }
+        }
+        combinedRaw = combinedRaw.map((item: any) => {
+          const currentAct = String(item.actual ?? "").trim();
+          if (!currentAct) {
+            const matchedAct = enrichedMap.get(String(item.title || "").trim().toLowerCase());
+            if (matchedAct) {
+              return { ...item, actual: matchedAct };
+            }
+          }
+          return item;
+        });
+      }
     }
     if (combinedRaw.length === 0) {
       return [];
