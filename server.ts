@@ -450,7 +450,7 @@ ${geometryHintBlock}
    - If Entry, SL, or TP is not clearly visible on the chart, return null for that field so the user can fill it manually.`;
 
     const candidateModels = [
-      'gemini-2.5-flash',
+      'gemini-3.8-flash',
       'gemini-flash-latest',
       'gemini-3.1-flash-lite',
     ];
@@ -668,7 +668,7 @@ ${geometryHintBlock}
         currentPrice: currentPrice ?? null,
         confidence: parsedData.confidence || 0.95,
         notes: parsedData.notes || '',
-        modelUsed: usedModel || 'gemini-2.5-flash',
+        modelUsed: usedModel || 'gemini-3.8-flash',
       },
     });
   } catch (error: any) {
@@ -864,7 +864,7 @@ async function fetchForexFactoryCalendarViaGoogleSearch(): Promise<any[]> {
 
     const todayIso = new Date().toISOString().slice(0, 10);
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: `Today is ${todayIso}. Search the live web (ForexFactory / Investing.com US economic calendar for this week and next week) for upcoming and recent USD High-Impact and Medium-Impact economic releases (such as CPI, Core CPI, PPI, Core PPI, NFP, Unemployment Rate, FOMC, PCE, Core PCE, GDP, Retail Sales, ISM PMI, Unemployment Claims).
 Return ONLY a valid JSON array (no markdown fences) where each object has:
 { "title": string, "country": "USD", "date": "ISO-8601 UTC timestamp e.g. 2026-11-13T13:30:00Z", "impact": "High" | "Medium", "previous": string, "forecast": string, "actual": string }
@@ -997,7 +997,7 @@ async function fetchLiveCmeFedWatchWithGrounding(
 
     const todayIso = new Date().toISOString().slice(0, 10);
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.8-flash',
       contents: `Today is ${todayIso}. Use Google Search with these exact specific search queries:
 1) "CME FedWatch December 2026 FOMC rate probability hike hold cut"
 2) "FedWatch tool target rate probabilities December 2026"
@@ -1692,7 +1692,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
     });
 
     const candidateModels = [
-      'gemini-2.5-flash',
+      'gemini-3.8-flash',
       'gemini-flash-latest',
       'gemini-3.1-flash-lite',
     ];
@@ -1932,7 +1932,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       ...baselineSnapshot,
       analyzedAt: new Date().toISOString(),
       sourceMode: 'GEMINI_AI',
-      modelUsed: usedModel || 'gemini-2.5-flash',
+      modelUsed: usedModel || 'gemini-3.8-flash',
       impactLevel,
       dominantBias,
       cmeFedWatch: feeds.cmeFedWatch,
