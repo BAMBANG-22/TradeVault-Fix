@@ -1519,6 +1519,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         dxy: IntermarketAssetPulse;
         usoil: IntermarketAssetPulse;
         us10y: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
       };
       breakingNews: BreakingNewsHeadline[];
       cmeFedWatch: CmeFedWatchState;
@@ -1666,6 +1667,11 @@ app.post('/api/macro-news/analyze', async (req, res) => {
           changePercent: feeds.intermarketPulse.us10y.changePercent,
           direction: feeds.intermarketPulse.us10y.direction,
         },
+      us02y: feeds.intermarketPulse.us02y ? {
+        price: feeds.intermarketPulse.us02y.price,
+        changePercent: feeds.intermarketPulse.us02y.changePercent,
+        direction: feeds.intermarketPulse.us02y.direction,
+      } : undefined,
       },
       breakingHeadlines: feeds.breakingNews.slice(0, 10).map((h) => ({
         title: h.title,
@@ -1678,6 +1684,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         mixedProbability: baselineSnapshot.scenarioMatrix.mixedProbability,
         dominantBias: baselineSnapshot.scenarioMatrix.dominantBias,
         dynamicPivotTriggered: baselineSnapshot.scenarioMatrix.dynamicPivotTriggered,
+      evaluationMode: baselineSnapshot.scenarioMatrix.evaluationMode || 'INDIVIDUAL_RELEASE',
       },
     };
 
@@ -1753,9 +1760,17 @@ app.post('/api/macro-news/analyze', async (req, res) => {
                   description: 'Whipsaw / fake move risk warning in Bahasa Indonesia',
                 },
                 whipsawWarningEn: {
-                  type: Type.STRING,
-                  description: 'Whipsaw / fake move risk warning in English',
-                },
+              type: Type.STRING,
+              description: 'Whipsaw / fake move risk warning in English',
+            },
+            institutionalDeskThesisId: {
+              type: Type.STRING,
+              description: 'Concise Institutional Desk Thesis in Bahasa Indonesia covering cross-asset confirmation (DXY, US02Y, US10Y, USOIL), priced-in positioning, and pivot condition',
+            },
+            institutionalDeskThesisEn: {
+              type: Type.STRING,
+              description: 'Concise Institutional Desk Thesis in English covering cross-asset confirmation (DXY, US02Y, US10Y, USOIL), priced-in positioning, and pivot condition',
+            },
               },
               required: [
                 'impactLevel',
@@ -1878,8 +1893,9 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         actionPlanEn: aiParsed.actionPlanEn || baselineSnapshot.scenarioMatrix.actionPlanEn,
         whipsawWarningId:
           aiParsed.whipsawWarningId || baselineSnapshot.scenarioMatrix.whipsawWarningId,
-        whipsawWarningEn:
-          aiParsed.whipsawWarningEn || baselineSnapshot.scenarioMatrix.whipsawWarningEn,
+        whipsawWarningEn: aiParsed.whipsawWarningEn || baselineSnapshot.scenarioMatrix.whipsawWarningEn,
+        institutionalDeskThesisId: aiParsed.institutionalDeskThesisId || baselineSnapshot.scenarioMatrix.institutionalDeskThesisId,
+        institutionalDeskThesisEn: aiParsed.institutionalDeskThesisEn || baselineSnapshot.scenarioMatrix.institutionalDeskThesisEn,
         t5ExecutionTacticId,
         t5ExecutionTacticEn,
         isStrongOneWayBias,
