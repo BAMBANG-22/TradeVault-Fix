@@ -1,0 +1,84 @@
+
+=== cv1-compact-core-lockup.svg  (1871 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 144
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-compact-core-symbol.svg  (508 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 23
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv2-rest-interval-lockup.svg  (1944 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 149
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv2-rest-interval-symbol.svg  (581 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 28
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-unified-vault-lockup.svg  (1922 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 148
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-unified-vault-symbol.svg  (557 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 27
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv4-quiet-rhythm-lockup.svg  (1806 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 139
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv4-quiet-rhythm-symbol.svg  (443 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 18
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-implied-vault-lockup.svg  (1811 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 139
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-implied-vault-symbol.svg  (447 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 18
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv6-hidden-valley-lockup.svg  (1773 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 139
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv6-hidden-valley-symbol.svg  (410 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 18
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)

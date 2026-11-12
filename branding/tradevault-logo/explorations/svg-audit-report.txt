@@ -1,0 +1,70 @@
+
+=== a1-original-cadence-lockup.svg  (1818 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 141
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a1-original-cadence-symbol.svg  (455 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 20
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a2-hidden-horizon-lockup.svg  (1826 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 141
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a2-hidden-horizon-symbol.svg  (462 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 20
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a3-connected-rhythm-lockup.svg  (1865 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 143
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a3-connected-rhythm-symbol.svg  (503 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 22
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a4-quiet-counterpoint-lockup.svg  (1814 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 139
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a4-quiet-counterpoint-symbol.svg  (450 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 18
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a5-compact-vault-rhythm-lockup.svg  (1811 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 139
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== a5-compact-vault-rhythm-symbol.svg  (447 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 18
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)

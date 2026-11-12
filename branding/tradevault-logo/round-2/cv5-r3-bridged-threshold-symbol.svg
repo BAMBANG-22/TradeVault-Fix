@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg>

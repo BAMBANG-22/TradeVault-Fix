@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#050607" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>TradeVault Journal - XAUUSD Trading Analytics</title>
+    <meta name="description" content="Trading journal dan analytics dashboard profesional khusus trader XAUUSD dengan manajemen risiko, kurva ekuitas, dan kalkulator lot." />
+    <meta property="og:title" content="TradeVault Journal - XAUUSD Trading Analytics" />
+    <meta property="og:description" content="Trading journal dan analytics dashboard profesional khusus trader XAUUSD dengan manajemen risiko, kurva ekuitas, dan kalkulator lot." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      (function() {
+        window.addEventListener('error', function(event) {
+          if (
+            event &&
+            (event.message === 'Script error.' || event.message === 'Script error') &&
+            (!event.filename || event.filename === '' || String(event.filename).indexOf('tradingview') !== -1)
+          ) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            return false;
+          }
+        }, true);
+        try {
+          var theme = localStorage.getItem('tradevault_theme_v1');
+          var root = document.documentElement;
+          var resolvedTheme = theme === 'light' ? 'light' : 'dark';
+          if (resolvedTheme === 'light') {
+            root.classList.add('light');
+            root.classList.remove('dark');
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', '#F5F7FA');
+          } else {
+            root.classList.add('dark');
+            root.classList.remove('light');
+          }
+          if (window.TradeVaultSystemBars && typeof window.TradeVaultSystemBars.setTheme === 'function') {
+            window.TradeVaultSystemBars.setTheme(resolvedTheme);
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Bpxu0rDy.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BNqNPzMl.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
+

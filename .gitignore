@@ -1,0 +1,37 @@
+# Dependencies & Build Outputs
+node_modules/
+build/
+dist/
+coverage/
+
+# Android Native Build & Cache
+android/.gradle/
+android/build/
+android/app/build/
+local.properties
+**/local.properties
+
+# Android Signing & Private Keys
+*.keystore
+*.jks
+key.properties
+
+# AI Studio Workspace & Rollback
+.aistudio/
+.backup_*/
+tradevault-systembars-sync.zip
+public/tradevault-systembars-sync.zip
+public/assets/aistudio/TradeVault-main_*.zip
+
+# IDE & Local Temporary Files
+.idea/
+.vscode/
+*.swp
+
+# System & Logs
+.DS_Store
+*.log
+
+# Environment & Secrets
+.env*
+!.env.example

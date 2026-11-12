@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1012" width="1024" height="1012">
+  <title>TradeVault — Round 2 Logo Refinements (9 Symbols Comparison Sheet)</title>
+  <rect x="0" y="0" width="1024" height="1012" fill="#F8FAFC"/>
+  <text x="32" y="42" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#172033">TradeVault — Round 2 Logo Refinements (CV5, CV1, CV3 · 9 Variants)</text>
+  <text x="32" y="64" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#475569">Baris 1: CV5 (Implied Vault) · Baris 2: CV1 (Compact Core) · Baris 3: CV3 (Unified Vault) · Skala Seragam 176×176 px</text>
+  <!-- CV5-R1 — Concentric Arch Portal -->
+  <g>
+    <rect x="32" y="84" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(96, 102) scale(0.6875)">
+      <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+      <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+    </g>
+    <rect x="48" y="296" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="80" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV5-R1</text>
+    <text x="122" y="313" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Concentric Arch Portal</text>
+    <text x="48" y="338" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV5 — Implied Vault</text>
+  </g>
+  <!-- CV5-R2 — Keystone Sanctuary -->
+  <g>
+    <rect x="360" y="84" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(424, 102) scale(0.6875)">
+      <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+      <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+    </g>
+    <rect x="376" y="296" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="408" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV5-R2</text>
+    <text x="450" y="313" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Keystone Sanctuary</text>
+    <text x="376" y="338" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV5 — Implied Vault</text>
+  </g>
+  <!-- CV5-R3 — Bridged Threshold -->
+  <g>
+    <rect x="688" y="84" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(752, 102) scale(0.6875)">
+      <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+      <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+    </g>
+    <rect x="704" y="296" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="736" y="312" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV5-R3</text>
+    <text x="778" y="313" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Bridged Threshold</text>
+    <text x="704" y="338" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV5 — Implied Vault</text>
+  </g>
+  <!-- CV1-R1 — Split-Horizon Core -->
+  <g>
+    <rect x="32" y="388" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(96, 406) scale(0.6875)">
+      <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+      <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+    </g>
+    <rect x="48" y="600" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="80" y="616" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV1-R1</text>
+    <text x="122" y="617" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Split-Horizon Core</text>
+    <text x="48" y="642" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV1 — Compact Core</text>
+  </g>
+  <!-- CV1-R2 — Faceted Keystone Core -->
+  <g>
+    <rect x="360" y="388" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(424, 406) scale(0.6875)">
+      <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+      <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+    </g>
+    <rect x="376" y="600" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="408" y="616" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV1-R2</text>
+    <text x="450" y="617" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Faceted Keystone Core</text>
+    <text x="376" y="642" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV1 — Compact Core</text>
+  </g>
+  <!-- CV1-R3 — Asymmetric Cadence Core -->
+  <g>
+    <rect x="688" y="388" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(752, 406) scale(0.6875)">
+      <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+      <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+    </g>
+    <rect x="704" y="600" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="736" y="616" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV1-R3</text>
+    <text x="778" y="617" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Asymmetric Cadence Core</text>
+    <text x="704" y="642" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV1 — Compact Core</text>
+  </g>
+  <!-- CV3-R1 — Interlocked Keystone -->
+  <g>
+    <rect x="32" y="692" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(96, 710) scale(0.6875)">
+      <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+      <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+    </g>
+    <rect x="48" y="904" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="80" y="920" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV3-R1</text>
+    <text x="122" y="921" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Interlocked Keystone</text>
+    <text x="48" y="946" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV3 — Unified Vault</text>
+  </g>
+  <!-- CV3-R2 — Dual Embrace -->
+  <g>
+    <rect x="360" y="692" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(424, 710) scale(0.6875)">
+      <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+      <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+    </g>
+    <rect x="376" y="904" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="408" y="920" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV3-R2</text>
+    <text x="450" y="921" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Dual Embrace</text>
+    <text x="376" y="946" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV3 — Unified Vault</text>
+  </g>
+  <!-- CV3-R3 — Rotational Equilibrium -->
+  <g>
+    <rect x="688" y="692" width="304" height="280" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(752, 710) scale(0.6875)">
+      <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+      <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+    </g>
+    <rect x="704" y="904" width="64" height="24" rx="5" fill="#172033"/>
+    <text x="736" y="920" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV3-R3</text>
+    <text x="778" y="921" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#172033">Rotational Equilibrium</text>
+    <text x="704" y="946" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#64748B">CV3 — Unified Vault</text>
+  </g>
+</svg>

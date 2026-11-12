@@ -1,0 +1,42 @@
+
+=== concept-a-lockup.svg  (1802 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 141
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== concept-a-symbol.svg  (457 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 20
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== concept-b-lockup.svg  (1913 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 147
+margins L48.0 R47.6 T26.0 B26.0 · bbox fill 0.722
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== concept-b-symbol.svg  (572 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 26
+margins L26.0 R26.0 T26.0 B26.0 · bbox fill 0.635
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== concept-c-lockup.svg  (1841 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 144
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== concept-c-symbol.svg  (500 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 23
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)

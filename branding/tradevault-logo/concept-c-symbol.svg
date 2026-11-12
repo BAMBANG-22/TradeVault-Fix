@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — Concept C Symbol (Counterpoint Monolith)</title>
+  <path fill="#172033" fill-rule="evenodd" d="M 76 28 H 180 A 48 48 0 0 1 228 76 V 180 A 48 48 0 0 1 180 228 H 76 A 48 48 0 0 1 28 180 V 76 A 48 48 0 0 1 76 28 Z M 60 60 H 196 V 112 L 152 156 V 172 A 24 24 0 0 1 104 172 V 156 L 60 112 Z"/>
+  <path fill="#1458C4" d="M 90 76 H 166 A 14 14 0 0 1 166 104 H 90 A 14 14 0 0 1 90 76 Z"/>
+</svg>

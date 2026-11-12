@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1260" width="1200" height="1260" fill="none">
+  <title>TradeVault — Round 2 Logo Exploration</title>
+  <desc>Nine original variations · Exploratory comparison · No final selection</desc>
+
+  <!-- Comparison-Sheet Background -->
+  <rect x="0" y="0" width="1200" height="1260" fill="#F8FAFC" />
+
+  <!-- Header Section -->
+  <g id="sheet-header">
+    <text x="60" y="58" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#172033" letter-spacing="-0.3">TradeVault — Round 2 Logo Exploration</text>
+    <text x="60" y="88" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" fill="#64748B">Nine original variations · Exploratory comparison · No final selection</text>
+    <line x1="60" y1="106" x2="1140" y2="106" stroke="#E2E8F0" stroke-width="1.5" />
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- ROW 1: Variations 1 – 3                                               -->
+  <!-- ===================================================================== -->
+
+  <!-- Variation 1 -->
+  <g id="variation-1" data-label="Variation 1">
+    <rect x="60" y="128" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-1-mark" transform="translate(132, 160) scale(0.75)">
+      <path d="M 76 28 H 180 A 48 48 0 0 1 228 76 V 162 A 22 22 0 0 1 206 184 H 198 A 18 18 0 0 1 180 166 V 128 A 52 52 0 0 0 76 128 V 210 A 18 18 0 0 1 58 228 H 50 A 22 22 0 0 1 28 206 V 76 A 48 48 0 0 1 76 28 Z" fill="#172033" />
+      <path d="M 104 128 A 24 24 0 0 1 152 128 V 210 A 18 18 0 0 1 134 228 H 122 A 18 18 0 0 1 104 210 Z" fill="#1458C4" />
+    </g>
+    <line x1="88" y1="380" x2="368" y2="380" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="228" y="414" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 1</text>
+    <text x="228" y="438" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #1 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 2 -->
+  <g id="variation-2" data-label="Variation 2">
+    <rect x="432" y="128" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-2-mark" transform="translate(504, 160) scale(0.75)">
+      <path d="M 76 28 H 180 A 48 48 0 0 1 228 76 V 102 A 18 18 0 0 1 210 120 H 196 A 16 16 0 0 1 180 104 V 96 A 20 20 0 0 0 160 76 H 96 A 20 20 0 0 0 76 96 V 210 A 18 18 0 0 1 58 228 H 50 A 22 22 0 0 1 28 206 V 76 A 48 48 0 0 1 76 28 Z M 196 144 H 210 A 18 18 0 0 1 228 162 V 206 A 22 22 0 0 1 206 228 H 196 A 16 16 0 0 1 180 212 V 160 A 16 16 0 0 1 196 144 Z" fill="#172033" />
+      <path d="M 104 128 A 24 24 0 0 1 152 128 V 210 A 18 18 0 0 1 134 228 H 122 A 18 18 0 0 1 104 210 Z" fill="#1458C4" />
+    </g>
+    <line x1="460" y1="380" x2="740" y2="380" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="600" y="414" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 2</text>
+    <text x="600" y="438" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #2 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 3 -->
+  <g id="variation-3" data-label="Variation 3">
+    <rect x="804" y="128" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-3-mark" transform="translate(876, 160) scale(0.75)">
+      <path d="M 76 28 H 180 A 48 48 0 0 1 228 76 V 134 A 18 18 0 0 1 210 152 H 198 A 18 18 0 0 1 180 134 V 96 A 20 20 0 0 0 160 76 H 96 A 20 20 0 0 0 76 96 V 210 A 18 18 0 0 1 58 228 H 50 A 22 22 0 0 1 28 206 V 76 A 48 48 0 0 1 76 28 Z" fill="#172033" />
+      <path d="M 128 104 A 24 24 0 0 1 152 128 V 162 A 18 18 0 0 0 170 180 H 210 A 18 18 0 0 1 228 198 V 204 A 24 24 0 0 1 204 228 H 128 A 24 24 0 0 1 104 204 V 128 A 24 24 0 0 1 128 104 Z" fill="#1458C4" />
+    </g>
+    <line x1="832" y1="380" x2="1112" y2="380" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="972" y="414" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 3</text>
+    <text x="972" y="438" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #3 · 256×256 viewBox</text>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- ROW 2: Variations 4 – 6                                               -->
+  <!-- ===================================================================== -->
+
+  <!-- Variation 4 -->
+  <g id="variation-4" data-label="Variation 4">
+    <rect x="60" y="504" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-4-mark" transform="translate(132, 536) scale(0.75)">
+      <path d="M 64 28 H 64 A 16 16 0 0 1 80 44 V 212 A 16 16 0 0 1 64 228 H 64 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 190 28 H 192 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 H 190 A 16 16 0 0 1 174 212 V 44 A 16 16 0 0 1 190 28 Z" fill="#172033" />
+      <path d="M 120 28 H 136 A 18 18 0 0 1 154 46 V 80 A 16 16 0 0 1 138 96 H 118 A 16 16 0 0 1 102 80 V 46 A 18 18 0 0 1 120 28 Z M 118 120 H 138 A 16 16 0 0 1 154 136 V 210 A 18 18 0 0 1 136 228 H 120 A 18 18 0 0 1 102 210 V 136 A 16 16 0 0 1 118 120 Z" fill="#1458C4" />
+    </g>
+    <line x1="88" y1="756" x2="368" y2="756" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="228" y="790" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 4</text>
+    <text x="228" y="814" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #4 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 5 -->
+  <g id="variation-5" data-label="Variation 5">
+    <rect x="432" y="504" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-5-mark" transform="translate(504, 536) scale(0.75)">
+      <path d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z" fill="#172033" />
+      <path d="M 104 68 L 140 32 A 14 14 0 0 1 152 46 V 210 A 18 18 0 0 1 134 228 H 122 A 18 18 0 0 1 104 210 Z" fill="#1458C4" />
+    </g>
+    <line x1="460" y1="756" x2="740" y2="756" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="600" y="790" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 5</text>
+    <text x="600" y="814" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #5 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 6 -->
+  <g id="variation-6" data-label="Variation 6">
+    <rect x="804" y="504" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-6-mark" transform="translate(876, 536) scale(0.75)">
+      <path d="M 64 28 A 18 18 0 0 1 82 46 V 166 A 18 18 0 0 1 64 184 H 56 A 28 28 0 0 1 28 156 V 64 A 36 36 0 0 1 64 28 Z M 192 72 H 200 A 28 28 0 0 1 228 100 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 90 A 18 18 0 0 1 192 72 Z" fill="#172033" />
+      <path d="M 122 28 H 134 A 18 18 0 0 1 152 46 V 210 A 18 18 0 0 1 134 228 H 122 A 18 18 0 0 1 104 210 V 158 A 10 10 0 0 1 114 148 H 120 V 108 H 114 A 10 10 0 0 1 104 98 V 46 A 18 18 0 0 1 122 28 Z" fill="#1458C4" />
+    </g>
+    <line x1="832" y1="756" x2="1112" y2="756" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="972" y="790" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 6</text>
+    <text x="972" y="814" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #6 · 256×256 viewBox</text>
+  </g>
+
+  <!-- ===================================================================== -->
+  <!-- ROW 3: Variations 7 – 9                                               -->
+  <!-- ===================================================================== -->
+
+  <!-- Variation 7 -->
+  <g id="variation-7" data-label="Variation 7">
+    <rect x="60" y="880" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-7-mark" transform="translate(132, 912) scale(0.75)">
+      <path d="M 62 28 A 18 18 0 0 1 80 46 V 156 A 20 20 0 0 0 100 176 H 136 A 18 18 0 0 1 154 194 V 210 A 18 18 0 0 1 136 228 H 72 A 44 44 0 0 1 28 184 V 62 A 34 34 0 0 1 62 28 Z M 194 28 A 34 34 0 0 1 228 62 V 186 A 18 18 0 0 1 210 204 H 194 A 18 18 0 0 1 176 186 V 46 A 18 18 0 0 1 194 28 Z" fill="#172033" />
+      <path d="M 120 52 H 136 A 18 18 0 0 1 154 70 V 136 A 18 18 0 0 1 136 154 H 120 A 18 18 0 0 1 102 136 V 70 A 18 18 0 0 1 120 52 Z" fill="#1458C4" />
+    </g>
+    <line x1="88" y1="1132" x2="368" y2="1132" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="228" y="1166" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 7</text>
+    <text x="228" y="1190" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #7 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 8 -->
+  <g id="variation-8" data-label="Variation 8">
+    <rect x="432" y="880" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-8-mark" transform="translate(504, 912) scale(0.75)">
+      <path d="M 62 28 A 18 18 0 0 1 80 46 V 154 A 22 22 0 0 0 102 176 H 136 A 18 18 0 0 1 154 194 V 210 A 18 18 0 0 1 136 228 H 72 A 44 44 0 0 1 28 184 V 62 A 34 34 0 0 1 62 28 Z" fill="#172033" />
+      <path d="M 120 28 H 184 A 44 44 0 0 1 228 72 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 102 A 22 22 0 0 0 154 80 H 120 A 18 18 0 0 1 102 62 V 46 A 18 18 0 0 1 120 28 Z" fill="#1458C4" />
+    </g>
+    <line x1="460" y1="1132" x2="740" y2="1132" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="600" y="1166" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 8</text>
+    <text x="600" y="1190" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #8 · 256×256 viewBox</text>
+  </g>
+
+  <!-- Variation 9 -->
+  <g id="variation-9" data-label="Variation 9">
+    <rect x="804" y="880" width="336" height="344" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" />
+    <g id="variation-9-mark" transform="translate(876, 912) scale(0.75)">
+      <path d="M 62 72 A 18 18 0 0 1 80 90 V 162 A 20 20 0 0 0 100 182 H 136 A 18 18 0 0 1 154 200 V 210 A 18 18 0 0 1 136 228 H 72 A 44 44 0 0 1 28 184 V 100 A 28 28 0 0 1 56 72 Z M 120 28 H 184 A 44 44 0 0 1 228 72 V 156 A 28 28 0 0 1 200 184 H 194 A 18 18 0 0 1 176 166 V 94 A 20 20 0 0 0 156 74 H 120 A 18 18 0 0 1 102 56 V 46 A 18 18 0 0 1 120 28 Z" fill="#172033" />
+      <path d="M 120 96 H 136 A 18 18 0 0 1 154 114 V 142 A 18 18 0 0 1 136 160 H 120 A 18 18 0 0 1 102 142 V 114 A 18 18 0 0 1 120 96 Z" fill="#1458C4" />
+    </g>
+    <line x1="832" y1="1132" x2="1112" y2="1132" stroke="#F1F5F9" stroke-width="1.5" />
+    <text x="972" y="1166" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#172033">Variation 9</text>
+    <text x="972" y="1190" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#64748B">Original source #9 · 256×256 viewBox</text>
+  </g>
+</svg>

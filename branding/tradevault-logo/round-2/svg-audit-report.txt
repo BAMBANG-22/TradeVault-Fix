@@ -1,0 +1,126 @@
+
+=== cv1-r1-split-horizon-core-lockup.svg  (1918 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 145
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-r1-split-horizon-core-symbol.svg  (555 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 24
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-r2-faceted-core-lockup.svg  (1795 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 142
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-r2-faceted-core-symbol.svg  (432 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 21
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-r3-asymmetric-cadence-lockup.svg  (1988 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 149
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv1-r3-asymmetric-cadence-symbol.svg  (625 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 28
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r1-interlocked-keystone-lockup.svg  (1979 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 148
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r1-interlocked-keystone-symbol.svg  (614 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 27
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r2-dual-embrace-lockup.svg  (1890 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 144
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r2-dual-embrace-symbol.svg  (525 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 23
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r3-rotational-equilibrium-lockup.svg  (1953 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 148
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv3-r3-rotational-equilibrium-symbol.svg  (588 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 27
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r1-concentric-portal-lockup.svg  (1875 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 141
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r1-concentric-portal-symbol.svg  (512 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 20
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r2-keystone-sanctuary-lockup.svg  (1874 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 143
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r2-keystone-sanctuary-symbol.svg  (510 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 22
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r3-bridged-threshold-lockup.svg  (1874 bytes)
+viewBox 0 0 1019 256 · aspect 3.98 (horizontal)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 143
+margins L48.0 R47.6 T28.0 B28.0 · bbox fill 0.708
+✔ no issues found
+production-readiness score: 100/100 (heuristic)
+
+=== cv5-r3-bridged-threshold-symbol.svg  (510 bytes)
+viewBox 0 0 256 256 · aspect 1.0 (square)
+colours 2: #172033 #1458c4 · gradients 0 · anchors 22
+margins L28.0 R28.0 T28.0 B28.0 · bbox fill 0.61
+✔ no issues found
+production-readiness score: 100/100 (heuristic)

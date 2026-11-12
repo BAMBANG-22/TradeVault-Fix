@@ -1,0 +1,6 @@
+{
+  "name": "TradeVault Journal",
+  "description": "Trading journal dan analytics dashboard profesional khusus trader XAUUSD dengan manajemen risiko, kurva ekuitas, dan kalkulator lot.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

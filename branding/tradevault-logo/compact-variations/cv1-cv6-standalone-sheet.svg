@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 668" width="960" height="668">
+  <title>TradeVault — Compact Vault Rhythm Variations (CV1–CV6 Comparison Sheet)</title>
+  <rect x="0" y="0" width="960" height="668" fill="#F8FAFC"/>
+  <text x="32" y="42" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#172033">TradeVault — Compact Vault Rhythm Variations (CV1–CV6)</text>
+  <text x="928" y="42" text-anchor="end" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#475569">Konsep: The Trading Rhythm · #172033 &amp; #1458C4</text>
+  <!-- CV1 — Compact Core -->
+  <g>
+    <rect x="32" y="76" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(88, 92) scale(0.6875)">
+      <path fill="#172033" d="M 72 28 H 64 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 H 72 A 44 44 0 0 1 28 184 V 72 A 44 44 0 0 1 72 28 Z M 192 28 H 184 A 44 44 0 0 1 228 72 V 184 A 44 44 0 0 1 184 228 H 192 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+      <path fill="#1458C4" d="M 102 78 A 26 26 0 0 1 154 78 V 178 A 26 26 0 0 1 102 178 Z"/>
+    </g>
+    <rect x="48" y="286" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="70" y="302" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV1</text>
+    <text x="102" y="303" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Compact Core</text>
+  </g>
+  <!-- CV2 — Rest Interval -->
+  <g>
+    <rect x="336" y="76" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(392, 92) scale(0.6875)">
+      <path fill="#172033" d="M 50 128 H 58 A 22 22 0 0 1 80 150 V 206 A 22 22 0 0 1 58 228 H 76 A 48 48 0 0 1 28 180 V 150 A 22 22 0 0 1 50 128 Z M 102 154 A 26 26 0 0 1 154 154 V 202 A 26 26 0 0 1 102 202 Z M 198 128 H 206 A 22 22 0 0 1 228 150 V 180 A 48 48 0 0 1 180 228 H 198 A 22 22 0 0 1 176 206 V 150 A 22 22 0 0 1 198 128 Z"/>
+      <path fill="#1458C4" d="M 62 28 H 194 A 34 34 0 0 1 194 96 H 62 A 34 34 0 0 1 62 28 Z"/>
+    </g>
+    <rect x="352" y="286" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="374" y="302" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV2</text>
+    <text x="406" y="303" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Rest Interval</text>
+  </g>
+  <!-- CV3 — Unified Vault -->
+  <g>
+    <rect x="640" y="76" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(696, 92) scale(0.6875)">
+      <path fill="#172033" d="M 28 55 A 27 27 0 0 1 82 55 V 162 A 14 14 0 0 0 96 176 H 126 A 26 26 0 0 1 126 228 H 80 A 52 52 0 0 1 28 176 Z M 174 131 A 27 27 0 0 1 228 131 V 180 A 48 48 0 0 1 180 228 H 192 A 18 18 0 0 1 174 210 Z"/>
+      <path fill="#1458C4" d="M 104 52 A 24 24 0 0 1 128 28 H 180 A 48 48 0 0 1 228 76 V 60 A 20 20 0 0 1 208 80 H 166 A 14 14 0 0 0 152 94 V 128 A 24 24 0 0 1 104 128 Z"/>
+    </g>
+    <rect x="656" y="286" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="678" y="302" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV3</text>
+    <text x="710" y="303" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Unified Vault</text>
+  </g>
+  <!-- CV4 — Quiet Rhythm -->
+  <g>
+    <rect x="32" y="364" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(88, 380) scale(0.6875)">
+      <path fill="#172033" d="M 28 52 A 24 24 0 0 1 76 52 V 166 A 14 14 0 0 0 104 166 V 108 A 24 24 0 0 1 152 108 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 84 A 56 56 0 0 1 28 172 Z"/>
+      <path fill="#1458C4" d="M 180 52 A 24 24 0 0 1 228 52 V 128 A 24 24 0 0 1 180 128 Z"/>
+    </g>
+    <rect x="48" y="574" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="70" y="590" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV4</text>
+    <text x="102" y="591" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Quiet Rhythm</text>
+  </g>
+  <!-- CV5 — Implied Vault -->
+  <g>
+    <rect x="336" y="364" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(392, 380) scale(0.6875)">
+      <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 164 A 24 24 0 0 1 180 164 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+      <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+    </g>
+    <rect x="352" y="574" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="374" y="590" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV5</text>
+    <text x="406" y="591" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Implied Vault</text>
+  </g>
+  <!-- CV6 — Hidden Valley -->
+  <g>
+    <rect x="640" y="364" width="288" height="264" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="1.5"/>
+    <g transform="translate(696, 380) scale(0.6875)">
+      <path fill="#172033" d="M 28 52 A 24 24 0 0 1 76 52 V 136 L 128 188 L 180 136 V 80 A 24 24 0 0 1 228 80 V 172 A 56 56 0 0 1 172 228 H 84 A 56 56 0 0 1 28 172 Z"/>
+      <path fill="#1458C4" d="M 104 52 A 24 24 0 0 1 152 52 V 124 L 128 148 L 104 124 Z"/>
+    </g>
+    <rect x="656" y="574" width="44" height="24" rx="5" fill="#172033"/>
+    <text x="678" y="590" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700" fill="#FFFFFF">CV6</text>
+    <text x="710" y="591" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#172033">Hidden Valley</text>
+  </g>
+</svg>

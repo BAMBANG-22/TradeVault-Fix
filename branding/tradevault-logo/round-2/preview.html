@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TradeVault — Round 2 Logo Refinements (CV5, CV1, CV3)</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 24px 64px;
+      background: #F8FAFC;
+      color: #172033;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+    .page-header {
+      border-bottom: 1px solid #CBD5E1;
+      padding-bottom: 18px;
+      margin-bottom: 28px;
+    }
+    .page-title {
+      margin: 0 0 6px;
+      font-size: 24px;
+      font-weight: 700;
+      color: #172033;
+    }
+    .page-subtitle {
+      margin: 0;
+      font-size: 14px;
+      color: #475569;
+    }
+    .section-title {
+      margin: 36px 0 16px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #172033;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .section-title span {
+      font-size: 13px;
+      font-weight: 400;
+      color: #64748B;
+    }
+    .grid-3col {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 20px;
+    }
+    @media (max-width: 960px) {
+      .grid-3col { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 640px) {
+      .grid-3col { grid-template-columns: 1fr; }
+    }
+    .card {
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .light-card {
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+    }
+    .dark-card {
+      background: #080A0E;
+      border: 1px solid #1E293B;
+      color: #F8FAFC;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      background: #172033;
+      color: #FFFFFF;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .dark-badge {
+      background: #1458C4;
+      color: #FFFFFF;
+    }
+    .fam-tag {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748B;
+    }
+    .dark-fam { color: #94A3B8; }
+    .card-title {
+      margin: 2px 0 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: #172033;
+    }
+    .dark-title { color: #F8FAFC; }
+    .symbol-stage {
+      border-radius: 10px;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 220px;
+    }
+    .light-stage {
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+    }
+    .dark-stage {
+      background: #172033;
+      border: 1px solid #334155;
+    }
+    .symbol-box {
+      width: 176px;
+      height: 176px;
+    }
+    .symbol-box svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+    }
+    .lockup-stage {
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+    .light-lockup {
+      background: #FFFFFF;
+      border: 1px solid #E2E8F0;
+    }
+    .dark-lockup {
+      background: #0F172A;
+      border: 1px solid #1E293B;
+    }
+    .lockup-box {
+      width: 100%;
+      max-width: 280px;
+      margin: 0 auto;
+    }
+    .lockup-box svg {
+      width: 100%;
+      height: auto;
+      display: block;
+      overflow: visible;
+    }
+    .card-rationale {
+      margin: 0;
+      font-size: 12.5px;
+      color: #475569;
+    }
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 12px;
+    }
+    .size-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 920px;
+    }
+    .size-table th, .size-table td {
+      border-bottom: 1px solid #E2E8F0;
+      padding: 14px 10px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    .size-table tr:last-child th, .size-table tr:last-child td {
+      border-bottom: none;
+    }
+    .size-table thead th {
+      background: #F1F5F9;
+      font-size: 12px;
+      font-weight: 700;
+      color: #172033;
+    }
+    .size-label {
+      text-align: left !important;
+      width: 170px;
+      background: #F8FAFC;
+      border-right: 1px solid #E2E8F0;
+    }
+    .px-num {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #172033;
+    }
+    .px-note {
+      display: block;
+      font-size: 11px;
+      font-weight: 400;
+      color: #64748B;
+    }
+    .icon-frame {
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon-frame svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .cell-code {
+      margin-top: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+    }
+    .mono-black svg { filter: brightness(0); }
+    .dark-cell { background: #080A0E !important; }
+    .dark-code { color: #94A3B8 !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <h1 class="page-title">TradeVault — Round 2 Logo Refinements (9 Variants: CV5, CV1, CV3)</h1>
+      <p class="page-subtitle">Eksplorasi Terisolasi Putaran 2 · Baris 1: CV5 (Implied Vault) · Baris 2: CV1 (Compact Core) · Baris 3: CV3 (Unified Vault)</p>
+    </header>
+
+    <div class="section-title">
+      <div>1. Perbandingan Latar Terang (#F8FAFC / #FFFFFF) — Simbol, Wordmark Lockup &amp; Rasional Desain</div>
+      <span>Palet Utama: Dark Navy #172033 &amp; Primary Blue #1458C4</span>
+    </div>
+    <section class="grid-3col">
+      
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV5-R1</span>
+          <div>
+            <div class="fam-tag">CV5 — Implied Vault</div>
+            <h3 class="card-title">Concentric Arch Portal</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 48 200 V 92 A 64 64 0 0 1 112 28 H 184 A 64 64 0 0 1 248 92 V 164 A 24 24 0 0 1 200 164 V 128 A 52 52 0 0 0 96 128 V 208 A 20 20 0 0 1 76 228 A 28 28 0 0 1 48 200 Z"/>
+  <path fill="#1458C4" d="M 148 104 A 24 24 0 0 1 172 128 V 208 A 20 20 0 0 1 152 228 H 144 A 20 20 0 0 1 124 208 V 128 A 24 24 0 0 1 148 104 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menyelaraskan langit-langit dalam kubah (busur setengah lingkaran R=52) secara konsentris dengan puncak bulat pilar tengah (r=24) pada titik pusat (128,128), menciptakan portal ruang negatif selebar 28u yang presisi di seluruh lengkungan.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV5-R2</span>
+          <div>
+            <div class="fam-tag">CV5 — Implied Vault</div>
+            <h3 class="card-title">Keystone Sanctuary</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 48 204 V 84 A 56 56 0 0 1 104 28 H 192 A 56 56 0 0 1 248 84 V 88 A 24 24 0 0 1 200 88 A 12 12 0 0 0 188 76 H 112 A 16 16 0 0 0 96 92 V 204 A 24 24 0 0 1 48 204 Z M 200 160 A 24 24 0 0 1 248 160 V 204 A 24 24 0 0 1 200 204 Z"/>
+  <path fill="#1458C4" d="M 124 128 A 24 24 0 0 1 172 128 V 204 A 24 24 0 0 1 124 204 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menyeimbangkan garis dasar (y=228) dengan membagi dinding kanan menjadi atap kantilever di atas dan pilar jangkar di kanan bawah yang dipisahkan oleh jeda ritme horizontal 24u.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV5-R3</span>
+          <div>
+            <div class="fam-tag">CV5 — Implied Vault</div>
+            <h3 class="card-title">Bridged Threshold</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 48 204 V 84 A 56 56 0 0 1 104 28 H 192 A 56 56 0 0 1 248 84 V 128 A 24 24 0 0 1 200 128 V 92 A 16 16 0 0 0 184 76 H 112 A 16 16 0 0 0 96 92 V 204 A 24 24 0 0 1 48 204 Z"/>
+  <path fill="#1458C4" d="M 124 128 A 24 24 0 0 1 172 128 V 164 A 16 16 0 0 0 188 180 H 224 A 24 24 0 0 1 224 228 H 164 A 40 40 0 0 1 124 188 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menyatukan pilar tengah (#1458C4) dengan fondasi kanan bawah menjadi bentuk J-cradle yang saling mengunci dengan lengkung kubah atas (#172033) melalui kanal ruang negatif 28u.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV1-R1</span>
+          <div>
+            <div class="fam-tag">CV1 — Compact Core</div>
+            <h3 class="card-title">Split-Horizon Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 84 28 A 18 18 0 0 1 102 46 V 210 A 18 18 0 0 1 84 228 A 36 36 0 0 1 48 192 V 64 A 36 36 0 0 1 84 28 Z M 212 28 A 36 36 0 0 1 248 64 V 192 A 36 36 0 0 1 212 228 A 18 18 0 0 1 194 210 V 46 A 18 18 0 0 1 212 28 Z"/>
+  <path fill="#1458C4" d="M 122 54 A 26 26 0 0 1 174 54 V 98 A 26 26 0 0 1 122 98 Z M 122 174 A 26 26 0 0 1 174 174 V 202 A 26 26 0 0 1 122 202 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menghilangkan ujung meruncing pada dinding apit melalui kurva tangen murni (r_luar=36 + r_dalam=18 = 54u) dan membagi kolom tengah (#1458C4) dengan jeda reflektif 24u.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV1-R2</span>
+          <div>
+            <div class="fam-tag">CV1 — Compact Core</div>
+            <h3 class="card-title">Faceted Keystone Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 80 28 L 102 50 V 206 L 80 228 A 32 32 0 0 1 48 196 V 60 A 32 32 0 0 1 80 28 Z M 216 28 A 32 32 0 0 1 248 60 V 196 A 32 32 0 0 1 216 228 L 194 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 148 44 L 174 70 V 186 L 148 212 L 122 186 V 70 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Memadukan sudut luar squircle lembut (R=32) dengan talang dalam bersudut 45° yang membingkai pilar inti berujung berlian 45° (#1458C4), menghilangkan kesan equalizer.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV1-R3</span>
+          <div>
+            <div class="fam-tag">CV1 — Compact Core</div>
+            <h3 class="card-title">Asymmetric Cadence Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 84 28 A 18 18 0 0 1 102 46 V 210 A 18 18 0 0 1 84 228 A 36 36 0 0 1 48 192 V 64 A 36 36 0 0 1 84 28 Z M 142 180 H 154 A 20 20 0 0 1 174 200 V 208 A 20 20 0 0 1 154 228 H 142 A 20 20 0 0 1 122 208 V 200 A 20 20 0 0 1 142 180 Z M 212 68 A 36 36 0 0 1 248 104 V 192 A 36 36 0 0 1 212 228 A 18 18 0 0 1 194 210 V 86 A 18 18 0 0 1 212 68 Z"/>
+  <path fill="#1458C4" d="M 122 54 A 26 26 0 0 1 174 54 V 130 A 26 26 0 0 1 122 130 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menciptakan ritme diagonal terukur: dinding kiri penuh (200u), pilar inti biru di tengah-atas (128u) di atas batu fondasi tengah (48u), dan dinding kanan bertingkat (160u).</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV3-R1</span>
+          <div>
+            <div class="fam-tag">CV3 — Unified Vault</div>
+            <h3 class="card-title">Interlocked Keystone</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 82 28 A 18 18 0 0 1 100 46 V 162 A 14 14 0 0 0 114 176 H 148 A 26 26 0 0 1 148 228 H 100 A 52 52 0 0 1 48 176 V 62 A 34 34 0 0 1 82 28 Z M 222 102 A 26 26 0 0 1 248 128 V 194 A 34 34 0 0 1 214 228 A 18 18 0 0 1 196 210 V 128 A 26 26 0 0 1 222 102 Z"/>
+  <path fill="#1458C4" d="M 148 28 H 214 A 34 34 0 0 1 248 62 A 18 18 0 0 1 230 80 H 188 A 14 14 0 0 0 174 94 V 128 A 26 26 0 0 1 122 128 V 54 A 26 26 0 0 1 148 28 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menyusun ulang tiga elemen (L kiri-bawah, keystone L-terbalik biru, pilar kanan-bawah) di atas grid modular ketat 52–22–52–22–52 dengan ketebalan seragam 52u dan celah 22u.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV3-R2</span>
+          <div>
+            <div class="fam-tag">CV3 — Unified Vault</div>
+            <h3 class="card-title">Dual Embrace</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 48 54 A 26 26 0 0 1 100 54 V 162 A 14 14 0 0 0 114 176 H 182 A 14 14 0 0 0 196 162 V 128 A 26 26 0 0 1 248 128 V 176 A 52 52 0 0 1 196 228 H 100 A 52 52 0 0 1 48 176 Z"/>
+  <path fill="#1458C4" d="M 148 28 H 214 A 34 34 0 0 1 248 62 A 18 18 0 0 1 230 80 H 188 A 14 14 0 0 0 174 94 V 128 A 26 26 0 0 1 122 128 V 54 A 26 26 0 0 1 148 28 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Menyatukan struktur navy menjadi satu bejana U utuh (#172033) yang saling mengunci dengan satu keystone L-terbalik (#1458C4) melalui satu jalur ruang negatif kontinu 22u.</p>
+      </article>
+    
+      <article class="card light-card">
+        <header class="card-header">
+          <span class="badge">CV3-R3</span>
+          <div>
+            <div class="fam-tag">CV3 — Unified Vault</div>
+            <h3 class="card-title">Rotational Equilibrium</h3>
+          </div>
+        </header>
+        <div class="symbol-stage light-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage light-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Horizontal Lockup)</title>
+  <path fill="#172033" d="M 48 202 V 80 A 52 52 0 0 1 100 28 H 148 A 26 26 0 0 1 148 80 H 114 A 14 14 0 0 0 100 94 V 202 A 26 26 0 0 1 48 202 Z M 248 54 V 176 A 52 52 0 0 1 196 228 H 148 A 26 26 0 0 1 148 176 H 182 A 14 14 0 0 0 196 162 V 54 A 26 26 0 0 1 248 54 Z"/>
+  <path fill="#1458C4" d="M 142 102 H 154 A 20 20 0 0 1 174 122 V 134 A 20 20 0 0 1 154 154 H 142 A 20 20 0 0 1 122 134 V 122 A 20 20 0 0 1 142 102 Z"/>
+  <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#1458C4" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+        <p class="card-rationale">Dua lengkung L navy yang berotasi 180° membingkai inti squircle biru (52×52) tepat di pusat optik dengan parit ruang negatif 22u yang sama rata di keempat sisinya.</p>
+      </article>
+    
+    </section>
+
+    <div class="section-title">
+      <div>2. Perbandingan Latar Gelap (#080A0E / #172033) — Simbol &amp; Wordmark Lockup</div>
+      <span>Adaptasi kontras latar gelap: Light Surface #F8FAFC &amp; Cyan Accent #38BDF8</span>
+    </div>
+    <section class="grid-3col">
+      
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV5-R1</span>
+          <div>
+            <div class="fam-tag dark-fam">CV5 — Implied Vault</div>
+            <h3 class="card-title dark-title">Concentric Arch Portal</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#38BDF8" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 48 200 V 92 A 64 64 0 0 1 112 28 H 184 A 64 64 0 0 1 248 92 V 164 A 24 24 0 0 1 200 164 V 128 A 52 52 0 0 0 96 128 V 208 A 20 20 0 0 1 76 228 A 28 28 0 0 1 48 200 Z"/>
+  <path fill="#38BDF8" d="M 148 104 A 24 24 0 0 1 172 128 V 208 A 20 20 0 0 1 152 228 H 144 A 20 20 0 0 1 124 208 V 128 A 24 24 0 0 1 148 104 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV5-R2</span>
+          <div>
+            <div class="fam-tag dark-fam">CV5 — Implied Vault</div>
+            <h3 class="card-title dark-title">Keystone Sanctuary</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#38BDF8" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 48 204 V 84 A 56 56 0 0 1 104 28 H 192 A 56 56 0 0 1 248 84 V 88 A 24 24 0 0 1 200 88 A 12 12 0 0 0 188 76 H 112 A 16 16 0 0 0 96 92 V 204 A 24 24 0 0 1 48 204 Z M 200 160 A 24 24 0 0 1 248 160 V 204 A 24 24 0 0 1 200 204 Z"/>
+  <path fill="#38BDF8" d="M 124 128 A 24 24 0 0 1 172 128 V 204 A 24 24 0 0 1 124 204 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV5-R3</span>
+          <div>
+            <div class="fam-tag dark-fam">CV5 — Implied Vault</div>
+            <h3 class="card-title dark-title">Bridged Threshold</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#38BDF8" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 48 204 V 84 A 56 56 0 0 1 104 28 H 192 A 56 56 0 0 1 248 84 V 128 A 24 24 0 0 1 200 128 V 92 A 16 16 0 0 0 184 76 H 112 A 16 16 0 0 0 96 92 V 204 A 24 24 0 0 1 48 204 Z"/>
+  <path fill="#38BDF8" d="M 124 128 A 24 24 0 0 1 172 128 V 164 A 16 16 0 0 0 188 180 H 224 A 24 24 0 0 1 224 228 H 164 A 40 40 0 0 1 124 188 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV1-R1</span>
+          <div>
+            <div class="fam-tag dark-fam">CV1 — Compact Core</div>
+            <h3 class="card-title dark-title">Split-Horizon Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#38BDF8" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 84 28 A 18 18 0 0 1 102 46 V 210 A 18 18 0 0 1 84 228 A 36 36 0 0 1 48 192 V 64 A 36 36 0 0 1 84 28 Z M 212 28 A 36 36 0 0 1 248 64 V 192 A 36 36 0 0 1 212 228 A 18 18 0 0 1 194 210 V 46 A 18 18 0 0 1 212 28 Z"/>
+  <path fill="#38BDF8" d="M 122 54 A 26 26 0 0 1 174 54 V 98 A 26 26 0 0 1 122 98 Z M 122 174 A 26 26 0 0 1 174 174 V 202 A 26 26 0 0 1 122 202 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV1-R2</span>
+          <div>
+            <div class="fam-tag dark-fam">CV1 — Compact Core</div>
+            <h3 class="card-title dark-title">Faceted Keystone Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#38BDF8" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 80 28 L 102 50 V 206 L 80 228 A 32 32 0 0 1 48 196 V 60 A 32 32 0 0 1 80 28 Z M 216 28 A 32 32 0 0 1 248 60 V 196 A 32 32 0 0 1 216 228 L 194 206 V 50 Z"/>
+  <path fill="#38BDF8" d="M 148 44 L 174 70 V 186 L 148 212 L 122 186 V 70 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV1-R3</span>
+          <div>
+            <div class="fam-tag dark-fam">CV1 — Compact Core</div>
+            <h3 class="card-title dark-title">Asymmetric Cadence Core</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#38BDF8" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 84 28 A 18 18 0 0 1 102 46 V 210 A 18 18 0 0 1 84 228 A 36 36 0 0 1 48 192 V 64 A 36 36 0 0 1 84 28 Z M 142 180 H 154 A 20 20 0 0 1 174 200 V 208 A 20 20 0 0 1 154 228 H 142 A 20 20 0 0 1 122 208 V 200 A 20 20 0 0 1 142 180 Z M 212 68 A 36 36 0 0 1 248 104 V 192 A 36 36 0 0 1 212 228 A 18 18 0 0 1 194 210 V 86 A 18 18 0 0 1 212 68 Z"/>
+  <path fill="#38BDF8" d="M 122 54 A 26 26 0 0 1 174 54 V 130 A 26 26 0 0 1 122 130 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV3-R1</span>
+          <div>
+            <div class="fam-tag dark-fam">CV3 — Unified Vault</div>
+            <h3 class="card-title dark-title">Interlocked Keystone</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#F8FAFC" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#38BDF8" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 82 28 A 18 18 0 0 1 100 46 V 162 A 14 14 0 0 0 114 176 H 148 A 26 26 0 0 1 148 228 H 100 A 52 52 0 0 1 48 176 V 62 A 34 34 0 0 1 82 28 Z M 222 102 A 26 26 0 0 1 248 128 V 194 A 34 34 0 0 1 214 228 A 18 18 0 0 1 196 210 V 128 A 26 26 0 0 1 222 102 Z"/>
+  <path fill="#38BDF8" d="M 148 28 H 214 A 34 34 0 0 1 248 62 A 18 18 0 0 1 230 80 H 188 A 14 14 0 0 0 174 94 V 128 A 26 26 0 0 1 122 128 V 54 A 26 26 0 0 1 148 28 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV3-R2</span>
+          <div>
+            <div class="fam-tag dark-fam">CV3 — Unified Vault</div>
+            <h3 class="card-title dark-title">Dual Embrace</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#38BDF8" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 48 54 A 26 26 0 0 1 100 54 V 162 A 14 14 0 0 0 114 176 H 182 A 14 14 0 0 0 196 162 V 128 A 26 26 0 0 1 248 128 V 176 A 52 52 0 0 1 196 228 H 100 A 52 52 0 0 1 48 176 Z"/>
+  <path fill="#38BDF8" d="M 148 28 H 214 A 34 34 0 0 1 248 62 A 18 18 0 0 1 230 80 H 188 A 14 14 0 0 0 174 94 V 128 A 26 26 0 0 1 122 128 V 54 A 26 26 0 0 1 148 28 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+      <article class="card dark-card">
+        <header class="card-header">
+          <span class="badge dark-badge">CV3-R3</span>
+          <div>
+            <div class="fam-tag dark-fam">CV3 — Unified Vault</div>
+            <h3 class="card-title dark-title">Rotational Equilibrium</h3>
+          </div>
+        </header>
+        <div class="symbol-stage dark-stage">
+          <div class="symbol-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#38BDF8" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+        </div>
+        <div class="lockup-stage dark-lockup">
+          <div class="lockup-box"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1019 256" width="1019" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Horizontal Lockup)</title>
+  <path fill="#F8FAFC" d="M 48 202 V 80 A 52 52 0 0 1 100 28 H 148 A 26 26 0 0 1 148 80 H 114 A 14 14 0 0 0 100 94 V 202 A 26 26 0 0 1 48 202 Z M 248 54 V 176 A 52 52 0 0 1 196 228 H 148 A 26 26 0 0 1 148 176 H 182 A 14 14 0 0 0 196 162 V 54 A 26 26 0 0 1 248 54 Z"/>
+  <path fill="#38BDF8" d="M 142 102 H 154 A 20 20 0 0 1 174 122 V 134 A 20 20 0 0 1 154 154 H 142 A 20 20 0 0 1 122 134 V 122 A 20 20 0 0 1 142 102 Z"/>
+  <path fill="#F8FAFC" fill-rule="evenodd" d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"/>
+  <path fill="#38BDF8" fill-rule="evenodd" d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"/>
+</svg></div>
+        </div>
+      </article>
+    
+    </section>
+
+    <div class="section-title">
+      <div>3. Matriks Keterbacaan Ukuran Kecil (64px, 32px, 24px, 16px) &amp; Monokrom</div>
+      <span>Semua 9 simbol diuji pada skala piksel identik</span>
+    </div>
+    <section class="table-wrap">
+      <table class="size-table">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Ukuran / Mode</th>
+            <th>CV5-R1<br><span style="font-weight:400;font-size:10px;color:#64748B;">Concentric</span></th>
+            <th>CV5-R2<br><span style="font-weight:400;font-size:10px;color:#64748B;">Keystone</span></th>
+            <th>CV5-R3<br><span style="font-weight:400;font-size:10px;color:#64748B;">Threshold</span></th>
+            <th>CV1-R1<br><span style="font-weight:400;font-size:10px;color:#64748B;">Split-Core</span></th>
+            <th>CV1-R2<br><span style="font-weight:400;font-size:10px;color:#64748B;">Faceted</span></th>
+            <th>CV1-R3<br><span style="font-weight:400;font-size:10px;color:#64748B;">Asymmetric</span></th>
+            <th>CV3-R1<br><span style="font-weight:400;font-size:10px;color:#64748B;">Interlocked</span></th>
+            <th>CV3-R2<br><span style="font-weight:400;font-size:10px;color:#64748B;">Dual Embrace</span></th>
+            <th>CV3-R3<br><span style="font-weight:400;font-size:10px;color:#64748B;">Rotational</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          
+      <tr>
+        <th class="size-label">
+          <span class="px-num">64×64 px</span>
+          <span class="px-note">App Card / Mobile</span>
+        </th>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:64px;height:64px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R3</div>
+          </td>
+        
+      </tr>
+    
+      <tr>
+        <th class="size-label">
+          <span class="px-num">32×32 px</span>
+          <span class="px-note">Navbar / Header</span>
+        </th>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R3</div>
+          </td>
+        
+      </tr>
+    
+      <tr>
+        <th class="size-label">
+          <span class="px-num">24×24 px</span>
+          <span class="px-note">Sidebar / Compact</span>
+        </th>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:24px;height:24px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R3</div>
+          </td>
+        
+      </tr>
+    
+      <tr>
+        <th class="size-label">
+          <span class="px-num">16×16 px</span>
+          <span class="px-note">Favicon Minimal</span>
+        </th>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+            <div class="cell-code">CV5-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+            <div class="cell-code">CV1-R3</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R1</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R2</div>
+          </td>
+        
+          <td class="size-cell">
+            <div class="icon-frame" style="width:16px;height:16px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+            <div class="cell-code">CV3-R3</div>
+          </td>
+        
+      </tr>
+    
+          <tr>
+            <th class="size-label">
+              <span class="px-num">32×32 px (Monokrom)</span>
+              <span class="px-note">1-Warna Hitam</span>
+            </th>
+            
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#172033" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#1458C4" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+        <div class="cell-code">CV5-R1</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+        <div class="cell-code">CV5-R2</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#172033" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#1458C4" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+        <div class="cell-code">CV5-R3</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+        <div class="cell-code">CV1-R1</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#172033" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#1458C4" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+        <div class="cell-code">CV1-R2</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#172033" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#1458C4" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+        <div class="cell-code">CV1-R3</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#172033" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        <div class="cell-code">CV3-R1</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#172033" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#1458C4" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        <div class="cell-code">CV3-R2</div>
+      </td>
+    
+      <td class="size-cell">
+        <div class="icon-frame mono-black" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#172033" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#1458C4" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+        <div class="cell-code">CV3-R3</div>
+      </td>
+    
+          </tr>
+          <tr>
+            <th class="size-label">
+              <span class="px-num">32×32 px (Dark Mode)</span>
+              <span class="px-note">Di atas #080A0E</span>
+            </th>
+            
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R1 — Concentric Arch Portal (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 200 V 92 A 64 64 0 0 1 92 28 H 164 A 64 64 0 0 1 228 92 V 164 A 24 24 0 0 1 180 164 V 128 A 52 52 0 0 0 76 128 V 208 A 20 20 0 0 1 56 228 A 28 28 0 0 1 28 200 Z"/>
+  <path fill="#38BDF8" d="M 128 104 A 24 24 0 0 1 152 128 V 208 A 20 20 0 0 1 132 228 H 124 A 20 20 0 0 1 104 208 V 128 A 24 24 0 0 1 128 104 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV5-R1</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R2 — Keystone Sanctuary (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 88 A 24 24 0 0 1 180 88 A 12 12 0 0 0 168 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z M 180 160 A 24 24 0 0 1 228 160 V 204 A 24 24 0 0 1 180 204 Z"/>
+  <path fill="#38BDF8" d="M 104 128 A 24 24 0 0 1 152 128 V 204 A 24 24 0 0 1 104 204 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV5-R2</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV5-R3 — Bridged Threshold (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 204 V 84 A 56 56 0 0 1 84 28 H 172 A 56 56 0 0 1 228 84 V 128 A 24 24 0 0 1 180 128 V 92 A 16 16 0 0 0 164 76 H 92 A 16 16 0 0 0 76 92 V 204 A 24 24 0 0 1 28 204 Z"/>
+  <path fill="#38BDF8" d="M 104 128 A 24 24 0 0 1 152 128 V 164 A 16 16 0 0 0 168 180 H 204 A 24 24 0 0 1 204 228 H 144 A 40 40 0 0 1 104 188 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV5-R3</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R1 — Split-Horizon Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 192 28 A 36 36 0 0 1 228 64 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 46 A 18 18 0 0 1 192 28 Z"/>
+  <path fill="#38BDF8" d="M 102 54 A 26 26 0 0 1 154 54 V 98 A 26 26 0 0 1 102 98 Z M 102 174 A 26 26 0 0 1 154 174 V 202 A 26 26 0 0 1 102 202 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV1-R1</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R2 — Faceted Keystone Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 60 28 L 82 50 V 206 L 60 228 A 32 32 0 0 1 28 196 V 60 A 32 32 0 0 1 60 28 Z M 196 28 A 32 32 0 0 1 228 60 V 196 A 32 32 0 0 1 196 228 L 174 206 V 50 Z"/>
+  <path fill="#38BDF8" d="M 128 44 L 154 70 V 186 L 128 212 L 102 186 V 70 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV1-R2</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV1-R3 — Asymmetric Cadence Core (Symbol)</title>
+  <path fill="#F8FAFC" d="M 64 28 A 18 18 0 0 1 82 46 V 210 A 18 18 0 0 1 64 228 A 36 36 0 0 1 28 192 V 64 A 36 36 0 0 1 64 28 Z M 122 180 H 134 A 20 20 0 0 1 154 200 V 208 A 20 20 0 0 1 134 228 H 122 A 20 20 0 0 1 102 208 V 200 A 20 20 0 0 1 122 180 Z M 192 68 A 36 36 0 0 1 228 104 V 192 A 36 36 0 0 1 192 228 A 18 18 0 0 1 174 210 V 86 A 18 18 0 0 1 192 68 Z"/>
+  <path fill="#38BDF8" d="M 102 54 A 26 26 0 0 1 154 54 V 130 A 26 26 0 0 1 102 130 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV1-R3</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R1 — Interlocked Keystone (Symbol)</title>
+  <path fill="#F8FAFC" d="M 62 28 A 18 18 0 0 1 80 46 V 162 A 14 14 0 0 0 94 176 H 128 A 26 26 0 0 1 128 228 H 80 A 52 52 0 0 1 28 176 V 62 A 34 34 0 0 1 62 28 Z M 202 102 A 26 26 0 0 1 228 128 V 194 A 34 34 0 0 1 194 228 A 18 18 0 0 1 176 210 V 128 A 26 26 0 0 1 202 102 Z"/>
+  <path fill="#38BDF8" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV3-R1</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R2 — Dual Embrace (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
+  <path fill="#38BDF8" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV3-R2</div>
+      </td>
+    
+      <td class="size-cell dark-cell">
+        <div class="icon-frame" style="width:32px;height:32px;"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>TradeVault — CV3-R3 — Rotational Equilibrium (Symbol)</title>
+  <path fill="#F8FAFC" d="M 28 202 V 80 A 52 52 0 0 1 80 28 H 128 A 26 26 0 0 1 128 80 H 94 A 14 14 0 0 0 80 94 V 202 A 26 26 0 0 1 28 202 Z M 228 54 V 176 A 52 52 0 0 1 176 228 H 128 A 26 26 0 0 1 128 176 H 162 A 14 14 0 0 0 176 162 V 54 A 26 26 0 0 1 228 54 Z"/>
+  <path fill="#38BDF8" d="M 122 102 H 134 A 20 20 0 0 1 154 122 V 134 A 20 20 0 0 1 134 154 H 122 A 20 20 0 0 1 102 134 V 122 A 20 20 0 0 1 122 102 Z"/>
+</svg></div>
+        <div class="cell-code dark-code">CV3-R3</div>
+      </td>
+    
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

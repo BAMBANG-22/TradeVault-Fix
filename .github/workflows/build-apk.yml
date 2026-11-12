@@ -1,0 +1,193 @@
+name: Build TradeVault Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Android Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
+
+      - name: Ensure Android SDK Platform 36
+        run: |
+          echo "=== Accepting Android SDK Licenses ==="
+          set +e
+          yes | sdkmanager --licenses
+          PIPE_STATUS=(${PIPESTATUS[@]})
+          set -e
+          SDK_EXIT=${PIPE_STATUS[1]}
+          if [ "$SDK_EXIT" -ne 0 ]; then
+            echo "ERROR: sdkmanager --licenses failed with exit code $SDK_EXIT"
+            exit $SDK_EXIT
+          fi
+          echo "SDK licenses accepted successfully (exit code $SDK_EXIT)"
+          echo "=== Installing / Verifying Android SDK Platform 36 ==="
+          sdkmanager "platforms;android-36"
+          echo "=== Installed Android SDK Platforms & Build-Tools ==="
+          sdkmanager --list_installed | grep -E "platforms;android-|build-tools;" || true
+
+      - name: Prepare persistent Android signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Register all signing values for log redaction before later steps inherit them.
+          echo "::add-mask::$ANDROID_KEYSTORE_BASE64"
+          echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
+          echo "::add-mask::$ANDROID_KEY_ALIAS"
+          echo "::add-mask::$ANDROID_KEY_PASSWORD"
+
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "ERROR: Required GitHub Actions secret $name is missing."
+              exit 1
+            fi
+          done
+
+          KEYSTORE_PATH="$RUNNER_TEMP/tradevault-persistent-debug.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          if [ ! -s "$KEYSTORE_PATH" ]; then
+            echo "ERROR: Decoded Android keystore is empty."
+            exit 1
+          fi
+          chmod 600 "$KEYSTORE_PATH"
+
+          # Verify the exact uploaded keystore before checking credentials.
+          EXPECTED_KEYSTORE_SHA256="9bbdcf0ae2735a7438f0848bd4b41308cd92030d7a85a33440603925d67400e8"
+          ACTUAL_KEYSTORE_SHA256="$(sha256sum "$KEYSTORE_PATH" | awk '{print $1}')"
+          if [ "$ACTUAL_KEYSTORE_SHA256" != "$EXPECTED_KEYSTORE_SHA256" ]; then
+            echo "ERROR: ANDROID_KEYSTORE_BASE64 does not decode to the approved persistent keystore. Re-copy the complete ANDROID_KEYSTORE_BASE64.txt into its Repository Secret."
+            exit 1
+          fi
+
+          # Check store password and alias separately so the failure identifies the exact setting.
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "ERROR: ANDROID_KEYSTORE_PASSWORD is incorrect. Re-copy the exact value from GITHUB_SECRETS.txt into Repository Secrets."
+            exit 1
+          fi
+          if ! keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null 2>&1; then
+            echo "ERROR: ANDROID_KEY_ALIAS is incorrect. It must exactly match the alias in GITHUB_SECRETS.txt."
+            exit 1
+          fi
+
+          CSR_PATH="$RUNNER_TEMP/tradevault-signing-preflight.csr"
+          if ! keytool -certreq -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" -keypass "$ANDROID_KEY_PASSWORD" -file "$CSR_PATH" >/dev/null 2>&1; then
+            echo "ERROR: ANDROID_KEY_PASSWORD does not unlock the private key. Set it to the exact ANDROID_KEY_PASSWORD value from GITHUB_SECRETS.txt as a Repository Secret (not a Variable)."
+            exit 1
+          fi
+          rm -f "$CSR_PATH"
+
+          echo "ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
+          VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "Persistent keystore and private-key credentials verified."
+          echo "Android versionCode: $VERSION_CODE"
+
+      - name: Fix Gradle wrapper permissions
+        run: chmod +x android/gradlew
+
+      - name: Verify toolchain environments
+        run: |
+          echo "=== Java Version ==="
+          java -version
+          echo "=== Node.js Version ==="
+          node -v
+          echo "=== Bun Version ==="
+          bun -v
+          echo "=== Android SDK Path ==="
+          echo "ANDROID_HOME: $ANDROID_HOME"
+          echo "=== Gradle Wrapper Version ==="
+          cd android && ./gradlew --version
+
+      - name: Install dependencies (Bun frozen lockfile)
+        run: bun install --frozen-lockfile
+
+      - name: Build web application
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || '' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || '' }}
+        run: bun run build
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
+
+      - name: Build Android Debug APK
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Verify generated APK and persistent signature
+        run: |
+          set -euo pipefail
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "ERROR: APK file not found at $APK_PATH"
+            exit 1
+          fi
+
+          APK_SIZE=$(stat -c%s "$APK_PATH")
+          if [ "$APK_SIZE" -le 0 ]; then
+            echo "ERROR: APK file is empty (0 bytes)"
+            exit 1
+          fi
+
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner was not found in Android build-tools."
+            exit 1
+          fi
+          "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+          echo "SUCCESS: Debug APK generated and signature verified."
+          echo "Path: $APK_PATH"
+          echo "Size: $APK_SIZE bytes"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TradeVault-Next-Persistent-Signed-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
