@@ -1581,18 +1581,48 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       };
     } else {
       const serverFeeds = await gatherMacroPublicFeeds(Boolean(forceRefresh));
-      const cmeFedWatch = serverFeeds.cmeFedWatch.isAvailable
+      // Wajib lengkapi actual rilis High-Impact yang sudah lewat jika masih kosong
+    const enrichPastMissingActuals = async (events: MacroCalendarEvent[]): Promise<MacroCalendarEvent[]> => {
+      const nowMs = Date.now();
+      const missing = events.some(
+        (ev) => ev.impact === "High" && (!ev.actual || !ev.actual.trim()) && new Date(ev.date).getTime() < nowMs - 5 * 60 * 1000
+      );
+      if (!missing) return events;
+      try {
+        const searched = await fetchForexFactoryCalendarViaGoogleSearch();
+        if (!Array.isArray(searched) || searched.length === 0) return events;
+        const map = new Map<string, string>();
+        for (const item of searched) {
+          const a = String(item.actual ?? "").trim();
+          if (a) map.set(String(item.title || "").trim().toLowerCase(), a);
+        }
+        return events.map((ev) => {
+          if (!ev.actual || !ev.actual.trim()) {
+            const found = map.get(ev.title.trim().toLowerCase());
+            if (found) {
+              const parsed = parseMacroNumeric(found);
+              return { ...ev, actual: found, actualNum: parsed.value };
+            }
+          }
+          return ev;
+        });
+      } catch (err) {
+        console.error("[MacroEnrich] Gagal enrich actual:", err);
+        return events;
+      }
+    };
+
+    const cmeFedWatch = serverFeeds.cmeFedWatch.isAvailable
         ? serverFeeds.cmeFedWatch
         : clientFeeds?.cmeFedWatch?.isAvailable
         ? evaluateCmeFedWatchScoring(clientFeeds.cmeFedWatch)
         : serverFeeds.cmeFedWatch;
       feeds = {
-        calendarEvents:
-          serverFeeds.calendarEvents.length > 0
-            ? serverFeeds.calendarEvents
-            : hasVerifiedClientLiveCalendar
-            ? clientFeeds!.calendarEvents!
-            : [],
+        calendarEvents: await enrichPastMissingActuals(
+        serverFeeds.calendarEvents.length > 0
+          ? serverFeeds.calendarEvents
+          : Array.isArray(clientFeeds?.calendarEvents) && clientFeeds!.calendarEvents!.length > 0 ? clientFeeds!.calendarEvents! : (cachedMacroFeeds.calendarEvents || [])
+      ),
         intermarketPulse: serverFeeds.intermarketPulse.dxy
           ? serverFeeds.intermarketPulse
           : clientFeeds?.intermarketPulse || serverFeeds.intermarketPulse,
