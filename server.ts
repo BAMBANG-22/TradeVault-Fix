@@ -1523,8 +1523,7 @@ app.get('/api/macro-news/feeds', async (_req, res) => {
 
 // Full Macro News & Pre-News Scenario Matrix Analyzer
 
-async function fetchPastActualsViaGoogleSearch(missingEvents: MacroCalendarEvent[]): Promise<Record<string, string>> {
-  const apiKey = getMacroGeminiApiKey();
+async function fetchPastActualsViaGoogleSearch(missingEvents: MacroCalendarEvent[], apiKey: string): Promise<Record<string, string>> {
   if (!apiKey || missingEvents.length === 0) return {};
   const listDesc = missingEvents
     .map((e) => `- "${e.title}" (Scheduled: ${e.date}, Forecast: ${e.forecast || "N/A"}, Previous: ${e.previous || "N/A"})`)
@@ -1544,7 +1543,7 @@ async function fetchPastActualsViaGoogleSearch(missingEvents: MacroCalendarEvent
       }
     );
     if (!res.ok) {
-      console.error("[ActualSearch] HTTP", res.status, await res.text());
+      console.error("[ActualSearch] HTTP", res.status, (await res.text()).slice(0, 200));
       return {};
     }
     const data = await res.json();
@@ -1679,6 +1678,27 @@ app.post('/api/macro-news/analyze', async (req, res) => {
             : clientFeeds?.breakingNews || [],
         cmeFedWatch,
       };
+    }
+
+    const resolvedNewsKey = (process.env.GEMINI_NEWS_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+    const nowCutoffMs = Date.now() - 5 * 60 * 1000;
+    const pastMissing = (feeds.calendarEvents || []).filter(
+      (ev) => (!ev.actual || !ev.actual.trim()) && new Date(ev.date).getTime() < nowCutoffMs
+    );
+    if (pastMissing.length > 0 && resolvedNewsKey) {
+      const actualMap = await fetchPastActualsViaGoogleSearch(pastMissing, resolvedNewsKey);
+      if (Object.keys(actualMap).length > 0) {
+        feeds.calendarEvents = feeds.calendarEvents.map((ev) => {
+          if (!ev.actual || !ev.actual.trim()) {
+            const found = actualMap[ev.title.trim().toLowerCase()];
+            if (found) {
+              const parsed = parseMacroNumeric(found);
+              return { ...ev, actual: found, actualNum: parsed.value };
+            }
+          }
+          return ev;
+        });
+      }
     }
 
     // Step 1: Always compute the deterministic Master Playbook baseline first
