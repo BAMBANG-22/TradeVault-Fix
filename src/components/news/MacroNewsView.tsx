@@ -83,6 +83,9 @@ export const MacroNewsView: React.FC = () => {
   const [argumentTab, setArgumentTab] = useState<'BUY' | 'SELL' | 'BOTH'>('BOTH');
   const [showAllHeadlines, setShowAllHeadlines] = useState<boolean>(false);
   const [showPlaybookGuide, setShowPlaybookGuide] = useState<boolean>(false);
+  const [showFedSpeeches, setShowFedSpeeches] = useState<boolean>(false);
+  const [showFullCalendar, setShowFullCalendar] = useState<boolean>(false);
+  const [activeSectionTab, setActiveSectionTab] = useState<'THESIS' | 'RADAR' | 'CALENDAR'>('THESIS');
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
   // Tracks which upcoming event ID has already executed its single final T-5M fetch
@@ -449,1728 +452,661 @@ export const MacroNewsView: React.FC = () => {
       ? 'STRONG 1-WAY BIAS (FINAL T-5M) — Prepare setup and lot calculation at M1/M5 structure before release second, use tight SL.'
       : '2-WAY SPIKE / WHIPSAW RISK (FINAL T-5M) — Hold entry before release; let the first 1–2 minutes liquidity sweep complete first.');
 
+  const supportingEvents = getSupportingContextEvents(snapshot.calendarEvents);
+  const lockInfo = computePreNewsLockState(snapshot.calendarEvents, nowMs, primaryEv.id);
+  const dominantColorClass =
+    activeMatrix.dominantBias === 'BUY'
+      ? 'text-[#10B981]'
+      : activeMatrix.dominantBias === 'SELL'
+      ? 'text-[#F43F5E]'
+      : 'text-[#22D3EE]';
+
   return (
     <div
       data-testid="macro-news-view"
-      className="space-y-4 pb-14 text-[#151D2A] dark:text-[#F2F4F7] font-sans transition-colors duration-150"
+      className="pb-20 text-[#151D2A] dark:text-[#F2F4F7] font-sans transition-colors duration-150 divide-y divide-[#E5E7EB] dark:divide-[#20252D]"
     >
-      {/* 1. TOP EXECUTIVE HEADER (3 Core TradeVault Colors: Black Surface, White Text, Deep Dashboard Blue Accent) */}
-      <div className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 sm:p-6 shadow-xs relative overflow-hidden transition-colors">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold tracking-[0.14em] uppercase px-2.5 py-0.5 rounded-full bg-[#151D2A] text-white dark:bg-white dark:text-[#080A0E]">
-                XAU/USD
-              </span>
-
-              <span
-                data-testid="macro-quota-isolation-badge"
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[11px] text-[#697586] dark:text-[#929BA9] font-medium"
-              >
-                {snapshot.sourceMode === 'SUPABASE_CACHE' ? (
-                  <>
-                    <Database className="w-3 h-3 text-[#1769E8] dark:text-[#3478DC]" />
-                    <span>{tr('Cache Supabase (0 Token)', 'Supabase Cache (0 Token)')}</span>
-                  </>
-                ) : snapshot.sourceMode === 'GEMINI_AI' ? (
-                  <>
-                    <Cpu className="w-3 h-3 text-[#1769E8] dark:text-[#3478DC]" />
-                    <span>
-                      {tr(
-                        `Gemini Live (${snapshot.modelUsed || '2.5 Flash'})`,
-                        `Gemini Live (${snapshot.modelUsed || '2.5 Flash'})`
-                      )}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Scale className="w-3 h-3 text-[#697586] dark:text-[#929BA9]" />
-                    <span>{tr('Pre-News Volatility Engine', 'Pre-News Volatility Engine')}</span>
-                  </>
-                )}
-              </span>
-
-              {/* Calm Pre-News Lock Status Indicator (Black / White / Core Blue without neon) */}
-              <span
-                data-testid="macro-t5-lock-status-badge"
-                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider border ${
-                  lockState.isLockedT5M
-                    ? 'bg-[#1769E8] dark:bg-[#3478DC] border-[#1769E8] dark:border-[#3478DC] text-white'
-                    : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7]'
-                }`}
-              >
-                <Lock className="w-3 h-3" />
-                <span>
-                  {isEn ? lockState.projectionBadgeEn : lockState.projectionBadgeId}
-                </span>
-              </span>
-            </div>
-
-            <h1 className="text-xl sm:text-2xl font-black text-[#151D2A] dark:text-[#F2F4F7] tracking-tight">
-              Trade News &amp; Macro Bias
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#697586] dark:text-[#929BA9]">
-              <span
-                data-testid="macro-live-update-timestamp"
-                className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7] font-mono tabular-nums font-bold"
-              >
-                <Clock className="w-3.5 h-3.5 text-[#1769E8] dark:text-[#3478DC]" />
-                <span>{formatLiveUpdateClockWib(snapshot.analyzedAt, language)}</span>
-              </span>
-              <span className="text-neutral-400 dark:text-neutral-600 hidden sm:inline">•</span>
-              <span className="text-[#151D2A] dark:text-[#F2F4F7] font-mono tabular-nums font-medium">
-                {formatTimestampWib(snapshot.analyzedAt, language)}
-              </span>
-              <span className="text-neutral-400 dark:text-neutral-600 hidden sm:inline">•</span>
-              <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                {tr(
-                  '100% Otomatis • Strict Live Fetch & CME FedWatch Engine',
-                  '100% Automatic • Strict Live Fetch & CME FedWatch Engine'
-                )}
-              </span>
-            </div>
+      {/* 01 / TOP MINIMAL HEADER (Senada Dasbor TradeVault) */}
+      <section className="pb-5 space-y-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#697586] dark:text-[#929BA9]">
+              TRADE NEWS • XAU/USD
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]">
+              {snapshot.sourceMode === 'GEMINI_AI' ? snapshot.modelUsed || 'AI LIVE' : 'ENGINE LIVE'}
+            </span>
           </div>
-
-          {/* Header Action Controls */}
-          <div className="flex items-center gap-2.5 self-start sm:self-center">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setShowPlaybookGuide((prev) => !prev)}
-              className="px-3.5 py-2 rounded-xl bg-[#F5F7FA] dark:bg-[#101318] hover:bg-[#EEF2F6] dark:hover:bg-[#161A22] border border-[#DDE3EA] dark:border-[#20252D] text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] border border-[#E5E7EB] dark:border-[#20252D] transition-colors flex items-center gap-1.5"
             >
-              <Info className="w-3.5 h-3.5 text-[#697586] dark:text-[#929BA9]" />
-              <span>{tr('Panduan Playbook', 'Playbook Guide')}</span>
+              <Info className="w-3.5 h-3.5" />
+              <span>{tr('Playbook', 'Playbook')}</span>
             </button>
-
-            {/* Manual "Analisis Live / Refresh Data" Button (Force Bypass Cache = true) */}
             <button
               type="button"
-              data-testid="macro-news-refresh-btn"
+              onClick={() => void runLiveAnalysis(true, snapshot, selectedEventId || undefined)}
               disabled={isRefreshing}
-              onClick={() => runLiveAnalysis(true, snapshot, selectedEventId)}
-              className="px-4 py-2 rounded-xl bg-[#1769E8] dark:bg-[#3478DC] hover:bg-[#1458C4] dark:hover:bg-[#2860B2] text-white font-bold text-xs tracking-wide transition-all shadow-xs active:scale-[0.98] disabled:opacity-60 flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-[#1769E8] dark:bg-[#3478DC] text-white hover:opacity-90 disabled:opacity-50 transition-opacity flex items-center gap-1.5"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              <span>
-                {isRefreshing
-                  ? refreshStepMessage || tr('Menganalisis Pasar...', 'Analyzing Market...')
-                  : tr('Analisis Live', 'Live Analysis')}
-              </span>
+              <span>{isRefreshing ? refreshStepMessage || tr('Memuat...', 'Syncing...') : tr('Analisis Live', 'Live Sync')}</span>
             </button>
           </div>
         </div>
 
-        {/* Supabase Status Notification (Pure 3 Core Colors: Black, White, Blue) */}
+        {/* Status Bar & Lock State Ringkas */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#697586] dark:text-[#929BA9]">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 text-[#1769E8] dark:text-[#3478DC] font-semibold">
+              <Lock className="w-3 h-3" />
+              {tr(lockInfo.projectionBadgeId, lockInfo.projectionBadgeEn)}
+            </span>
+          </div>
+          <span className="font-mono">
+            {formatLiveUpdateClockWib(new Date(nowMs).toISOString())} • {formatTimestampWib(snapshot.analyzedAt)}
+          </span>
+        </div>
+
         {supabaseFeedback && (
-          <div
-            data-testid="macro-supabase-feedback-banner"
-            className="mt-4 p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-xs text-[#151D2A] dark:text-[#F2F4F7] flex items-center justify-between gap-3 transition-all"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              {supabaseFeedback.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0" />
-              ) : supabaseFeedback.type === 'warning' ? (
-                <AlertTriangle className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0" />
-              ) : (
-                <ShieldAlert className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0" />
-              )}
-              <span className="truncate leading-relaxed font-medium">{supabaseFeedback.message}</span>
-            </div>
+          <div className="flex items-center justify-between gap-2 py-2 px-3 rounded-lg bg-[#F9FAFB] dark:bg-[#0D1117] border border-[#E5E7EB] dark:border-[#20252D] text-[11px] text-[#697586] dark:text-[#929BA9]">
+            <span className="truncate">{supabaseFeedback.message}</span>
             <button
               type="button"
               onClick={() => setSupabaseFeedback(null)}
-              className="text-[11px] font-semibold text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-white underline shrink-0 cursor-pointer"
+              className="text-[#151D2A] dark:text-[#F2F4F7] font-semibold shrink-0"
             >
               {tr('Tutup', 'Dismiss')}
             </button>
           </div>
         )}
 
-        {/* Collapsible Playbook Reference */}
-        {showPlaybookGuide && (
-          <div className="mt-4 pt-4 border-t border-[#DDE3EA] dark:border-[#20252D] grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-[#697586] dark:text-[#929BA9]">
-            <div className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1">
-              <div className="font-bold text-[#151D2A] dark:text-[#F2F4F7] text-xs">
-                {tr('1. 3 Pilar FOMC & Klaim Terbalik', '1. Three FOMC Pillars & Inverse Claims')}
-              </div>
-              <p className="leading-relaxed text-[11px]">
-                {tr(
-                  'Growth (GDP & ISM PMI > 50 ekspansi), Labor (Unemployment Claims Forecast < Previous = USD Bullish / SELL Gold), & Inflation (CPI, PPI, Core PCE).',
-                  'Growth (GDP & ISM PMI > 50 expansion), Labor (Unemployment Claims Forecast < Previous = Bullish USD / SELL Gold), & Inflation (CPI, PPI, Core PCE).'
-                )}
+        {/* 02 / HERO DECISION DISPLAY (Senada Angka Utama Saldo di Dasbor) */}
+        <div className="pt-1 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                {tr('BIAS DOMINAN • ', 'DOMINANT BIAS • ')}{activeClusterTitles}
               </p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1">
-              <div className="font-bold text-[#151D2A] dark:text-[#F2F4F7] text-xs">
-                {tr('2. CME FedWatch & Priced-In Saturation', '2. CME FedWatch & Priced-In Saturation')}
-              </div>
-              <p className="leading-relaxed text-[11px]">
-                {tr(
-                  'Probabilitas CME FedWatch (Cut | Hold | Hike) digunakan sebagai Tie-Breaker rilis Mixed dan deteksi Priced-In Saturation (>= 85%).',
-                  'CME FedWatch probabilities (Cut | Hold | Hike) act as Tie-Breaker on Mixed releases and Priced-In Saturation (>= 85%) detector.'
-                )}
-              </p>
-            </div>
-            <div className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1">
-              <div className="font-bold text-[#151D2A] dark:text-[#F2F4F7] text-xs">
-                {tr('3. Auto-Lock T-5 Menit (T-05:00)', '3. T-5 Minute Auto-Lock (T-05:00)')}
-              </div>
-              <p className="leading-relaxed text-[11px]">
-                {tr(
-                  'Pengambilan data otomatis terakhir dieksekusi pada T-05:00 sebelum rilis, lalu seluruh auto-refresh dihentikan agar bias & skenario terkunci stabil.',
-                  'Final automatic data analysis executes at T-05:00 before release, then all background auto-refreshes stop so bias & scenario remain locked.'
-                )}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 2. UPCOMING EVENT EXPLORER (PENCARIAN & PEMILIHAN JADWAL HIGH-IMPACT 14 HARI — EARLY REFERENCE MODE) */}
-      <div
-        data-testid="macro-upcoming-event-explorer"
-        className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 sm:p-6 shadow-xs space-y-4"
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="space-y-0.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <Calendar className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC]" />
-              <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                {tr(
-                  'Pencarian & Pemilihan Jadwal Rilis USD Mendatang (Primary High-Impact)',
-                  'Upcoming USD Primary High-Impact Schedule Explorer (14-Day Window)'
-                )}
-              </h2>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[#1769E8] dark:text-[#3478DC]">
-                {tr('Cakupan 2 Minggu (14 Hari)', '2-Week Coverage (14 Days)')}
-              </span>
-            </div>
-            <p className="text-xs text-[#697586] dark:text-[#929BA9]">
-              {tr(
-                'Default otomatis memilih grup High-Impact kuantitatif terdekat berikutnya (bukan Pidato Fed / Medium). Cari atau ketuk jadwal minggu ini & minggu depan untuk menghitung proyeksi probabilitasnya.',
-                'Automatically defaults to the nearest upcoming quantitative High-Impact group (excluding Fed Speeches / Medium data). Search or tap any schedule across this week & next week.'
-              )}
-            </p>
-          </div>
-
-          {/* Quick Keyword Filter Pills */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
-            {QUICK_SEARCH_FILTERS.map((kw) => {
-              const isAll = kw === 'ALL';
-              const isActive = isAll
-                ? searchQuery.trim() === ''
-                : searchQuery.trim().toUpperCase() === kw;
-
-              return (
-                <button
-                  key={kw}
-                  type="button"
-                  onClick={() => setSearchQuery(isAll ? '' : kw)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer shrink-0 border ${
-                    isActive
-                      ? 'bg-[#1769E8] dark:bg-[#3478DC] border-[#1769E8] dark:border-[#3478DC] text-white'
-                      : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#1E232B] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
-                  }`}
-                >
-                  {isAll ? tr('Semua High-Impact', 'All High-Impact') : kw}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Search Input Bar */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-[#697586] dark:text-[#929BA9] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            data-testid="macro-upcoming-search-input"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={tr(
-              'Cari jadwal High-Impact 14 hari ke depan (ketik: PPI, NFP, CPI, PCE, FOMC, GDP, ISM...)',
-              'Search 14-day High-Impact releases (type: PPI, NFP, CPI, PCE, FOMC, GDP, ISM...)'
-            )}
-            className="w-full pl-10 pr-9 py-2.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] text-xs sm:text-sm text-[#151D2A] dark:text-[#F2F4F7] placeholder:text-[#697586] dark:placeholder:text-[#929BA9] focus:outline-hidden focus:border-[#1769E8] dark:focus:border-[#3478DC] transition-colors"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-white cursor-pointer"
-              aria-label="Clear search"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-
-        {/* Selectable Grouped Primary High-Impact Schedule Cards OR 14-Day Empty Search Info Card */}
-        {explorerEventGroups.length > 0 ? (
-          <div
-            data-testid="macro-upcoming-event-groups"
-            className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1"
-          >
-            {explorerEventGroups.map((group) => {
-              const isSelected =
-                (selectedEventId &&
-                  group.events.some((e) => e.id === selectedEventId)) ||
-                (!selectedEventId && group.groupId === nearestUpcomingGroup?.groupId);
-              const isNearestNext = group.groupId === nearestUpcomingGroup?.groupId;
-
-              return (
-                <button
-                  key={group.groupId}
-                  type="button"
-                  data-testid={`macro-event-group-item-${group.groupId}`}
-                  onClick={() => handleSelectEventGroup(group.groupId)}
-                  className={`text-left p-3.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
-                    isSelected
-                      ? 'bg-[#1769E8] dark:bg-[#3478DC] border-[#1769E8] dark:border-[#3478DC] text-white shadow-xs'
-                      : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#1E232B] text-[#151D2A] dark:text-[#F2F4F7] hover:border-[#1769E8]/50 dark:hover:border-[#3478DC]/50'
-                  }`}
-                >
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`text-[11px] font-mono font-semibold ${
-                          isSelected ? 'text-white/90' : 'text-[#697586] dark:text-[#929BA9]'
-                        }`}
-                      >
-                        {isEn
-                          ? group.formattedScheduleEn.split(' — ')[0]
-                          : group.formattedScheduleId.split(' — ')[0]}
-                      </span>
-                      {isNearestNext && (
-                        <span
-                          className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                            isSelected
-                              ? 'bg-white/20 text-white'
-                              : 'bg-[#1769E8]/15 dark:bg-[#3478DC]/20 text-[#1769E8] dark:text-[#3478DC]'
-                          }`}
-                        >
-                          {tr('HIGH-IMPACT TERDEKAT', 'NEAREST HIGH-IMPACT')}
-                        </span>
-                      )}
-                      {group.events.length > 1 && (
-                        <span
-                          className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-                            isSelected
-                              ? 'bg-black/20 text-white'
-                              : 'bg-white dark:bg-[#101318] text-[#697586] dark:text-[#929BA9] border border-[#DDE3EA] dark:border-[#20252D]'
-                          }`}
-                        >
-                          {group.events.length} Data
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs sm:text-sm font-bold truncate">
-                      {group.combinedTitle}
-                    </div>
-                  </div>
-
-                  <div className="shrink-0 flex flex-col items-end gap-1">
-                    <span
-                      className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
-                        isSelected
-                          ? 'bg-white text-[#1769E8] dark:text-[#080A0E]'
-                          : 'bg-white dark:bg-[#080A0E] text-[#1769E8] dark:text-[#3478DC] border border-[#DDE3EA] dark:border-[#20252D]'
-                      }`}
-                    >
-                      {isSelected
-                        ? tr('AKTIF', 'ACTIVE')
-                        : tr('Pilih', 'Select')}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div
-            data-testid="macro-empty-search-info-card"
-            className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-          >
-            <div className="flex items-start gap-2.5">
-              <Info className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0 mt-0.5" />
-              <div className="space-y-1">
-                <p className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7]">
-                  {isEn
-                    ? `Belum ada jadwal ${searchQuery.trim().toUpperCase()} dalam 14 hari ke depan — sistem memprioritaskan High-Impact terdekat berikutnya.`
-                    : `Belum ada jadwal ${searchQuery.trim().toUpperCase()} dalam 14 hari ke depan — sistem memprioritaskan High-Impact terdekat berikutnya.`}
-                </p>
-                {nearestUpcomingGroup && (
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                    {tr('Target High-Impact Aktif:', 'Active High-Impact Target:')}{' '}
-                    <span className="font-mono font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
-                      {isEn
-                        ? nearestUpcomingGroup.formattedScheduleEn
-                        : nearestUpcomingGroup.formattedScheduleId}
-                    </span>
-                  </p>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="px-3 py-1.5 rounded-lg bg-[#1769E8] dark:bg-[#3478DC] text-white text-xs font-bold shrink-0 self-start sm:self-center cursor-pointer"
-            >
-              {tr('Kembali ke High-Impact Terdekat', 'Back to Nearest High-Impact')}
-            </button>
-          </div>
-        )}
-
-        {/* Dedicated Compact Section: "Konteks Pendukung & Pidato Fed" (SUPPORTING_REFERENCE) */}
-        {supportingContextEvents.length > 0 && (
-          <div
-            data-testid="macro-supporting-context-section"
-            className="pt-3.5 border-t border-[#DDE3EA] dark:border-[#20252D] space-y-2.5"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#697586] dark:bg-[#929BA9]" />
-                <h3 className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                  {tr(
-                    'Konteks Pendukung & Pidato Fed',
-                    'Supporting Context & Fed Speeches'
-                  )}
-                </h3>
-                <span className="px-2 py-0.5 rounded text-[9.5px] font-mono bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
-                  {tr('Referensi Otomatis Gemini AI', 'Gemini AI Auto-Reference')}
+              <div className="flex items-baseline gap-3">
+                <span className={`text-3xl sm:text-4xl font-bold tracking-tight tabular-nums ${dominantColorClass}`}>
+                  {activeMatrix.dominantBias} {activeMatrix.dominantBias === 'BUY' ? activeMatrix.buyProbability : activeMatrix.dominantBias === 'SELL' ? activeMatrix.sellProbability : activeMatrix.mixedProbability}%
                 </span>
-              </div>
-              <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                {tr(
-                  'Bukan target volatilitas utama • Dibaca otomatis sebagai faktor penguat / sinyal Pindah Haluan',
-                  'Not primary volatility target • Automatically read as reinforcing factor / Dynamic Pivot signal'
-                )}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {supportingContextEvents.map((ctxEv) => {
-                const isSpeech = isFedSpeechEvent(ctxEv.title);
-                return (
-                  <div
-                    key={ctxEv.id}
-                    data-testid={`macro-supporting-context-item-${ctxEv.id}`}
-                    className="p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] flex flex-col justify-between gap-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9]">
-                        {formatTimestampWib(ctxEv.date, language)}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
-                        {isSpeech
-                          ? tr('PIDATO FED', 'FED SPEECH')
-                          : tr('KONTEKS PENDUKUNG', 'SUPPORTING DATA')}
-                      </span>
-                    </div>
-
-                    <div className="text-xs font-bold text-[#151D2A] dark:text-[#F2F4F7] truncate">
-                      {ctxEv.title}
-                    </div>
-
-                    {!isSpeech ? (
-                      <div className="flex items-center justify-between text-[10.5px] font-mono text-[#697586] dark:text-[#929BA9] pt-1 border-t border-[#DDE3EA] dark:border-[#1E232B]">
-                        <span>
-                          Prev: <strong className="text-[#151D2A] dark:text-[#F2F4F7]">{ctxEv.previous || '—'}</strong>
-                        </span>
-                        <span>
-                          Fcst: <strong className="text-[#1769E8] dark:text-[#3478DC]">{ctxEv.forecast || '—'}</strong>
-                        </span>
-                        <span>
-                          Bias: <strong className="text-[#151D2A] dark:text-[#F2F4F7]">{ctxEv.eventBiasForGold}</strong>
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="text-[10.5px] text-[#697586] dark:text-[#929BA9] pt-1 border-t border-[#DDE3EA] dark:border-[#1E232B] truncate">
-                        {tr(
-                          'Dipantau otomatis via RSS untuk deteksi sinyal Hawkish / Dovish Fed',
-                          'Auto-monitored via RSS for Hawkish / Dovish Fed signals'
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 3. PROJECTION STATUS DIFFERENTIATION & T-5 MINUTE EXECUTION CARD */}
-      <div
-        data-testid="macro-t5-action-card"
-        className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 sm:p-6 shadow-xs space-y-4"
-      >
-        {/* Prominent Status Banner: "REFERENSI AWAL (EARLY PROJECTION)" vs "FINAL T-5 MENIT" */}
-        <div
-          data-testid="macro-projection-status-banner"
-          className={`p-4 rounded-xl border transition-colors ${
-            lockState.isLockedT5M
-              ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-              : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#20252D]'
-          }`}
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  data-testid="macro-projection-status-badge"
-                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] sm:text-xs font-black uppercase tracking-wider border ${
-                    lockState.isLockedT5M
-                      ? 'bg-[#1769E8] dark:bg-[#3478DC] border-[#1769E8] dark:border-[#3478DC] text-white'
-                      : 'bg-white dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7]'
-                  }`}
-                >
-                  <Lock className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {isEn ? lockState.projectionBadgeEn : lockState.projectionBadgeId}
+                {activeMatrix.dynamicPivotTriggered && (
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-[#F43F5E]/15 text-[#F43F5E]">
+                    {tr('PINDAH HALUAN', 'PIVOT OVERRIDE')}
                   </span>
-                </span>
-
-                <span className="text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
-                  {formatTimestampWib(primaryEv.date, language)}
-                </span>
+                )}
               </div>
-
-              <p
-                data-testid="macro-projection-status-subtext"
-                className="text-xs text-[#697586] dark:text-[#929BA9] leading-relaxed"
-              >
-                {isEn ? lockState.projectionSubtextEn : lockState.projectionSubtextId}
+              <p className="text-xs text-[#697586] dark:text-[#929BA9]">
+                {formatTimestampWib(primaryEv.date)} • {simultaneousCount > 1 ? tr(`${simultaneousCount} Indikator Bersamaan`, `${simultaneousCount} Simultaneous Events`) : pillarBadgeLabel(primaryEv.pillar)}
               </p>
             </div>
 
-            {/* Real-Time Countdown Box */}
-            <div className="rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] px-4 py-2.5 flex items-center gap-3 self-start sm:self-center shrink-0">
-              <Clock className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0" />
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-                  {tr('Menuju Rilis Jadwal Ini', 'Countdown to Release')}
-                </div>
-                <div
-                  data-testid="macro-t5-countdown-timer"
-                  className="text-lg sm:text-xl font-black font-mono tabular-nums tracking-tight text-[#151D2A] dark:text-[#F2F4F7]"
-                >
-                  {lockState.countdownHms}{' '}
-                  <span className="text-[11px] font-normal text-[#697586] dark:text-[#929BA9]">
-                    {tr('menuju rilis', 'to release')}
-                  </span>
-                </div>
-              </div>
+            {/* Countdown Box Minimalis */}
+            <div className="text-right shrink-0">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9] block">
+                {tr('MENUJU RILIS', 'COUNTDOWN')}
+              </span>
+              <span className="text-base sm:text-lg font-mono font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+                {lockInfo.formattedCountdown || '--:--:--'}
+              </span>
+            </div>
+          </div>
+
+          {/* Segmented Probability Bar Tunggal */}
+          <div className="space-y-1.5">
+            <div className="h-1.5 w-full rounded-full overflow-hidden flex bg-[#E5E7EB] dark:bg-[#161B26]">
+              <div style={{ width: `${activeMatrix.buyProbability}%` }} className="bg-[#10B981] transition-all duration-300" />
+              <div style={{ width: `${activeMatrix.sellProbability}%` }} className="bg-[#F43F5E] transition-all duration-300" />
+              <div style={{ width: `${activeMatrix.mixedProbability}%` }} className="bg-[#22D3EE] transition-all duration-300" />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono tabular-nums">
+              <span className="text-[#10B981] font-semibold">BUY {activeMatrix.buyProbability}%</span>
+              <span className="text-[#F43F5E] font-semibold">SELL {activeMatrix.sellProbability}%</span>
+              <span className="text-[#22D3EE] font-semibold">MIXED {activeMatrix.mixedProbability}%</span>
             </div>
           </div>
         </div>
+      </section>
 
-        {/* Honest Live Calendar Error Banner if all multi-proxy & grounding routes fail (Zero-Mock Policy) */}
-        {!isLiveCalendar && (
-          <div
-            data-testid="macro-live-calendar-error-banner"
-            className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-          >
-            <div className="flex items-start gap-2.5">
-              <AlertTriangle className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <div className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7]">
-                  Koneksi Live Gagal — Tidak ada data palsu ditampilkan. Periksa internet lalu tekan Analisis Live ulang.
-                </div>
-                <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                  Gagal memuat kalender live — periksa koneksi atau coba refresh.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => runLiveAnalysis(true, snapshot, selectedEventId)}
-              className="px-3.5 py-1.5 rounded-lg bg-[#1769E8] dark:bg-[#3478DC] text-white text-xs font-bold shrink-0 self-start sm:self-center cursor-pointer"
-            >
-              {tr('Analisis Live Ulang', 'Retry Live Analysis')}
-            </button>
-          </div>
-        )}
-
-        {/* Active Event Group Title + LIVE FEED VERIFIED Badge */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-          <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#1769E8] dark:text-[#3478DC]">
-              {tr(' JADWAL RILIS YANG DIANALISIS', 'ANALYZED RELEASE GROUP')}
-            </span>
-            <h2 className="text-sm sm:text-base font-bold text-[#151D2A] dark:text-[#F2F4F7] mt-0.5">
-              {activeClusterTitles}
-            </h2>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {isLiveCalendar ? (
-              <span
-                data-testid="macro-live-feed-verified-badge"
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1769E8] dark:bg-[#3478DC] text-white text-[10px] font-bold tracking-wider uppercase"
-              >
-                <CheckCircle2 className="w-3 h-3 shrink-0" />
-                <span>LIVE FEED VERIFIED</span>
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9] text-[10px] font-bold tracking-wider uppercase">
-                <AlertTriangle className="w-3 h-3 shrink-0" />
-                <span>Koneksi Live Gagal — Tidak ada data palsu ditampilkan. Periksa internet lalu tekan Analisis Live ulang.</span>
-              </span>
-            )}
-            {simultaneousCount > 1 && (
-              <span className="px-2.5 py-1 rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
-                {simultaneousCount} {tr('Indikator Rilis Bersamaan', 'Simultaneous Indicators')}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Middle Row: Large & Clear Pre-News Probabilities (BUY | SELL | MIXED / WHIPSAW) */}
-        <div
-          data-testid="macro-t5-probabilities-grid"
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono tabular-nums"
-        >
-          {/* BUY XAU/USD */}
-          <div
-            className={`rounded-xl p-4 border transition-colors ${
-              activeMatrix.dominantBias === 'BUY'
-                ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#1E232B]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-xs font-sans font-bold text-[#697586] dark:text-[#929BA9]">
-              <span>BUY XAU/USD</span>
-              {activeMatrix.dominantBias === 'BUY' && (
-                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                  DOMINAN
-                </span>
-              )}
-            </div>
-            <div className="mt-1.5 text-2xl sm:text-3xl font-black text-[#1769E8] dark:text-[#3478DC]">
-              {activeMatrix.buyProbability}%
-            </div>
-            <div className="mt-1 text-[11px] font-sans text-[#697586] dark:text-[#929BA9]">
-              BUY XAU/USD ({activeMatrix.buyProbability}%)
-            </div>
-          </div>
-
-          {/* SELL XAU/USD */}
-          <div
-            className={`rounded-xl p-4 border transition-colors ${
-              activeMatrix.dominantBias === 'SELL'
-                ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#1E232B]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-xs font-sans font-bold text-[#697586] dark:text-[#929BA9]">
-              <span>SELL XAU/USD</span>
-              {activeMatrix.dominantBias === 'SELL' && (
-                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                  DOMINAN
-                </span>
-              )}
-            </div>
-            <div className="mt-1.5 text-2xl sm:text-3xl font-black text-[#151D2A] dark:text-[#F2F4F7]">
-              {activeMatrix.sellProbability}%
-            </div>
-            <div className="mt-1 text-[11px] font-sans text-[#697586] dark:text-[#929BA9]">
-              SELL XAU/USD ({activeMatrix.sellProbability}%)
-            </div>
-          </div>
-
-          {/* MIXED / WHIPSAW */}
-          <div
-            className={`rounded-xl p-4 border transition-colors ${
-              activeMatrix.dominantBias === 'MIXED'
-                ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                : 'bg-[#F5F7FA] dark:bg-[#050607] border-[#DDE3EA] dark:border-[#1E232B]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-xs font-sans font-bold text-[#697586] dark:text-[#929BA9]">
-              <span>MIXED / WHIPSAW</span>
-              {activeMatrix.dominantBias === 'MIXED' && (
-                <span className="px-2 py-0.5 rounded text-[9px] font-bold uppercase bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                  DOMINAN
-                </span>
-              )}
-            </div>
-            <div className="mt-1.5 text-2xl sm:text-3xl font-black text-[#151D2A] dark:text-[#F2F4F7]">
-              {activeMatrix.mixedProbability}%
-            </div>
-            <div className="mt-1 text-[11px] font-sans text-[#697586] dark:text-[#929BA9]">
-              MIXED / WHIPSAW ({activeMatrix.mixedProbability}%)
-            </div>
-          </div>
-                </div>
-
-        {/* Institutional Desk Thesis & Proportional 3 FOMC Pillars Mode */}
-        {(activeMatrix.institutionalDeskThesisId || activeMatrix.institutionalDeskThesisEn) && (
-          <div
-            data-testid="institutional-desk-thesis"
-            className="mt-3 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E2328] p-4 space-y-2"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
-                {tr('Tesis Meja Institusi (Institutional Desk Thesis)', 'Institutional Desk Thesis')}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-white dark:bg-[#0B0A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
-                {activeMatrix.evaluationMode === 'FOMC_MEETING'
-                  ? tr('Mode: Rekap Penuh 3 Pilar FOMC', 'Mode: Full 3 FOMC Pillars Recap')
-                  : tr('Mode: Fokus Pilar Spesifik (3 Pilar = Latar Belakang)', 'Mode: Specific Pillar Focus (3 Pillars = Background)')}
-              </span>
-            </div>
-            <p className="text-xs sm:text-[13px] text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed font-medium">
-              {isEn
-                ? (activeMatrix.institutionalDeskThesisEn || activeMatrix.institutionalDeskThesisId)
-                : (activeMatrix.institutionalDeskThesisId || activeMatrix.institutionalDeskThesisEn)}
-            </p>
-          </div>
-        )}
-
-        {/* Bottom Row: Automatic Execution Tactic (2-Second Instant Read) */}
-        <div
-          data-testid="macro-t5-execution-tactic"
-          className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC]"
-        >
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
-              {tr('TAKTIK EKSEKUSI DETIK PERTAMA', 'FIRST-SECOND EXECUTION TACTIC')}
-            </span>
-            <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9]">
-              {isStrongOneWay ? '>= 60% CONVICTION' : 'WHIPSAW PROTECTION'}
-            </span>
-          </div>
-          <p className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed">
-            {isEn ? t5TacticEn : t5TacticId}
-          </p>
-        </div>
-      </div>
-
-      {/* 4. AUTO-SCAN RSS HEADLINE SENTIMENT (Deep Black Card with Left Core Blue Line) */}
-      {topBreaking && (
-        <div
-          data-testid="macro-breaking-sentiment-card"
-          className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 shadow-xs"
-        >
-          <div className="border-l-2 border-[#1769E8] dark:border-[#3478DC] pl-4 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#1769E8] dark:text-[#3478DC]">
-                  {tr('Auto-Scan RSS Headline & Pidato Fed', 'Auto-Scan RSS Headline & Fed Speech')}
-                </span>
-
-                <span
-                  data-testid="breaking-impact-badge"
-                  className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]"
-                >
-                  {topBreaking.impact === 'HIGH' ? 'HIGH IMPACT' : 'LOW IMPACT'}
-                </span>
-
-                <span
-                  data-testid="breaking-sentiment-badge"
-                  className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7]"
-                >
-                  XAU/USD: {topBreaking.sentimentForGold}
-                </span>
-              </div>
-
-              <span className="text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
-                {topBreaking.source}
-              </span>
-            </div>
-
-            <h2 className="text-sm sm:text-base font-bold text-[#151D2A] dark:text-[#F2F4F7] leading-snug">
-              {topBreaking.title}
-            </h2>
-
-            <div className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] text-xs text-[#4B5565] dark:text-[#D1D5DB] leading-relaxed">
-              <strong className="text-[#151D2A] dark:text-[#F2F4F7] font-semibold mr-1.5">
-                {tr('Evaluasi Makro:', 'Macro Evaluation:')}
-              </strong>
-              {isEn ? topBreaking.aiEvaluationEn : topBreaking.aiEvaluationId}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {topBreaking.matchedKeywords.map((kw) => (
-                  <span
-                    key={kw}
-                    className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9] bg-[#F5F7FA] dark:bg-[#101318] px-2 py-0.5 rounded border border border-[#DDE3EA] dark:border-[#20252D]"
-                  >
-                    #{kw}
-                  </span>
-                ))}
-              </div>
-
-              {snapshot.breakingNews.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setShowAllHeadlines((prev) => !prev)}
-                  className="text-xs font-semibold text-[#1769E8] dark:text-[#3478DC] hover:text-[#1458C4] dark:hover:text-[#2860B2] inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <span>
-                    {showAllHeadlines
-                      ? tr('Sembunyikan Headline Lain', 'Hide Other Headlines')
-                      : tr(
-                          `Lihat ${snapshot.breakingNews.length - 1} Headline RSS Lainnya`,
-                          `View ${snapshot.breakingNews.length - 1} Other RSS Headlines`
-                        )}
-                  </span>
-                  {showAllHeadlines ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </button>
-              )}
-            </div>
-          </div>
-
-          {showAllHeadlines && snapshot.breakingNews.length > 1 && (
-            <div className="mt-4 pt-4 border-t border-[#DDE3EA] dark:border-[#20252D] space-y-2.5">
-              {snapshot.breakingNews.slice(1, 10).map((item) => (
-                <div
-                  key={item.id}
-                  className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1.5"
-                >
-                  <div className="flex items-center justify-between text-[11px] text-[#697586] dark:text-[#929BA9]">
-                    <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">{item.source}</span>
-                    <span className="font-semibold text-[#1769E8] dark:text-[#3478DC]">
-                      {item.sentimentForGold}
-                    </span>
-                  </div>
-                  <p className="text-xs font-medium text-[#151D2A] dark:text-[#F2F4F7] leading-snug">{item.title}</p>
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
-                    {isEn ? item.aiEvaluationEn : item.aiEvaluationId}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 5. INTERMARKET PULSE & CME FEDWATCH (FOMC TARGET) — Deep Black Card with Tabular Numbers */}
-      <div
-        data-testid="macro-intermarket-pulse-grid"
-        className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 shadow-xs space-y-4"
-      >
+      {/* 03 / INTERMARKET PULSE 2x2 & CME FEDWATCH */}
+      <section className="py-5 space-y-5">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC]" />
-            <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-              {tr('Intermarket Pulse Real-Time', 'Real-Time Intermarket Pulse')}
-            </h2>
-          </div>
-          <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-            {tr('Konfirmasi DXY, US02Y, US10Y, & USOIL', 'DXY, US02Y, US10Y, & USOIL Confirmation')}
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#697586] dark:text-[#929BA9]">
+            {tr('INTERMARKET PULSE REAL-TIME', 'REAL-TIME INTERMARKET PULSE')}
           </span>
+          <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">DXY • US02Y • US10Y • USOIL</span>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-            {intermarketList.map((item) => {
-            const isUp = item.direction === 'UP';
-            const isDown = item.direction === 'DOWN';
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          {intermarketList.map((asset) => {
+            const displayLabel =
+              asset.symbol === 'US02Y'
+                ? 'US02Y YIELD'
+                : asset.symbol === 'US10Y'
+                ? 'US10Y YIELD'
+                : asset.symbol === 'USOIL'
+                ? 'US OIL (WTI)'
+                : asset.symbol;
+            const formattedPrice =
+              asset.symbol === 'US02Y' || asset.symbol === 'US10Y'
+                ? `${asset.price.toFixed(2)}%`
+                : asset.symbol === 'USOIL'
+                ? `$${asset.price.toFixed(2)}`
+                : asset.price.toFixed(2);
+            const isUp = asset.changePercent > 0;
+            const isDown = asset.changePercent < 0;
 
             return (
-              <div
-                key={item.symbol}
-                data-testid={`intermarket-card-${item.symbol}`}
-                className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-3.5 sm:p-4 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-1 text-[11px]">
-                    <span className="font-semibold text-[#697586] dark:text-[#929BA9] uppercase tracking-wide truncate">
-                      {item.symbol === 'USOIL'
-                        ? 'US OIL (WTI)'
-                        : item.symbol === 'US10Y'
-                        ? 'US10Y YIELD'
-                        : 'DXY'}
-                    </span>
-                    <span
-                      className={`inline-flex items-center font-mono tabular-nums text-[11px] font-bold ${
-                        isUp
-                          ? 'text-[#1769E8] dark:text-[#3478DC]'
-                          : isDown
-                          ? 'text-[#151D2A] dark:text-[#F2F4F7]'
-                          : 'text-[#697586] dark:text-[#929BA9]'
-                      }`}
-                    >
-                      {isUp ? (
-                        <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" />
-                      ) : isDown ? (
-                        <ArrowDownRight className="w-3.5 h-3.5 mr-0.5" />
-                      ) : (
-                        <Minus className="w-3.5 h-3.5 mr-0.5" />
-                      )}
-                      {item.changePercent > 0
-                        ? `+${item.changePercent.toFixed(2)}%`
-                        : `${item.changePercent.toFixed(2)}%`}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 text-lg sm:text-2xl font-black text-[#151D2A] dark:text-[#F2F4F7] font-mono tabular-nums tracking-tight">
-                    {item.symbol === 'USOIL'
-                      ? `$${item.price.toFixed(2)}`
-                      : item.symbol === 'US10Y'
-                      ? `${item.price.toFixed(2)}%`
-                      : item.price.toFixed(2)}
-                  </div>
+              <div key={asset.symbol} className="space-y-0.5">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                    {displayLabel}
+                  </span>
+                  <span
+                    className={`text-[11px] font-mono font-semibold tabular-nums ${
+                      isUp ? 'text-[#1769E8] dark:text-[#3478DC]' : isDown ? 'text-[#F43F5E]' : 'text-[#697586] dark:text-[#929BA9]'
+                    }`}
+                  >
+                    {isUp ? `+${asset.changePercent.toFixed(2)}%` : `${asset.changePercent.toFixed(2)}%`}
+                  </span>
                 </div>
-
-                <p className="mt-2.5 pt-2 border-t border-[#DDE3EA] dark:border-[#1E232B] text-[11px] text-[#697586] dark:text-[#929BA9] leading-snug line-clamp-2">
-                  {isEn ? item.summaryEn : item.summaryId}
+                <div className="text-xl font-bold tabular-nums tracking-tight text-[#151D2A] dark:text-[#F2F4F7]">
+                  {formattedPrice}
+                </div>
+                <p className="text-[11px] text-[#697586] dark:text-[#929BA9] truncate">
+                  {isEn ? asset.summaryEn : asset.summaryId}
                 </p>
               </div>
             );
           })}
         </div>
 
-        {/* COMPACT CME FEDWATCH (FOMC TARGET) BLOCK — 3 Core TradeVault Colors (Black, White, Blue) */}
-        <div
-          data-testid="macro-cme-fedwatch-card"
-          className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-4 space-y-3"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                CME FEDWATCH (FOMC TARGET)
-              </span>
-              <span
-                data-testid="macro-cme-fedwatch-meeting-date"
-                className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#1769E8] dark:text-[#3478DC]"
-              >
-                {activeFedWatch.isAvailable
-                  ? `Target Rapat: ${activeFedWatch.fomcMeetingDate || 'FOMC Desember 2026'}`
-                  : 'Data FedWatch belum tersedia'}
-              </span>
-              {activeFedWatch.isAvailable && activeFedWatch.isPricedInSaturated && (
-                <span
-                  data-testid="macro-cme-fedwatch-saturation-badge"
-                  className="px-2 py-0.5 rounded text-[9.5px] font-bold uppercase bg-[#1769E8] dark:bg-[#3478DC] text-white"
-                >
-                  PRICED-IN SATURATION (&gt;=80%)
-                </span>
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
-              <span
-                data-testid="macro-cme-fedwatch-source"
-                className="px-2.5 py-0.5 rounded bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7] font-semibold"
-              >
-                {activeFedWatch.sourceLabel ||
-                  (activeFedWatch.isAvailable
-                    ? 'Sumber: CME FedWatch Grounding (Des 2026)'
-                    : 'Sumber: Menunggu Sinkronisasi Live')}
-              </span>
-              {activeFedWatch.isAvailable &&
-                typeof activeFedWatch.impliedFedFundsRate === 'number' && (
-                  <span className="px-2 py-0.5 rounded bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#1769E8] dark:text-[#3478DC] font-bold">
-                    Implied Rate: {activeFedWatch.impliedFedFundsRate.toFixed(2)}%
-                    {typeof activeFedWatch.zqFuturesPrice === 'number'
-                      ? ` (ZQ=F ${activeFedWatch.zqFuturesPrice.toFixed(2)})`
-                      : ''}
-                  </span>
-                )}
-            </div>
-          </div>
-
-          {activeFedWatch.isAvailable &&
-          activeFedWatch.cutProbability !== null &&
-          activeFedWatch.holdProbability !== null ? (
-            <>
-              <div
-                data-testid="macro-cme-fedwatch-probabilities-grid"
-                className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 font-mono tabular-nums"
-              >
-                {/* Rate Hike (+25 bps / lebih) */}
-                <div
-                  data-testid="macro-cme-fedwatch-hike-box"
-                  className={`rounded-lg p-3 border text-center ${
-                    activeFedWatch.dominantOutcome === 'HIKE'
-                      ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                      : 'bg-white dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#20252D]'
-                  }`}
-                >
-                  <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                    Rate Hike (+25 bps / lebih)
-                  </div>
-                  <div className="mt-1 text-base sm:text-xl font-black text-[#151D2A] dark:text-[#F2F4F7]">
-                    {Number(activeFedWatch.hikeProbability ?? 0).toFixed(1)}%
-                  </div>
-                  <div className="mt-0.5 text-[10px] font-sans text-[#697586] dark:text-[#929BA9]">
-                    {activeFedWatch.dominantOutcome === 'HIKE' && activeFedWatch.isPricedInSaturated
-                      ? tr('Hawkish Priced-In (>=80%)', 'Hawkish Priced-In (>=80%)')
-                      : tr('Hawkish USD / Pro-SELL Gold', 'Hawkish USD / Pro-SELL Gold')}
-                  </div>
-                </div>
-
-                {/* Hold (Unchanged) */}
-                <div
-                  data-testid="macro-cme-fedwatch-hold-box"
-                  className={`rounded-lg p-3 border text-center ${
-                    activeFedWatch.dominantOutcome === 'HOLD'
-                      ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                      : 'bg-white dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#20252D]'
-                  }`}
-                >
-                  <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                    Hold (Unchanged)
-                  </div>
-                  <div className="mt-1 text-base sm:text-xl font-black text-[#151D2A] dark:text-[#F2F4F7]">
-                    {Number(activeFedWatch.holdProbability).toFixed(1)}%
-                  </div>
-                  <div className="mt-0.5 text-[10px] font-sans text-[#697586] dark:text-[#929BA9]">
-                    {tr('Suku Bunga Tetap (Pro-SELL Gold)', 'Rates Unchanged (Pro-SELL Gold)')}
-                  </div>
-                </div>
-
-                {/* Rate Cut (-25 bps / lebih) */}
-                <div
-                  data-testid="macro-cme-fedwatch-cut-box"
-                  className={`rounded-lg p-3 border text-center ${
-                    activeFedWatch.dominantOutcome === 'CUT'
-                      ? 'bg-[#EEF2F6] dark:bg-[#101726] border-[#1769E8] dark:border-[#3478DC]'
-                      : 'bg-white dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#20252D]'
-                  }`}
-                >
-                  <div className="text-[10px] font-sans font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
-                    Rate Cut (-25 bps / lebih)
-                  </div>
-                  <div className="mt-1 text-base sm:text-xl font-black text-[#1769E8] dark:text-[#3478DC]">
-                    {Number(activeFedWatch.cutProbability).toFixed(1)}%
-                  </div>
-                  <div className="mt-0.5 text-[10px] font-sans text-[#697586] dark:text-[#929BA9]">
-                    {activeFedWatch.dominantOutcome === 'CUT' && activeFedWatch.isPricedInSaturated
-                      ? tr('Dovish Priced-In (>=80%)', 'Dovish Priced-In (>=80%)')
-                      : tr('Dovish USD / Pro-BUY Gold', 'Dovish USD / Pro-BUY Gold')}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                data-testid="macro-cme-fedwatch-summary-note"
-                className="p-3 rounded-lg bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] text-[11px] sm:text-xs font-medium text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed"
-              >
-                {isEn ? activeFedWatch.summaryNoteEn : activeFedWatch.summaryNoteId}
-              </div>
-            </>
-          ) : (
-            <div
-              data-testid="macro-cme-fedwatch-unavailable"
-              className="p-3 rounded-lg bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] flex items-center justify-between gap-2 text-xs text-[#697586] dark:text-[#929BA9]"
-            >
-              <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
-                Data FedWatch belum tersedia
-              </span>
-              <span className="text-[11px]">
-                {tr(
-                  'Tekan Analisis Live untuk menarik probabilitas CME FedWatch Desember 2026 atau Implied Fed Funds Futures (ZQ=F).',
-                  'Press Live Analysis to pull December 2026 CME FedWatch probabilities or Implied Fed Funds Futures (ZQ=F).'
-                )}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 6. PRE-NEWS SCENARIO MATRIX (Deep Black Card with Dashboard Deep Blue Accents) */}
-      <div
-        data-testid="macro-scenario-matrix-card"
-        className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 sm:p-6 shadow-xs space-y-5"
-      >
-        {/* Matrix Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#DDE3EA] dark:border-[#20252D] pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Layers className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC]" />
-              <h2 className="text-sm sm:text-base font-bold text-[#151D2A] dark:text-[#F2F4F7] uppercase tracking-wide">
-                {tr('Pre-News Scenario Matrix (XAU/USD)', 'Pre-News Scenario Matrix (XAU/USD)')}
-              </h2>
-            </div>
-            <p className="text-xs text-[#697586] dark:text-[#929BA9] mt-0.5">
-              {tr(
-                'Kalkulasi otomatis Forecast vs Previous, deteksi konflik rilis bersamaan, & konfirmasi Intermarket',
-                'Automatic Forecast vs Previous calculation, simultaneous conflict detection, & Intermarket confirmation'
-              )}
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="px-3 py-1 rounded-full bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
-              {pillarBadgeLabel(primaryEv.pillar)}
+        {/* CME FedWatch 1 Baris Ringkas */}
+        <div className="pt-3 border-t border-[#E5E7EB]/60 dark:border-[#20252D]/60 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+              CME FEDWATCH • {activeFedWatch.fomcMeetingDate}
+            </span>
+            <span className="text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
+              {activeFedWatch.isAvailable && typeof activeFedWatch.impliedFedFundsRate === 'number'
+                ? `Implied ${activeFedWatch.impliedFedFundsRate.toFixed(2)}%`
+                : 'ZQ=F Sync'}
             </span>
           </div>
-        </div>
-
-        {/* Dynamic Alerts: Aturan Pindah Haluan, Fed Speech Caution, or Simultaneous Release Conflict */}
-        {(activeMatrix.dynamicPivotTriggered ||
-          activeMatrix.fedSpeechAlertNoteId ||
-          activeMatrix.isSimultaneousRelease) && (
-          <div className="space-y-3">
-            {activeMatrix.dynamicPivotTriggered && (
-              <div
-                data-testid="macro-dynamic-pivot-banner"
-                className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] text-xs leading-relaxed space-y-1.5"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                    {activeMatrix.dynamicPivotType === 'DOVISH_OVERRIDE'
-                      ? 'PINDAH HALUAN: DOVISH OVERRIDE'
-                      : 'PINDAH HALUAN: HAWKISH OVERRIDE'}
-                  </span>
-                  <span className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9]">
-                    {tr('Deteksi Otomatis RSS & Kalender', 'Automatic RSS & Calendar Detection')}
-                  </span>
-                </div>
-                <p className="text-xs text-[#151D2A] dark:text-[#F2F4F7] font-medium leading-relaxed">
-                  {isEn ? activeMatrix.dynamicPivotReasonEn : activeMatrix.dynamicPivotReasonId}
-                </p>
-              </div>
-            )}
-
-            {activeMatrix.fedSpeechAlertNoteId && !activeMatrix.dynamicPivotTriggered && (
-              <div
-                data-testid="macro-fed-speech-alert-note"
-                className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] text-xs text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed flex items-center gap-2.5"
-              >
-                <Info className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0" />
-                <span className="font-medium">
-                  {isEn
-                    ? activeMatrix.fedSpeechAlertNoteEn
-                    : activeMatrix.fedSpeechAlertNoteId}
-                </span>
-              </div>
-            )}
-
-            {activeMatrix.isSimultaneousRelease && (
-              <div
-                data-testid="macro-simultaneous-release-banner"
-                className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-xs leading-relaxed border-l-4 border-l-[#1769E8] dark:border-l-[#3478DC] text-[#151D2A] dark:text-[#F2F4F7]"
-              >
-                <div className="font-bold mb-0.5 flex items-center gap-2">
-                  <span>
-                    {activeMatrix.simultaneousAlignment === 'CONFLICTING_WHIPSAW'
-                      ? tr(
-                          `RISIKO WHIPSAW SAAT RILIS — Simultaneous Release (${simultaneousCount} Data Konflik)`,
-                          `RISIKO WHIPSAW SAAT RILIS — Simultaneous Release (${simultaneousCount} Conflicting Indicators)`
-                        )
-                      : tr(
-                          `Simultaneous Release (${simultaneousCount} Data Searah -> Konfirmasi Kuat)`,
-                          `Simultaneous Release (${simultaneousCount} Aligned Indicators -> High Conviction)`
-                        )}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                  {tr(
-                    'Seluruh indikator USD pada jam rilis yang sama dikelompokkan secara otomatis di bawah ini untuk membandingkan konsensus Forecast vs Previous.',
-                    'All USD indicators releasing at the exact same hour are automatically grouped below to compare Forecast vs Previous consensus.'
-                  )}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Simultaneous Release Group Card (100% Automatic Zero Manual Input) */}
-        <div className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-4 sm:p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#DDE3EA] dark:border-[#1E232B] pb-3.5">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-[#151D2A] dark:text-[#F2F4F7] uppercase tracking-wide">
-                  {simultaneousCount > 1
-                    ? tr(
-                        `Rilis Bersamaan (${simultaneousCount} Indikator USD)`,
-                        `Simultaneous Release (${simultaneousCount} USD Indicators)`
-                      )
-                    : primaryEv.title}
-                </span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
-                  {formatTimestampWib(primaryEv.date, language)}
-                </span>
-              </div>
-              <div className="text-xs text-[#697586] dark:text-[#929BA9] mt-0.5">
-                {tr(
-                  'Perbandingan vertikal Previous | Forecast | Actual langsung dari feed ForexFactory (Zero Manual Input)',
-                  'Vertical Previous | Forecast | Actual comparison directly from ForexFactory feed (Zero Manual Input)'
-                )}
-              </div>
-            </div>
-
-            {/* Corner verification badge on group card header */}
-            <div className="self-start sm:self-center shrink-0">
-              {isLiveCalendar ? (
-                <span
-                  data-testid="macro-group-card-live-verified-badge"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1769E8] dark:bg-[#3478DC] text-white text-[10px] font-bold tracking-wider uppercase"
-                >
-                  <CheckCircle2 className="w-3 h-3 shrink-0" />
-                  <span>LIVE FEED VERIFIED</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9] text-[10px] font-bold tracking-wider">
-                  <span>Gagal memuat kalender live — periksa koneksi atau coba refresh</span>
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Vertical Cluster Comparison of All Indicators in this Release Slot */}
-          <div className="space-y-3.5">
-            {[primaryEv, ...(activeMatrix.simultaneousEvents || [])].map((ev, idx) => (
-              <div
-                key={ev.id}
-                className="p-4 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] space-y-3"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`w-2 h-2 rounded-full shrink-0 ${
-                        ev.impact === 'High'
-                          ? 'bg-[#1769E8] dark:bg-[#3478DC]'
-                          : 'bg-[#697586]'
-                      }`}
-                    />
-                    <span className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7]">
-                      {ev.title}
-                    </span>
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
-                      {ev.pillar}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {ev.isInverseIndicator && (
-                      <span className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9]">
-                        {tr('Aturan Terbalik', 'Inverse Rule')}
-                      </span>
-                    )}
-                    <span
-                      className={`text-[10px] font-bold font-mono px-2.5 py-0.5 rounded border ${
-                        ev.eventBiasForGold === 'BUY'
-                          ? 'text-[#1769E8] dark:text-[#3478DC] bg-[#1769E8]/10 dark:bg-[#3478DC]/15 border-[#1769E8]/30 dark:border-[#3478DC]/30'
-                          : ev.eventBiasForGold === 'SELL'
-                          ? 'text-[#151D2A] dark:text-[#F2F4F7] bg-[#F5F7FA] dark:bg-[#101318] border-[#DDE3EA] dark:border-[#20252D]'
-                          : 'text-[#697586] dark:text-[#929BA9] bg-neutral-500/10 border-transparent'
-                      }`}
-                    >
-                      {ev.eventBiasForGold}
-                    </span>
-                  </div>
-                </div>
-
-                {/* 3-Column Numbers Grid (Previous | Forecast | Actual) */}
-                <div
-                  {...(idx === 0 ? { 'data-testid': 'macro-event-numbers-grid' } : {})}
-                  className="grid grid-cols-3 gap-3"
-                >
-                  <div className="rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-3 text-center">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-                      Previous
-                    </div>
-                    <div className="mt-1 text-base sm:text-lg font-black text-[#4B5565] dark:text-[#D1D5DB] font-mono tabular-nums">
-                      {ev.previous || '—'}
-                    </div>
-                  </div>
-
-                  {/* Forecast Highlight with Deep Dashboard Blue */}
-                  <div className="rounded-lg bg-[#EEF2F6] dark:bg-[#1C2330] border border-[#3478DC]/30 p-3 text-center">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
-                      Forecast
-                    </div>
-                    <div className="mt-1 text-base sm:text-lg font-black text-[#1769E8] dark:text-[#3478DC] font-mono tabular-nums">
-                      {ev.forecast || '—'}
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-3 text-center">
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-                      Actual
-                    </div>
-                    <div className="mt-1 text-base sm:text-lg font-black text-[#151D2A] dark:text-[#F2F4F7] font-mono tabular-nums">
-                      {ev.actual || (
-                        <span className="text-xs text-[#697586] dark:text-[#929BA9] font-normal">
-                          {tr('Menunggu Rilis', 'Pending')}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Event Bias Evaluation Reason */}
-                {ev.biasReasonId && (
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed pt-1 border-t border-[#DDE3EA] dark:border-[#1E232B]">
-                    {isEn ? ev.biasReasonEn : ev.biasReasonId}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Minimalist Probability Bar */}
-        <div
-          data-testid="macro-probability-bar"
-          className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-4 sm:p-5 space-y-4"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-              {tr('Distribusi Probabilitas Skenario Pre-News', 'Pre-News Scenario Probability Distribution')}
-            </span>
-            <span
-              data-testid="macro-dominant-bias-badge"
-              className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-[#151D2A] text-white dark:bg-white dark:text-[#080A0E] shadow-xs"
-            >
-              {tr('Bias Utama:', 'Dominant Bias:')} {activeMatrix.dominantBias}
-            </span>
-          </div>
-
-          {/* Clean Thin Single Bar */}
-          <div className="w-full h-2 rounded-full bg-[#E2E8F0] dark:bg-[#101318] border border-[#CBD5E1] dark:border-[#20252D] overflow-hidden flex">
-            <div
-              style={{ width: `${activeMatrix.buyProbability}%` }}
-              className="bg-[#1769E8] dark:bg-[#3478DC] h-full"
-              title={`BUY XAU/USD: ${activeMatrix.buyProbability}%`}
-            />
-            <div
-              style={{ width: `${activeMatrix.sellProbability}%` }}
-              className="bg-neutral-800 dark:bg-white h-full"
-              title={`SELL XAU/USD: ${activeMatrix.sellProbability}%`}
-            />
-            <div
-              style={{ width: `${activeMatrix.mixedProbability}%` }}
-              className="bg-neutral-400 dark:bg-neutral-600 h-full"
-              title={`MIXED / WHIPSAW: ${activeMatrix.mixedProbability}%`}
-            />
-          </div>
-
-          {/* Clean Numerical Stats Row */}
-          <div className="grid grid-cols-3 gap-3 text-center font-mono tabular-nums">
-            <div className="p-3 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D]">
-              <div className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9] uppercase">
-                BUY XAU/USD
-              </div>
-              <div className="text-base sm:text-lg font-black text-[#1769E8] dark:text-[#3478DC] mt-0.5">
-                {activeMatrix.buyProbability}%
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D]">
-              <div className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9] uppercase">
-                SELL XAU/USD
-              </div>
-              <div className="text-base sm:text-lg font-black text-[#151D2A] dark:text-[#F2F4F7] mt-0.5">
-                {activeMatrix.sellProbability}%
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D]">
-              <div className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9] uppercase">
-                MIXED / WHIPSAW
-              </div>
-              <div className="text-base sm:text-lg font-black text-[#697586] dark:text-[#929BA9] mt-0.5">
-                {activeMatrix.mixedProbability}%
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Adu Argumen Fundamental (Clean Segmented Tabs) */}
-        <div
-          data-testid="macro-arguments-section"
-          className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] p-4 sm:p-5 space-y-4"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-              {tr(
-                'Adu Argumen Fundamental (3 Pilar FOMC)',
-                'Fundamental Arguments (3 FOMC Pillars)'
-              )}
-            </span>
-
-            {/* Segmented Controls */}
-            <div className="inline-flex rounded-xl bg-white dark:bg-[#080A0E] p-1 border border-[#DDE3EA] dark:border-[#20252D] self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => setArgumentTab('BOTH')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  argumentTab === 'BOTH'
-                    ? 'bg-[#151D2A] text-white dark:bg-white dark:text-[#080A0E] shadow-xs'
-                    : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-white'
-                }`}
-              >
-                {tr('Semua', 'Both')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setArgumentTab('BUY')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  argumentTab === 'BUY'
-                    ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white shadow-xs'
-                    : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-white'
-                }`}
-              >
-                BUY ({activeMatrix.buyArguments.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setArgumentTab('SELL')}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                  argumentTab === 'SELL'
-                    ? 'bg-[#151D2A] text-white dark:bg-white dark:text-[#080A0E] shadow-xs'
-                    : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-white'
-                }`}
-              >
-                SELL ({activeMatrix.sellArguments.length})
-              </button>
-            </div>
-          </div>
-
-          <div
-            className={`grid gap-3 ${
-              argumentTab === 'BOTH' ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'
-            }`}
-          >
-            {(argumentTab === 'BOTH' || argumentTab === 'BUY') && (
-              <div className="rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-4 space-y-3">
-                <div className="flex items-center gap-2 text-[#1769E8] dark:text-[#3478DC] font-bold text-xs uppercase tracking-wider">
-                  <TrendingUp className="w-4 h-4" />
-                  <span>{tr('Argumen Pendukung BUY', 'Arguments Supporting BUY')}</span>
-                </div>
-                <div className="space-y-2.5">
-                  {activeMatrix.buyArguments.map((arg, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1"
-                    >
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">{arg.tag}</span>
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] uppercase font-mono">
-                          {arg.pillar}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#4B5565] dark:text-[#D1D5DB] leading-relaxed">
-                        {isEn ? arg.textEn : arg.textId}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {(argumentTab === 'BOTH' || argumentTab === 'SELL') && (
-              <div className="rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-4 space-y-3">
-                <div className="flex items-center gap-2 text-[#151D2A] dark:text-[#F2F4F7] font-bold text-xs uppercase tracking-wider">
-                  <TrendingDown className="w-4 h-4 text-[#697586] dark:text-[#929BA9]" />
-                  <span>{tr('Argumen Pendukung SELL', 'Arguments Supporting SELL')}</span>
-                </div>
-                <div className="space-y-2.5">
-                  {activeMatrix.sellArguments.map((arg, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-lg bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#1E232B] space-y-1"
-                    >
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">{arg.tag}</span>
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] uppercase font-mono">
-                          {arg.pillar}
-                        </span>
-                      </div>
-                      <p className="text-xs text-[#4B5565] dark:text-[#D1D5DB] leading-relaxed">
-                        {isEn ? arg.textEn : arg.textId}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Action Plan & Final Take (Executive Block with Left Deep Blue Accent) */}
-        <div
-          data-testid="macro-final-take-box"
-          className="rounded-xl bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] p-5 space-y-3.5"
-        >
-          <div className="border-l-2 border-[#1769E8] dark:border-[#3478DC] pl-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC]">
-                {tr('Kesimpulan & Rencana Aksi', 'Final Take & Action Plan')}
-              </h3>
-              <span className="text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
-                XAU/USD • {activeMatrix.dominantBias}
+              <span className="text-[10px] uppercase text-[#697586] dark:text-[#929BA9] block">RATE HIKE</span>
+              <span className="text-sm font-bold font-mono tabular-nums text-[#F43F5E]">
+                {(activeFedWatch.hikeProbability ?? 0).toFixed(1)}%
               </span>
             </div>
-
-            <p className="text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7] leading-relaxed">
-              {isEn ? activeMatrix.finalTakeEn : activeMatrix.finalTakeId}
-            </p>
-          </div>
-
-          {/* Action Plan Details */}
-          <div className="p-4 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] text-xs text-[#4B5565] dark:text-[#D1D5DB] leading-relaxed whitespace-pre-line">
-            <strong className="text-[#151D2A] dark:text-[#F2F4F7] block mb-1.5 uppercase text-[10px] tracking-wider">
-              {tr('Taktik Eksekusi:', 'Execution Tactics:')}
-            </strong>
-            {isEn ? activeMatrix.actionPlanEn : activeMatrix.actionPlanId}
-          </div>
-
-          {/* Whipsaw Warning (3 Core Colors: Black Surface, White Text, Blue Accent) */}
-          <div className="p-3.5 rounded-xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] flex items-start gap-3 text-xs">
-            <ShieldAlert className="w-4 h-4 text-[#1769E8] dark:text-[#3478DC] shrink-0 mt-0.5" />
-            <div className="text-[#4B5565] dark:text-[#D1D5DB] leading-relaxed">
-              <strong className="text-[#151D2A] dark:text-[#F2F4F7] font-semibold uppercase text-[10px] tracking-wider mr-1.5">
-                {tr('Peringatan Whipsaw:', 'Whipsaw Warning:')}
-              </strong>
-              {isEn ? activeMatrix.whipsawWarningEn : activeMatrix.whipsawWarningId}
+            <div>
+              <span className="text-[10px] uppercase text-[#697586] dark:text-[#929BA9] block">HOLD</span>
+              <span className="text-sm font-bold font-mono tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+                {(activeFedWatch.holdProbability ?? 0).toFixed(1)}%
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] uppercase text-[#697586] dark:text-[#929BA9] block">RATE CUT</span>
+              <span className="text-sm font-bold font-mono tabular-nums text-[#10B981]">
+                {(activeFedWatch.cutProbability ?? 0).toFixed(1)}%
+              </span>
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* 7. USD ECONOMIC CALENDAR TABLE (Deep Black Table matching Trade Table) */}
-      <div className="rounded-2xl bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#20252D] p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-              {tr(
-                'Jadwal Kalender Ekonomi USD Minggu Ini',
-                'This Week USD Economic Calendar'
-              )}
-            </h3>
-            {/* Small corner status badge: LIVE FEED VERIFIED vs Honest Live Calendar Warning */}
-            {isLiveCalendar ? (
-              <span className="px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                LIVE FEED VERIFIED
-              </span>
-            ) : (
-              <span className="px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-[#F5F7FA] dark:bg-[#050607] border border-[#DDE3EA] dark:border-[#20252D] text-[#151D2A] dark:text-[#F2F4F7]">
-                Gagal memuat kalender live — periksa koneksi atau coba refresh
-              </span>
-            )}
-          </div>
-          <span className="text-[11px] text-[#697586] dark:text-[#929BA9] whitespace-nowrap">
-            ForexFactory Live Feed
+      {/* 04 / TESIS MEJA INSTITUSI & TAKTIK EKSEKUSI */}
+      <section className="py-5 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#1769E8] dark:text-[#3478DC]">
+            {tr('TESIS MEJA INSTITUSI', 'INSTITUTIONAL DESK THESIS')}
+          </span>
+          <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9]">
+            {activeMatrix.evaluationMode === 'FOMC_MEETING'
+              ? tr('Mode: 3 Pilar FOMC Penuh', 'Mode: Full 3 FOMC Pillars')
+              : tr('Mode: Fokus Pilar Spesifik', 'Mode: Specific Pillar Focus')}
           </span>
         </div>
 
-        {/* Mobile View: 2-3 Row Structured Cards (No text clipping on mobile screens) */}
-        <div className="block sm:hidden divide-y divide-[#DDE3EA] dark:divide-[#20252D]">
-          {snapshot.calendarEvents.map((ev: MacroCalendarEvent) => {
-            const evTime = new Date(ev.date).getTime();
-            const isPassedOver2Hours = !isNaN(evTime) && evTime < nowMs - TWO_HOURS_MS;
-            const isNextUpcoming = ev.id === nextUpcomingEvent?.id;
-            const isJustReleased = !isNaN(evTime) && evTime >= nowMs - TWO_HOURS_MS && evTime <= nowMs;
+        <p className="text-xs sm:text-[13px] leading-relaxed text-[#151D2A] dark:text-[#E5E7EB] pl-3 border-l-2 border-[#1769E8] dark:border-[#3478DC]">
+          {isEn
+            ? activeMatrix.institutionalDeskThesisEn || activeMatrix.finalTakeEn
+            : activeMatrix.institutionalDeskThesisId || activeMatrix.finalTakeId}
+        </p>
 
+        <div className="pt-1 space-y-1.5 text-xs text-[#697586] dark:text-[#929BA9]">
+          <p className="text-[#151D2A] dark:text-[#F2F4F7] font-medium">
+            <span className="text-[#1769E8] dark:text-[#3478DC] font-bold uppercase text-[10px] tracking-wider mr-2">
+              {tr('TAKTIK T-5M:', 'T-5M TACTIC:')}
+            </span>
+            {isEn ? t5TacticEn : t5TacticId}
+          </p>
+          {activeMatrix.whipsawWarningId && (
+            <p className="text-[11px] text-[#F59E0B]">
+              <span className="font-bold uppercase mr-1.5">{tr('Whipsaw:', 'Whipsaw:')}</span>
+              {isEn ? activeMatrix.whipsawWarningEn : activeMatrix.whipsawWarningId}
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* 05 / PEMILIH JADWAL TARGET 14 HARI */}
+      <section className="py-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#697586] dark:text-[#929BA9]">
+            {tr('PILIH TARGET RILIS (14 HARI)', 'SELECT TARGET RELEASE (14D)')}
+          </span>
+          <span className="text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
+            {explorerEventGroups.length} {tr('Grup', 'Groups')}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+          {QUICK_SEARCH_FILTERS.map((tag) => {
+            const isSelected = (tag === 'ALL' && !searchQuery) || searchQuery.toUpperCase() === tag;
             return (
-              <div
-                key={ev.id}
-                onClick={() => handleSelectEventGroup(ev.id)}
-                className={`py-3.5 px-2.5 rounded-xl transition-all cursor-pointer ${
-                  isNextUpcoming
-                    ? 'bg-[#1769E8]/5 dark:bg-[#3478DC]/10 border-l-2 border-l-[#1769E8] dark:border-l-[#3478DC]'
-                    : isPassedOver2Hours
-                    ? 'opacity-50 hover:opacity-100'
-                    : 'hover:bg-[#F5F7FA] dark:hover:bg-[#101318]'
+              <button
+                key={tag}
+                type="button"
+                onClick={() => setSearchQuery(tag === 'ALL' ? '' : tag)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-semibold shrink-0 transition-colors ${
+                  isSelected
+                    ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white'
+                    : 'bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]'
                 }`}
               >
-                {/* Row 1: Status Pill + Time WIB + Bias */}
-                <div className="flex items-center justify-between text-[11px] gap-2 mb-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {isNextUpcoming ? (
-                      <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-[#1769E8] dark:bg-[#3478DC] text-white shrink-0">
-                        {tr('BERIKUTNYA', 'NEXT')}
-                      </span>
-                    ) : isPassedOver2Hours ? (
-                      <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold bg-[#E2E8F0] dark:bg-[#1C2330] text-[#697586] dark:text-[#929BA9] shrink-0">
-                        {tr('SELESAI', 'COMPLETED')}
-                      </span>
-                    ) : isJustReleased ? (
-                      <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-[#1769E8]/15 dark:bg-[#3478DC]/20 border border-[#1769E8]/30 text-[#1769E8] dark:text-[#3478DC] shrink-0">
-                        {tr('RILIS', 'RELEASED')}
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded text-[9.5px] font-medium bg-[#F5F7FA] dark:bg-[#101318] text-[#697586] dark:text-[#929BA9] border border-[#DDE3EA] dark:border-[#20252D] shrink-0">
-                        {tr('MENUNGGU', 'PENDING')}
-                      </span>
-                    )}
+                {tag === 'ALL' ? tr('Semua', 'All') : tag}
+              </button>
+            );
+          })}
+        </div>
 
-                    <span className="font-mono text-[#697586] dark:text-[#929BA9] text-[10.5px] truncate">
-                      {formatTimestampWib(ev.date, language)}
-                    </span>
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 text-[#697586] dark:text-[#929BA9] absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={tr('Cari rilis USD (PPI, CPI, NFP, FOMC)...', 'Search USD release (PPI, CPI, NFP, FOMC)...')}
+            className="w-full pl-8 pr-3 py-2 rounded-lg bg-[#F9FAFB] dark:bg-[#0D1117] border border-[#E5E7EB] dark:border-[#20252D] text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#697586] focus:outline-none focus:border-[#3478DC]"
+          />
+        </div>
+
+        <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+          {explorerEventGroups.map((group) => {
+            const isActive = group.groupId === (selectedEventId || nearestUpcomingGroup?.groupId);
+            return (
+              <button
+                key={group.groupId}
+                type="button"
+                onClick={() => handleSelectEventGroup(group.groupId)}
+                className={`w-full py-2.5 px-2 text-left flex items-center justify-between gap-3 rounded-lg transition-colors ${
+                  isActive ? 'bg-[#1769E8]/10 dark:bg-[#3478DC]/15' : 'hover:bg-[#F9FAFB] dark:hover:bg-[#0D1117]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-[11px] font-mono text-[#697586] dark:text-[#929BA9]">
+                    <span>{formatTimestampWib(group.releaseDateIso)}</span>
+                    <span>•</span>
+                    <span>{group.events.length} Data</span>
                   </div>
+                  <p className={`text-xs sm:text-sm font-semibold truncate ${isActive ? 'text-[#1769E8] dark:text-[#3478DC]' : 'text-[#151D2A] dark:text-[#F2F4F7]'}`}>
+                    {group.combinedTitle}
+                  </p>
+                </div>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${
+                    isActive
+                      ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white'
+                      : 'bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]'
+                  }`}
+                >
+                  {isActive ? tr('AKTIF', 'ACTIVE') : tr('PILIH', 'SELECT')}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
+      {/* 06 / PILL SWITCHER SUB-MODUL */}
+      <section className="pt-5 space-y-4">
+        <div className="grid grid-cols-3 p-1 rounded-xl bg-[#F3F4F6] dark:bg-[#0D1117] border border-[#E5E7EB] dark:border-[#20252D]">
+          <button
+            type="button"
+            onClick={() => setActiveSectionTab('THESIS')}
+            className={`py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+              activeSectionTab === 'THESIS'
+                ? 'bg-white dark:bg-[#1A202C] text-[#151D2A] dark:text-[#F2F4F7] shadow-xs'
+                : 'text-[#697586] dark:text-[#929BA9]'
+            }`}
+          >
+            {tr('Rilis & Argumen', 'Data & Thesis')}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSectionTab('RADAR')}
+            className={`py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+              activeSectionTab === 'RADAR'
+                ? 'bg-white dark:bg-[#1A202C] text-[#151D2A] dark:text-[#F2F4F7] shadow-xs'
+                : 'text-[#697586] dark:text-[#929BA9]'
+            }`}
+          >
+            {`Radar & Fed (${snapshot.breakingNews.length + supportingEvents.length})`}
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSectionTab('CALENDAR')}
+            className={`py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+              activeSectionTab === 'CALENDAR'
+                ? 'bg-white dark:bg-[#1A202C] text-[#151D2A] dark:text-[#F2F4F7] shadow-xs'
+                : 'text-[#697586] dark:text-[#929BA9]'
+            }`}
+          >
+            {tr(`Kalender (${snapshot.calendarEvents.length})`, `Calendar (${snapshot.calendarEvents.length})`)}
+          </button>
+        </div>
+
+        {/* TAB 1: RINCIAN ANGKA RILIS BERSAMAAN + ADU ARGUMEN 3 PILAR */}
+        {activeSectionTab === 'THESIS' && (
+          <div className="space-y-6">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                  {tr('ANGKA INDIKATOR TARGET', 'TARGET INDICATOR NUMBERS')}
+                </span>
+                <span className="text-[10px] font-mono text-[#10B981]">LIVE FEED VERIFIED</span>
+              </div>
+
+              <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+                {[primaryEv, ...(activeMatrix.simultaneousEvents || [])].map((ev) => (
+                  <div key={ev.id} className="py-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7]">{ev.title}</span>
+                        <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]">
+                          {ev.pillar}
+                        </span>
+                      </div>
+                      <span
+                        className={`text-[11px] font-bold uppercase ${
+                          ev.eventBiasForGold === 'BUY'
+                            ? 'text-[#10B981]'
+                            : ev.eventBiasForGold === 'SELL'
+                            ? 'text-[#F43F5E]'
+                            : 'text-[#22D3EE]'
+                        }`}
+                      >
+                        {ev.eventBiasForGold}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs font-mono tabular-nums">
+                      <div>
+                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">PREVIOUS</span>
+                        <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">{ev.previous || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#1769E8] dark:text-[#3478DC] block">FORECAST</span>
+                        <span className="font-semibold text-[#1769E8] dark:text-[#3478DC]">{ev.forecast || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">ACTUAL</span>
+                        <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
+                          {ev.actual || tr('Menunggu', 'Pending')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
+                      {isEn ? ev.biasReasonEn : ev.biasReasonId}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-[#E5E7EB]/60 dark:border-[#20252D]/60">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                  {tr('ADU ARGUMEN 3 PILAR', '3-PILLAR ARGUMENTS')}
+                </span>
+                <div className="flex items-center gap-1">
+                  {(['BOTH', 'BUY', 'SELL'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setArgumentTab(tab)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
+                        argumentTab === tab
+                          ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white'
+                          : 'text-[#697586] dark:text-[#929BA9]'
+                      }`}
+                    >
+                      {tab === 'BOTH' ? tr('Semua', 'All') : tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+                {(argumentTab === 'BOTH' || argumentTab === 'BUY') &&
+                  activeMatrix.buyArguments.map((arg, i) => (
+                    <div key={`buy-${i}`} className="py-2.5 flex items-start gap-2.5">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#10B981]/15 text-[#10B981] shrink-0 mt-0.5">
+                        BUY
+                      </span>
+                      <p className="text-xs text-[#151D2A] dark:text-[#E5E7EB] leading-relaxed">
+                        {isEn ? arg.textEn : arg.textId}
+                      </p>
+                    </div>
+                  ))}
+                {(argumentTab === 'BOTH' || argumentTab === 'SELL') &&
+                  activeMatrix.sellArguments.map((arg, i) => (
+                    <div key={`sell-${i}`} className="py-2.5 flex items-start gap-2.5">
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#F43F5E]/15 text-[#F43F5E] shrink-0 mt-0.5">
+                        SELL
+                      </span>
+                      <p className="text-xs text-[#151D2A] dark:text-[#E5E7EB] leading-relaxed">
+                        {isEn ? arg.textEn : arg.textId}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-[#E5E7EB]/60 dark:border-[#20252D]/60">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9] block">
+                {tr('RENCANA EKSEKUSI DESK', 'DESK EXECUTION PLAN')}
+              </span>
+              <p className="text-xs text-[#697586] dark:text-[#929BA9] whitespace-pre-line leading-relaxed">
+                {isEn ? activeMatrix.actionPlanEn : activeMatrix.actionPlanId}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: RADAR RSS HEADLINES & PIDATO FOMC (DENGAN TOMBOL ON/OFF) */}
+        {activeSectionTab === 'RADAR' && (
+          <div className="space-y-5">
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                  {tr('AUTO-SCAN RSS HEADLINES', 'AUTO-SCAN RSS HEADLINES')} ({snapshot.breakingNews.length})
+                </span>
+                {snapshot.breakingNews.length > 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllHeadlines((prev) => !prev)}
+                    className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border border-[#E5E7EB] dark:border-[#20252D] text-[#1769E8] dark:text-[#3478DC] flex items-center gap-1"
+                  >
+                    <span>{showAllHeadlines ? tr('ON • Semua', 'ON • All') : tr('OFF • Ringkas', 'OFF • Compact')}</span>
+                    {showAllHeadlines ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  </button>
+                )}
+              </div>
+
+              <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+                {(showAllHeadlines ? snapshot.breakingNews : snapshot.breakingNews.slice(0, 2)).map((item) => (
+                  <div key={item.id} className="py-2.5 space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-[10px]">
+                      <span className="font-semibold text-[#697586] dark:text-[#929BA9]">{item.source}</span>
+                      <span
+                        className={`font-bold uppercase ${
+                          item.sentimentForGold === 'BULLISH'
+                            ? 'text-[#10B981]'
+                            : item.sentimentForGold === 'BEARISH'
+                            ? 'text-[#F43F5E]'
+                            : 'text-[#697586] dark:text-[#929BA9]'
+                        }`}
+                      >
+                        {item.sentimentForGold}
+                      </span>
+                    </div>
+                    <p className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] leading-snug">{item.title}</p>
+                    <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
+                      {isEn ? item.aiEvaluationEn : item.aiEvaluationId}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-3 border-t border-[#E5E7EB]/60 dark:border-[#20252D]/60">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                  {tr('PIDATO FED & KONTEKS PENDUKUNG', 'FED SPEECHES & CONTEXT')} ({supportingEvents.length})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowFedSpeeches((prev) => !prev)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 ${
+                    showFedSpeeches
+                      ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white'
+                      : 'bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]'
+                  }`}
+                >
+                  <span>{showFedSpeeches ? tr('ON • Tampil', 'ON • Shown') : tr('OFF • Sembunyi', 'OFF • Hidden')}</span>
+                  {showFedSpeeches ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              </div>
+
+              {showFedSpeeches ? (
+                <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+                  {supportingEvents.map((ev) => (
+                    <div key={ev.id} className="py-2 flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9] block">
+                          {formatTimestampWib(ev.date)} • {isFedSpeechEvent(ev.title) ? 'PIDATO FED' : 'KONTEKS'}
+                        </span>
+                        <p className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] truncate">{ev.title}</p>
+                      </div>
+                      <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9] shrink-0">
+                        {ev.previous !== '-' ? `P:${ev.previous} F:${ev.forecast}` : ev.eventBiasForGold}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
+                  {tr(
+                    `${supportingEvents.length} jadwal pidato pejabat FOMC & data pendukung dipantau otomatis di latar belakang. Ketuk tombol ON untuk melihat daftarnya.`,
+                    `${supportingEvents.length} FOMC speeches & supporting releases monitored automatically in background. Tap ON to expand list.`
+                  )}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: JADWAL KALENDER EKONOMI USD MINGGU INI (DENGAN TOGGLE ON/OFF) */}
+        {activeSectionTab === 'CALENDAR' && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                {tr('KALENDER EKONOMI USD', 'USD ECONOMIC CALENDAR')} ({snapshot.calendarEvents.length})
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowFullCalendar((prev) => !prev)}
+                className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider transition-colors flex items-center gap-1 ${
+                  showFullCalendar
+                    ? 'bg-[#1769E8] dark:bg-[#3478DC] text-white'
+                    : 'bg-[#F3F4F6] dark:bg-[#131720] text-[#697586] dark:text-[#929BA9]'
+                }`}
+              >
+                <span>{showFullCalendar ? tr('ON • Semua Event', 'ON • All Events') : tr('OFF • High-Impact Saja', 'OFF • High-Impact Only')}</span>
+                {showFullCalendar ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            </div>
+
+            <div className="divide-y divide-[#E5E7EB]/60 dark:divide-[#20252D]/60">
+              {(showFullCalendar
+                ? snapshot.calendarEvents
+                : snapshot.calendarEvents.filter((ev) => isPrimaryHighImpactEvent(ev))
+              ).map((ev) => (
+                <div key={ev.id} className="py-2.5 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#697586] dark:text-[#929BA9]">
+                      <span>{formatTimestampWib(ev.date)}</span>
+                      <span>•</span>
+                      <span>{ev.pillar}</span>
+                    </div>
+                    <p className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] truncate">{ev.title}</p>
+                    <div className="flex items-center gap-3 text-[10px] font-mono text-[#697586] dark:text-[#929BA9] mt-0.5">
+                      <span>Prev: {ev.previous || '-'}</span>
+                      <span className="text-[#1769E8] dark:text-[#3478DC]">Fcst: {ev.forecast || '-'}</span>
+                      <span>Act: {ev.actual || '-'}</span>
+                    </div>
+                  </div>
                   <span
-                    className={`text-[10px] font-bold font-mono px-2 py-0.5 rounded shrink-0 ${
+                    className={`text-[11px] font-bold uppercase shrink-0 ${
                       ev.eventBiasForGold === 'BUY'
-                        ? 'text-[#1769E8] dark:text-[#3478DC] bg-[#1769E8]/10'
+                        ? 'text-[#10B981]'
                         : ev.eventBiasForGold === 'SELL'
-                        ? 'text-[#151D2A] dark:text-[#F2F4F7] bg-[#F5F7FA] dark:bg-[#101318]'
-                        : 'text-[#697586] dark:text-[#929BA9] bg-neutral-500/10'
+                        ? 'text-[#F43F5E]'
+                        : 'text-[#697586] dark:text-[#929BA9]'
                     }`}
                   >
                     {ev.eventBiasForGold}
                   </span>
                 </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
 
-                {/* Row 2: Impact Dot + Title + FOMC Pillar */}
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        ev.impact === 'High'
-                          ? 'bg-[#1769E8] dark:bg-[#3478DC]'
-                          : 'bg-[#697586]'
-                      }`}
-                    />
-                    <span className="font-bold text-xs text-[#151D2A] dark:text-[#F2F4F7] truncate">
-                      {ev.title}
-                    </span>
-                  </div>
-                  <span className="text-[9.5px] font-mono text-[#697586] dark:text-[#929BA9] bg-[#F5F7FA] dark:bg-[#101318] px-1.5 py-0.5 rounded border border-[#DDE3EA] dark:border-[#20252D] shrink-0">
-                    {ev.pillar}
-                  </span>
-                </div>
-
-                {/* Row 3: Compact 3-Column Metrics (Prev | Forecast | Actual) with zero clipping */}
-                <div className="grid grid-cols-3 gap-2 bg-[#F5F7FA] dark:bg-[#050607] p-2 rounded-lg text-center font-mono text-xs border border-[#DDE3EA] dark:border-[#1E232B]">
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-                      Prev
-                    </div>
-                    <div className="font-semibold text-[#697586] dark:text-[#929BA9] mt-0.5 tabular-nums">
-                      {ev.previous || '—'}
-                    </div>
-                  </div>
-                  <div className="border-x border-[#DDE3EA] dark:border-[#1E232B]">
-                    <div className="text-[9px] uppercase tracking-wider text-[#1769E8] dark:text-[#3478DC] font-bold">
-                      Fcst
-                    </div>
-                    <div className="font-black text-[#1769E8] dark:text-[#3478DC] mt-0.5 tabular-nums">
-                      {ev.forecast || '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[9px] uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7] font-semibold">
-                      Act
-                    </div>
-                    <div className="font-black text-[#151D2A] dark:text-[#F2F4F7] mt-0.5 tabular-nums">
-                      {ev.actual || '—'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+      {/* MODAL PLAYBOOK RINGKAS */}
+      {showPlaybookGuide && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white dark:bg-[#0B0E14] border border-[#E5E7EB] dark:border-[#20252D] p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7]">
+                {tr('Panduan Pre-News & 12 Hukum Makro', 'Pre-News & 12 Macro Rules Playbook')}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowPlaybookGuide(false)}
+                className="p-1 text-[#697586] dark:text-[#929BA9]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <ul className="space-y-2 text-xs text-[#697586] dark:text-[#929BA9] leading-relaxed list-disc pl-4">
+              <li>{tr('Gunakan bias utama sebagai peta arah, lalu tunggu konfirmasi struktur M1/M5 saat detik rilis.', 'Use dominant bias as directional map, then wait for M1/M5 structure confirmation at release.')}</li>
+              <li>{tr('Cek keselarasan 4 aset Intermarket (DXY, US02Y, US10Y, USOIL) sebelum masuk posisi.', 'Verify 4-asset Intermarket alignment (DXY, US02Y, US10Y, USOIL) before entry.')}</li>
+              <li>{tr('Waspadai Pindah Haluan jika data aktual meleset jauh atau komentar pejabat Fed berbalik arah.', 'Watch for Pivot Override if actual data misses sharply or Fed commentary flips tone.')}</li>
+            </ul>
+          </div>
         </div>
-
-        {/* Desktop View: Full Responsive Financial Table */}
-        <div className="hidden sm:block overflow-x-auto">
-          <table className="min-w-[700px] w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-[#DDE3EA] dark:border-[#20252D] text-[10px] uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
-                <th className="py-3 pr-3 font-semibold w-24">Status</th>
-                <th className="py-3 pr-3 font-semibold">{tr('Waktu (WIB)', 'Time (WIB)')}</th>
-                <th className="py-3 pr-3 font-semibold">{tr('Event USD', 'USD Event')}</th>
-                <th className="py-3 pr-3 font-semibold">{tr('Pilar FOMC', 'FOMC Pillar')}</th>
-                <th className="py-3 pr-3 text-right font-semibold">Prev</th>
-                <th className="py-3 pr-3 text-right font-semibold text-[#1769E8] dark:text-[#3478DC]">
-                  Forecast
-                </th>
-                <th className="py-3 pr-3 text-right font-semibold">Actual</th>
-                <th className="py-3 text-right font-semibold">{tr('Bias XAU/USD', 'XAU/USD Bias')}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#DDE3EA] dark:divide-[#20252D]">
-              {snapshot.calendarEvents.map((ev: MacroCalendarEvent) => {
-                const evTime = new Date(ev.date).getTime();
-                const isPassedOver2Hours = !isNaN(evTime) && evTime < nowMs - TWO_HOURS_MS;
-                const isNextUpcoming = ev.id === nextUpcomingEvent?.id;
-                const isJustReleased =
-                  !isNaN(evTime) && evTime >= nowMs - TWO_HOURS_MS && evTime <= nowMs;
-
-                return (
-                  <tr
-                    key={ev.id}
-                    onClick={() => handleSelectEventGroup(ev.id)}
-                    className={`cursor-pointer transition-colors ${
-                      isNextUpcoming
-                        ? 'bg-[#1769E8]/5 dark:bg-[#3478DC]/10 border-l-2 border-l-[#1769E8] dark:border-l-[#3478DC]'
-                        : isPassedOver2Hours
-                        ? 'opacity-50 hover:opacity-100 hover:bg-[#F5F7FA] dark:hover:bg-[#101318]'
-                        : 'hover:bg-[#F5F7FA] dark:hover:bg-[#101318]'
-                    }`}
-                  >
-                    <td className="py-3.5 pr-3 whitespace-nowrap">
-                      {isNextUpcoming ? (
-                        <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-[#1769E8] dark:bg-[#3478DC] text-white">
-                          {tr('BERIKUTNYA', 'NEXT')}
-                        </span>
-                      ) : isPassedOver2Hours ? (
-                        <span className="px-2 py-0.5 rounded text-[9.5px] font-semibold bg-[#E2E8F0] dark:bg-[#1C2330] text-[#697586] dark:text-[#929BA9]">
-                          {tr('SELESAI', 'COMPLETED')}
-                        </span>
-                      ) : isJustReleased ? (
-                        <span className="px-2 py-0.5 rounded text-[9.5px] font-bold bg-[#1769E8]/15 dark:bg-[#3478DC]/20 border border-[#1769E8]/30 text-[#1769E8] dark:text-[#3478DC]">
-                          {tr('RILIS', 'RELEASED')}
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded text-[9.5px] font-medium bg-[#F5F7FA] dark:bg-[#101318] text-[#697586] dark:text-[#929BA9] border border-[#DDE3EA] dark:border-[#20252D]">
-                          {tr('MENUNGGU', 'PENDING')}
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3.5 pr-3 font-mono text-[11px] text-[#697586] dark:text-[#929BA9] whitespace-nowrap">
-                      {formatTimestampWib(ev.date, language)}
-                    </td>
-                    <td className="py-3.5 pr-3 font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                            ev.impact === 'High'
-                              ? 'bg-[#1769E8] dark:bg-[#3478DC]'
-                              : 'bg-[#697586]'
-                          }`}
-                        />
-                        <span>{ev.title}</span>
-                      </div>
-                    </td>
-                    <td className="py-3.5 pr-3">
-                      <span className="text-[10px] font-mono text-[#697586] dark:text-[#929BA9] bg-[#F5F7FA] dark:bg-[#101318] px-2 py-0.5 rounded border border-[#DDE3EA] dark:border-[#20252D]">
-                        {ev.pillar}
-                      </span>
-                    </td>
-                    <td className="py-3.5 pr-3 text-right font-mono tabular-nums text-[#697586] dark:text-[#929BA9]">
-                      {ev.previous || '—'}
-                    </td>
-                    <td className="py-3.5 pr-3 text-right font-mono tabular-nums font-bold text-[#1769E8] dark:text-[#3478DC]">
-                      {ev.forecast || '—'}
-                    </td>
-                    <td className="py-3.5 pr-3 text-right font-mono tabular-nums font-bold text-[#151D2A] dark:text-[#F2F4F7]">
-                      {ev.actual || '—'}
-                    </td>
-                    <td className="py-3.5 text-right font-mono">
-                      <span
-                        className={`text-[11px] font-bold ${
-                          ev.eventBiasForGold === 'BUY'
-                            ? 'text-[#1769E8] dark:text-[#3478DC]'
-                            : ev.eventBiasForGold === 'SELL'
-                            ? 'text-[#151D2A] dark:text-[#F2F4F7]'
-                            : 'text-[#697586] dark:text-[#929BA9]'
-                        }`}
-                      >
-                        {ev.eventBiasForGold}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
