@@ -16,7 +16,7 @@ import { FinancialAuditModal } from './FinancialAuditModal';
 import { TradingPreferencesModal, PreferenceCategory } from './TradingPreferencesModal';
 import {
   getStandaloneBackendUrl,
-  getEnvStandaloneBackendUrl,
+  getBackendSourceInfo,
   saveStandaloneBackendUrl,
   clearStandaloneBackendUrl,
   testStandaloneBackendConnection,
@@ -72,13 +72,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isConfirmingClearAll, setIsConfirmingClearAll] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Standalone Backend Server (Gemini AI & CORS Proxy) config state
+  // Standalone Backend Server (Supabase Edge Function / Custom Node.js) config state
   const [isEditingBackend, setIsEditingBackend] = useState(false);
+  const [backendInfo, setBackendInfo] = useState(() => getBackendSourceInfo());
   const [backendUrlInput, setBackendUrlInput] = useState(() => getStandaloneBackendUrl());
-  const [activeBackendUrl, setActiveBackendUrl] = useState(() => getStandaloneBackendUrl());
   const [isTestingBackend, setIsTestingBackend] = useState(false);
   const [backendHealth, setBackendHealth] = useState<StandaloneBackendHealthResult | null>(null);
-  const envBackendUrl = getEnvStandaloneBackendUrl();
 
   const demoCount = trades.filter((t) => isDemoTrade(t)).length;
   const realCount = trades.filter((t) => !isDemoTrade(t)).length;
@@ -142,8 +141,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
   const handleSaveBackendUrl = async (andTest = false) => {
     const saved = saveStandaloneBackendUrl(backendUrlInput);
-    setActiveBackendUrl(saved || envBackendUrl);
-    setBackendUrlInput(saved || envBackendUrl);
+    const nextInfo = getBackendSourceInfo();
+    setBackendInfo(nextInfo);
+    setBackendUrlInput(nextInfo.url);
     if (!saved && backendUrlInput.trim()) {
       showFeedback(
         tr(
@@ -157,20 +157,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     showFeedback(
       saved
         ? tr('URL Server Backend Mandiri disimpan.', 'Standalone Backend Server URL saved.')
-        : tr('Override URL dihapus; menggunakan konfigurasi bawaan.', 'URL override cleared; using default configuration.')
+        : tr(
+            'Override URL dihapus; kembali memakai konfigurasi otomatis.',
+            'URL override cleared; reverted to automatic configuration.'
+          )
     );
     if (andTest) {
-      await handleTestBackend(saved || envBackendUrl);
+      await handleTestBackend(nextInfo.url);
     }
   };
 
   const handleResetBackendUrl = () => {
     clearStandaloneBackendUrl();
-    setActiveBackendUrl(envBackendUrl);
-    setBackendUrlInput(envBackendUrl);
+    const nextInfo = getBackendSourceInfo();
+    setBackendInfo(nextInfo);
+    setBackendUrlInput(nextInfo.url);
     setBackendHealth(null);
     showFeedback(
-      envBackendUrl
+      nextInfo.source === 'supabase-edge'
+        ? tr(
+            'Kembali ke Supabase Edge Functions otomatis.',
+            'Reverted to automatic Supabase Edge Functions.'
+          )
+        : nextInfo.url
         ? tr('URL dikembalikan ke bawaan build.', 'URL reset to build default.')
         : tr('Konfigurasi URL Server Backend dikosongkan.', 'Backend Server URL configuration cleared.')
     );
@@ -545,11 +554,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   )}
                 </span>
                 <span className="text-[11px] text-[#697586] dark:text-[#929BA9] block mt-0.5 truncate">
-                  {activeBackendUrl
-                    ? activeBackendUrl
+                  {backendInfo.source === 'supabase-edge'
+                    ? `${tr('Otomatis Supabase Edge:', 'Auto Supabase Edge:')} ${backendInfo.url}`
+                    : backendInfo.url
+                    ? backendInfo.url
                     : tr(
-                        'Belum diatur — APK memakai feed langsung & scanner lokal; atur URL server Node.js mandiri untuk Gemini AI penuh.',
-                        'Not configured — APK uses direct feeds & local scanner; set your standalone Node.js server URL for full Gemini AI.'
+                        'Belum diatur — isi konfigurasi Supabase untuk Edge Function otomatis atau masukkan URL server backend.',
+                        'Not configured — set Supabase config for auto Edge Functions or enter a backend server URL.'
                       )}
                 </span>
               </div>
@@ -557,7 +568,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   disabled={isTestingBackend}
-                  onClick={() => handleTestBackend(isEditingBackend ? backendUrlInput : activeBackendUrl)}
+                  onClick={() => handleTestBackend(isEditingBackend ? backendUrlInput : backendInfo.url)}
                   className="text-xs font-medium text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] disabled:opacity-50 cursor-pointer"
                 >
                   {isTestingBackend ? tr('Menguji...', 'Testing...') : tr('Tes Koneksi', 'Test')}
@@ -565,8 +576,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    const fresh = getBackendSourceInfo();
+                    setBackendInfo(fresh);
                     setIsEditingBackend((prev) => !prev);
-                    setBackendUrlInput(activeBackendUrl);
+                    setBackendUrlInput(fresh.url);
                   }}
                   className="text-xs font-semibold text-[#1458C4] dark:text-[#38BDF8] hover:underline cursor-pointer"
                 >
@@ -595,13 +608,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   type="url"
                   value={backendUrlInput}
                   onChange={(e) => setBackendUrlInput(e.target.value)}
-                  placeholder="https://tradevault-api.up.railway.app"
+                  placeholder="https://xxxx.supabase.co/functions/v1/tradevault-api"
                   className="w-full px-3 py-2 rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#929BA9] focus:outline-none focus:border-[#1458C4] dark:focus:border-[#38BDF8]"
                 />
                 <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
                   {tr(
-                    'Arahkan ke deployment Node.js (server.ts) milik Anda yang menyimpan GEMINI_API_KEY di server — aman dan terpisah penuh dari Google AI Studio.',
-                    'Point to your self-hosted Node.js (server.ts) deployment with server-side GEMINI_API_KEY — secure and completely separate from Google AI Studio.'
+                    'Secara otomatis memakai Supabase Edge Function "tradevault-api" dari proyek Supabase Anda, atau arahkan ke URL backend Node.js lain.',
+                    'Automatically uses your Supabase Edge Function "tradevault-api", or point to any custom Node.js backend URL.'
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
@@ -620,13 +633,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   >
                     {tr('Simpan', 'Save')}
                   </button>
-                  {activeBackendUrl && (
+                  {backendInfo.source === 'custom' && (
                     <button
                       type="button"
                       onClick={handleResetBackendUrl}
                       className="px-3 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9] hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-medium transition-colors cursor-pointer"
                     >
-                      {tr('Reset', 'Reset')}
+                      {tr('Reset ke Otomatis', 'Reset to Auto')}
                     </button>
                   )}
                 </div>

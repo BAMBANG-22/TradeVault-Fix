@@ -78,6 +78,7 @@ export async function analyzeMacroWithGeminiClient(params: {
   const requestPayload = {
     forceRefresh,
     selectedEventId,
+    baselineSnapshot,
     clientFeeds: {
       calendarEvents,
       intermarketPulse,

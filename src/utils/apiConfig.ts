@@ -4,14 +4,22 @@
  */
 
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
+import { getSupabaseConfig, sanitizeSupabaseUrl } from './supabaseClient';
 
 export const STANDALONE_BACKEND_URL_STORAGE_KEY = 'tradevault_standalone_backend_url_v1';
+export const SUPABASE_EDGE_FUNCTION_SLUG = 'tradevault-api';
+
+const SUPABASE_EDGE_SUPPORTED_PATHS = new Set([
+  '/api/health',
+  '/api/proxy',
+  '/api/extract-trade-screenshot',
+  '/api/macro-news/analyze',
+]);
 
 /**
- * Normalizes a standalone backend URL to its clean origin (e.g. "https://api.tradevault.example.com").
- * Strips trailing slashes and accidental "/api/*" path suffixes.
- * Strictly rejects Google AI Studio preview/dev URLs if entered accidentally? No, allow any valid HTTPS/HTTP
- * backend URL the user explicitly configures, while shipping ZERO hardcoded Google AI Studio URLs.
+ * Normalizes a standalone backend URL (Node.js server OR Supabase Edge Function URL).
+ * Strips trailing slashes and accidental `/api/*` endpoint suffixes while preserving
+ * valid base paths such as `/functions/v1/tradevault-api`.
  */
 export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): string {
   if (!rawUrl || typeof rawUrl !== 'string') return '';
@@ -20,7 +28,6 @@ export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): strin
 
   const hasScheme = /^https?:\/\//i.test(clean);
   if (!hasScheme) {
-    // Use http:// only for localhost / LAN IPs, otherwise https://
     const isLocalHost =
       /^localhost(?::\d+)?(?:\/|$)/i.test(clean) ||
       /^127\.0\.0\.1(?::\d+)?(?:\/|$)/i.test(clean) ||
@@ -34,7 +41,10 @@ export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): strin
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return '';
     }
-    return parsed.origin;
+    const cleanPath = parsed.pathname
+      .replace(/\/api(?:\/.*)?$/i, '')
+      .replace(/\/+$/, '');
+    return `${parsed.origin}${cleanPath}`;
   } catch {
     return clean
       .replace(/\/api(?:\/.*)?$/i, '')
@@ -42,54 +52,74 @@ export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): strin
   }
 }
 
-/**
- * Resolves the configured Standalone Backend Server URL in priority order:
- * 1. Explicit user override saved in localStorage (`tradevault_standalone_backend_url_v1`)
- *    so an already-built APK can be pointed to any self-hosted server at runtime without rebuilding.
- * 2. Build-time environment variable `VITE_API_BASE_URL` (set in `.env` or GitHub Actions Secrets).
- * Returns `''` when neither is set.
- */
-export function getStandaloneBackendUrl(): string {
-  let storedUrl = '';
+export function getEnvStandaloneBackendUrl(): string {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) {
+      const envUrl = sanitizeBackendBaseUrl((import.meta as any).env.VITE_API_BASE_URL || '');
+      if (envUrl) return envUrl;
+    }
+  } catch {
+    // ignore import.meta access failure
+  }
+  if (typeof process !== 'undefined' && process?.env) {
+    return sanitizeBackendBaseUrl(process.env.VITE_API_BASE_URL || '');
+  }
+  return '';
+}
+
+export function getStoredStandaloneBackendUrl(): string {
   if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
     try {
       const raw = window.localStorage.getItem(STANDALONE_BACKEND_URL_STORAGE_KEY);
       if (raw) {
-        storedUrl = sanitizeBackendBaseUrl(raw);
+        return sanitizeBackendBaseUrl(raw);
       }
     } catch {
       // ignore localStorage read failure
     }
   }
-  if (storedUrl) {
-    return storedUrl;
-  }
-
-  let envUrl = '';
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) {
-      envUrl = sanitizeBackendBaseUrl((import.meta as any).env.VITE_API_BASE_URL || '');
-    }
-  } catch {
-    // ignore import.meta access failure
-  }
-
-  if (!envUrl && typeof process !== 'undefined' && process?.env) {
-    envUrl = sanitizeBackendBaseUrl(process.env.VITE_API_BASE_URL || '');
-  }
-
-  return envUrl;
+  return '';
 }
 
-export function getEnvStandaloneBackendUrl(): string {
-  try {
-    if (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) {
-      return sanitizeBackendBaseUrl((import.meta as any).env.VITE_API_BASE_URL || '');
-    }
-  } catch {
-    // ignore
+/**
+ * Automatically derives the Supabase Edge Function endpoint URL from the active
+ * Supabase project config (`https://<project>.supabase.co/functions/v1/tradevault-api`).
+ */
+export function getSupabaseEdgeBackendUrl(): string {
+  const cfg = getSupabaseConfig();
+  if (!cfg.url) return '';
+  const cleanOrigin = sanitizeSupabaseUrl(cfg.url);
+  if (!cleanOrigin) return '';
+  return `${cleanOrigin}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`;
+}
+
+export function getBackendSourceInfo(): {
+  url: string;
+  source: 'custom' | 'env' | 'supabase-edge' | 'none';
+} {
+  const stored = getStoredStandaloneBackendUrl();
+  if (stored) {
+    return { url: stored, source: 'custom' };
   }
-  return '';
+  const envUrl = getEnvStandaloneBackendUrl();
+  if (envUrl) {
+    return { url: envUrl, source: 'env' };
+  }
+  const edgeUrl = getSupabaseEdgeBackendUrl();
+  if (edgeUrl) {
+    return { url: edgeUrl, source: 'supabase-edge' };
+  }
+  return { url: '', source: 'none' };
+}
+
+/**
+ * Resolves the active Standalone Backend URL in priority order:
+ * 1. Explicit user override in localStorage (`tradevault_standalone_backend_url_v1`)
+ * 2. Build-time `VITE_API_BASE_URL`
+ * 3. Automatic Supabase Edge Function (`<VITE_SUPABASE_URL>/functions/v1/tradevault-api`)
+ */
+export function getStandaloneBackendUrl(): string {
+  return getBackendSourceInfo().url;
 }
 
 export function saveStandaloneBackendUrl(url: string): string {
@@ -126,23 +156,60 @@ export function isNativeAndroidOrIos(): boolean {
   }
 }
 
+export function isSupabaseEdgeUrl(url: string): boolean {
+  if (!url) return false;
+  const edgeBase = getSupabaseEdgeBackendUrl();
+  if (edgeBase && url.startsWith(edgeBase)) return true;
+  return /\.supabase\.co\/functions\/v1\//i.test(url);
+}
+
+/**
+ * Attaches Supabase `apikey` & `Authorization: Bearer` headers automatically
+ * when calling a Supabase Edge Function endpoint so both signed-in and offline
+ * guest users can invoke the Edge Function seamlessly.
+ */
+function buildBackendAuthHeaders(targetUrl: string): Record<string, string> {
+  if (!isSupabaseEdgeUrl(targetUrl)) {
+    return {};
+  }
+  const cfg = getSupabaseConfig();
+  const anonKey = (cfg.anonKey || '').trim();
+  if (!anonKey) {
+    return {};
+  }
+  return {
+    apikey: anonKey,
+    Authorization: `Bearer ${anonKey}`,
+  };
+}
+
 /**
  * Returns ordered candidate endpoint URLs for a backend API route (e.g. `/api/macro-news/analyze`).
- * - Inside native Capacitor APK: uses ONLY the configured Standalone Backend URL (`VITE_API_BASE_URL` or user setting),
- *   never wasting timeouts on `https://localhost/api/...` and never embedding Google AI Studio URLs.
- * - On Web / Dev Server: tries the configured Standalone Backend URL first (if set), then same-origin relative `/api/...`.
+ * - Inside native Capacitor APK: uses configured custom/env backend URL first, then automatic
+ *   Supabase Edge Function URL (never wasting timeouts on `https://localhost/api/...`).
+ * - On Web / Dev Server: tries custom/env backend URL first (if set), then same-origin `/api/...`,
+ *   then Supabase Edge Function fallback.
  */
 export function getApiEndpointCandidates(apiPath: string): string[] {
   const normalizedPath = apiPath.startsWith('/') ? apiPath : `/${apiPath}`;
-  const baseUrl = getStandaloneBackendUrl();
+  const stored = getStoredStandaloneBackendUrl();
+  const envUrl = getEnvStandaloneBackendUrl();
+  const edgeUrl = getSupabaseEdgeBackendUrl();
   const candidates: string[] = [];
 
-  if (baseUrl) {
-    candidates.push(`${baseUrl}${normalizedPath}`);
+  if (stored) {
+    candidates.push(`${stored}${normalizedPath}`);
+  }
+  if (envUrl && envUrl !== stored) {
+    candidates.push(`${envUrl}${normalizedPath}`);
   }
 
   if (!isNativeAndroidOrIos()) {
     candidates.push(normalizedPath);
+  }
+
+  if (edgeUrl && SUPABASE_EDGE_SUPPORTED_PATHS.has(normalizedPath)) {
+    candidates.push(`${edgeUrl}${normalizedPath}`);
   }
 
   return Array.from(new Set(candidates));
@@ -158,7 +225,8 @@ export interface StandaloneBackendHealthResult {
 }
 
 /**
- * Verifies connectivity and Gemini AI availability on a standalone TradeVault backend (`server.ts`).
+ * Verifies connectivity and Gemini AI availability on a standalone TradeVault backend
+ * (either Supabase Edge Function `tradevault-api` or self-hosted `server.ts`).
  */
 export async function testStandaloneBackendConnection(
   rawUrl?: string
@@ -172,36 +240,74 @@ export async function testStandaloneBackendConnection(
       geminiConfigured: false,
       url: '',
       messageId:
-        'URL Server Backend belum diisi. Masukkan URL server Node.js mandiri Anda (misal Railway / Render / VPS).',
+        'URL Server Backend / Supabase belum tersedia. Isi konfigurasi Supabase atau masukkan URL server backend.',
       messageEn:
-        'Backend Server URL is empty. Enter your standalone Node.js server URL (e.g. Railway / Render / VPS).',
+        'Backend Server / Supabase URL is not available. Configure Supabase or enter a backend server URL.',
     };
   }
 
   const healthUrl = targetBase ? `${targetBase}/api/health` : '/api/health';
+  const authHeaders = buildBackendAuthHeaders(healthUrl);
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 7000);
-    const res = await fetch(healthUrl, {
-      method: 'GET',
-      cache: 'no-store',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    let status = 0;
+    let json: any = null;
 
-    if (!res.ok) {
+    if (isNativeAndroidOrIos() && /^https?:\/\//i.test(healthUrl)) {
+      const response = await CapacitorHttp.get({
+        url: healthUrl,
+        connectTimeout: 8000,
+        readTimeout: 8000,
+        headers: {
+          Accept: 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          ...authHeaders,
+        },
+      });
+      status = response.status;
+      if (typeof response.data === 'string') {
+        try {
+          json = JSON.parse(response.data);
+        } catch {
+          json = null;
+        }
+      } else {
+        json = response.data ?? null;
+      }
+    } else {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(healthUrl, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {
+          Accept: 'application/json',
+          ...authHeaders,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      status = res.status;
+      if (res.ok) {
+        json = await res.json();
+      }
+    }
+
+    if (status < 200 || status >= 300) {
+      const isEdgeNotDeployed = isSupabaseEdgeUrl(healthUrl) && status === 404;
       return {
         reachable: false,
         geminiConfigured: false,
-        url: targetBase || window.location.origin,
-        messageId: `Server merespons HTTP ${res.status}. Pastikan server.ts aktif dan endpoint /api/health tersedia.`,
-        messageEn: `Server responded with HTTP ${res.status}. Ensure server.ts is running and /api/health is available.`,
+        url: targetBase || (typeof window !== 'undefined' ? window.location.origin : ''),
+        messageId: isEdgeNotDeployed
+          ? 'Edge Function "tradevault-api" belum dideploy di Supabase Anda (HTTP 404). Silakan deploy function "tradevault-api" terlebih dahulu.'
+          : `Server merespons HTTP ${status}. Pastikan backend aktif dan endpoint /api/health tersedia.`,
+        messageEn: isEdgeNotDeployed
+          ? 'Edge Function "tradevault-api" is not deployed on your Supabase project yet (HTTP 404).'
+          : `Server responded with HTTP ${status}. Ensure backend is running and /api/health is available.`,
       };
     }
 
-    const json = await res.json();
     const geminiConfigured = Boolean(json?.geminiConfigured);
     const isMarketOpen = typeof json?.isMarketOpen === 'boolean' ? json.isMarketOpen : undefined;
 
@@ -209,31 +315,36 @@ export async function testStandaloneBackendConnection(
       return {
         reachable: false,
         geminiConfigured: false,
-        url: targetBase || window.location.origin,
+        url: targetBase || (typeof window !== 'undefined' ? window.location.origin : ''),
         messageId: 'Endpoint /api/health merespons format tidak valid.',
         messageEn: 'Endpoint /api/health returned an unexpected payload.',
       };
     }
 
+    const isEdge = isSupabaseEdgeUrl(healthUrl);
     return {
       reachable: true,
       geminiConfigured,
       isMarketOpen,
-      url: targetBase || window.location.origin,
+      url: targetBase || (typeof window !== 'undefined' ? window.location.origin : ''),
       messageId: geminiConfigured
-        ? 'Terhubung! Server Backend Mandiri & Gemini AI aktif siap digunakan.'
-        : 'Server terhubung, namun GEMINI_API_KEY belum disetel di environment server tersebut.',
+        ? isEdge
+          ? 'Terhubung ke Supabase Edge Functions & Gemini AI aktif siap digunakan!'
+          : 'Terhubung! Server Backend Mandiri & Gemini AI aktif siap digunakan.'
+        : 'Server terhubung, namun GEMINI_API_KEY / GEMINI_NEWS_API_KEY belum disetel di Secrets server tersebut.',
       messageEn: geminiConfigured
-        ? 'Connected! Standalone Backend Server & Gemini AI are active.'
-        : 'Server reachable, but GEMINI_API_KEY is not configured in that server environment.',
+        ? isEdge
+          ? 'Connected to Supabase Edge Functions & Gemini AI is active!'
+          : 'Connected! Standalone Backend Server & Gemini AI are active.'
+        : 'Server reachable, but GEMINI_API_KEY / GEMINI_NEWS_API_KEY is not configured in server secrets.',
     };
   } catch (err: any) {
     return {
       reachable: false,
       geminiConfigured: false,
       url: targetBase || '',
-      messageId: `Gagal terhubung ke server (${err?.message || 'network timeout'}). Periksa URL HTTPS & status server.`,
-      messageEn: `Failed to reach server (${err?.message || 'network timeout'}). Verify HTTPS URL and server status.`,
+      messageId: `Gagal terhubung ke server (${err?.message || 'network timeout'}). Periksa URL HTTPS & status deploy.`,
+      messageEn: `Failed to reach server (${err?.message || 'network timeout'}). Verify HTTPS URL and deploy status.`,
     };
   }
 }
@@ -251,6 +362,8 @@ export async function nativeHttpGetText(
     return null;
   }
 
+  const authHeaders = buildBackendAuthHeaders(targetUrl);
+
   try {
     const response = await CapacitorHttp.get({
       url: targetUrl,
@@ -262,6 +375,7 @@ export async function nativeHttpGetText(
         'User-Agent':
           'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
+        ...authHeaders,
       },
     });
 
@@ -281,14 +395,16 @@ export async function nativeHttpGetText(
 }
 
 /**
- * Executes a CORS-free native Android/iOS HTTP JSON POST/GET via CapacitorHttp when running inside APK,
- * falling back to standard fetch on web browsers.
+ * Executes a CORS-free native Android/iOS HTTP JSON POST via CapacitorHttp when running inside APK,
+ * falling back to standard fetch on web browsers, and automatically attaching Supabase Edge headers.
  */
 export async function nativeAwarePostJson(
   url: string,
   payload: unknown,
   timeoutMs = 18000
 ): Promise<{ ok: boolean; json: any | null }> {
+  const authHeaders = buildBackendAuthHeaders(url);
+
   if (isNativeAndroidOrIos() && /^https?:\/\//i.test(url)) {
     try {
       const response = await CapacitorHttp.post({
@@ -299,6 +415,7 @@ export async function nativeAwarePostJson(
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
+          ...authHeaders,
         },
         data: payload,
       });
@@ -327,6 +444,7 @@ export async function nativeAwarePostJson(
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
+        ...authHeaders,
       },
       body: JSON.stringify(payload),
       signal: controller.signal,
