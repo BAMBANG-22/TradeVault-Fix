@@ -62,7 +62,7 @@ jobs:
           echo "=== Installed Android SDK Platforms & Build-Tools ==="
           sdkmanager --list_installed | grep -E "platforms;android-|build-tools;" || true
 
-      - name: Prepare persistent Android signing
+      - name: Prepare Android signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -70,6 +70,16 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -euo pipefail
+          VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "Android versionCode: $VERSION_CODE"
+
+          if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 secret is not configured in this repository; building APK with standard Android debug signing."
+            exit 0
+          fi
+
           # Register all signing values for log redaction before later steps inherit them.
           echo "::add-mask::$ANDROID_KEYSTORE_BASE64"
           echo "::add-mask::$ANDROID_KEYSTORE_PASSWORD"
@@ -120,11 +130,7 @@ jobs:
           echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
-          VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
-          echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
           echo "Persistent keystore and private-key credentials verified."
-          echo "Android versionCode: $VERSION_CODE"
 
       - name: Fix Gradle wrapper permissions
         run: chmod +x android/gradlew
