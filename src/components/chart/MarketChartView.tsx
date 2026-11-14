@@ -2266,26 +2266,21 @@ export function isMarketOpenForPair(
     return { isOpen: true, statusText: 'LIVE' };
   }
 
-  // Traditional Markets: Gold (XAUUSD) & Forex
+  // Traditional Markets: Gold (XAUUSD) & Forex — Strictly Monday to Friday (Senin - Jumat)
   const utcDay = date.getUTCDay(); // 0 = Sunday, 1 = Monday, ..., 5 = Friday, 6 = Saturday
   const utcHour = date.getUTCHours();
 
-  // Saturday: Always closed
-  if (utcDay === 6) {
-    return { isOpen: false, statusText: 'PASAR TUTUP (Weekend)' };
+  // Saturday (6) & Sunday (0): Strictly closed all day
+  if (utcDay === 6 || utcDay === 0) {
+    return { isOpen: false, statusText: 'PASAR TUTUP (Sabtu–Minggu)' };
   }
 
-  // Friday after 22:00 UTC (17:00 NY time): Closed
+  // Friday after 22:00 UTC (17:00 NY time): Closed for the weekend
   if (utcDay === 5 && utcHour >= 22) {
-    return { isOpen: false, statusText: 'PASAR TUTUP (Weekend)' };
+    return { isOpen: false, statusText: 'PASAR TUTUP (Sabtu–Minggu)' };
   }
 
-  // Sunday before 21:00 UTC (before Sydney/Tokyo market open): Closed
-  if (utcDay === 0 && utcHour < 21) {
-    return { isOpen: false, statusText: 'PASAR TUTUP (Weekend)' };
-  }
-
-  return { isOpen: true, statusText: 'LIVE' };
+  return { isOpen: true, statusText: 'LIVE (Senin–Jumat)' };
 }
 
 /**
@@ -2319,7 +2314,7 @@ export function getMostRecentFridayCloseTimestamp(now = new Date()): number {
  * guaranteeing that 1m, 3m, 5m, 15m, 1h, 4h, and 1D candles have 100% identical price levels at every
  * point in time and always produce `count` valid trading candles after weekend filtering.
  */
-function generateRealisticCandles(
+export function generateRealisticCandles(
   pairLabel: string,
   basePrice: number,
   volatility: number,
@@ -2458,16 +2453,14 @@ export function sanitizeAndFilterCandles(candles: OhlcCandle[], pairLabel: strin
       return false;
     }
 
-    // b) Buang candle pada jam pasar Forex/Emas libur akhir pekan
+    // b) Buang candle pada jam pasar Forex/Emas libur akhir pekan (Hanya hari kerja Senin–Jumat)
     if (!isCrypto) {
       const d = new Date(Number(c.time) * 1000);
-      const utcDay = d.getUTCDay(); // 0 = Minggu, 5 = Jumat, 6 = Sabtu
+      const utcDay = d.getUTCDay(); // 0 = Minggu, 1..5 = Senin..Jumat, 6 = Sabtu
       const utcHour = d.getUTCHours();
 
-      // Sabtu sepanjang hari: buang
-      if (utcDay === 6) return false;
-      // Minggu sebelum jam 21:00 UTC (Senin 04:00 WIB): buang
-      if (utcDay === 0 && utcHour < 21) return false;
+      // Sabtu (6) & Minggu (0) sepanjang hari: buang (hanya hari kerja Senin–Jumat)
+      if (utcDay === 6 || utcDay === 0) return false;
       // Jumat mulai jam 22:00 UTC: buang
       if (utcDay === 5 && utcHour >= 22) return false;
     }
@@ -2491,7 +2484,7 @@ export function sanitizeAndFilterCandles(candles: OhlcCandle[], pairLabel: strin
   return deduped;
 }
 
-function loadCachedCandles(symbol: string, interval: string, pairLabel = 'XAUUSD'): OhlcCandle[] | null {
+export function loadCachedCandles(symbol: string, interval: string, pairLabel = 'XAUUSD'): OhlcCandle[] | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(getCandleCacheKey(symbol, interval));

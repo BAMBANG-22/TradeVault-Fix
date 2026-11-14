@@ -1,4 +1,5 @@
 import express from 'express';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -6,15 +7,20 @@ import { GoogleGenAI, Type } from '@google/genai';
 import {
   MacroCalendarEvent,
   IntermarketAssetPulse,
+  VixRiskPulse,
+  GoldPositioningPulse,
   BreakingNewsHeadline,
   CmeFedWatchState,
   MacroNewsSnapshot,
+  RssFeedHealthStatus,
+  RssFeedSourceStatus,
   XAUUSD_MACRO_MASTER_PLAYBOOK_SYSTEM_INSTRUCTION,
   parseMacroNumeric,
   classifyFomcPillar,
   isInverseUsdIndicator,
   isRelevantUsdMacroEvent,
   isPrimaryHighImpactEvent,
+  isFedSpeechEvent,
   getSupportingContextEvents,
   evaluateSingleEventForGold,
   filterAndScoreBreakingHeadlines,
@@ -22,8 +28,10 @@ import {
   evaluateCmeFedWatchScoring,
   computeImpliedFedWatchFromMarketQuotes,
   computeDeterministicMacroSnapshot,
+  computeDualHorizonAnalysis,
   isSnapshotFresh,
 } from './src/utils/macroNewsEngine';
+import { isMarketDay } from './src/utils/date';
 
 dotenv.config();
 
@@ -33,18 +41,33 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-// Middleware for parsing large JSON / base64 payloads & CORS for mobile APK
+// Middleware for parsing large JSON / base64 payloads & CORS for standalone mobile APK
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use('/api', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cache-Control, Pragma');
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
   }
   next();
+});
+
+// Standalone healthcheck endpoint for APK & external server verification
+app.get('/api/health', (_req, res) => {
+  const geminiConfigured = Boolean(
+    (process.env.GEMINI_NEWS_API_KEY || process.env.GEMINI_API_KEY || '').trim()
+  );
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  return res.json({
+    ok: true,
+    service: 'tradevault-standalone-backend',
+    geminiConfigured,
+    isMarketOpen: isMarketDay(new Date(), { useUtc: true, enforceFridayCloseUtc: true }),
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Resilient backend proxy endpoint for public financial feeds
@@ -450,8 +473,7 @@ ${geometryHintBlock}
    - If Entry, SL, or TP is not clearly visible on the chart, return null for that field so the user can fill it manually.`;
 
     const candidateModels = [
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
+      'gemini-4-hydrogen',
       'gemini-3.1-flash-lite',
     ];
     let responseText = '';
@@ -668,14 +690,15 @@ ${geometryHintBlock}
         currentPrice: currentPrice ?? null,
         confidence: parsedData.confidence || 0.95,
         notes: parsedData.notes || '',
-        modelUsed: usedModel || 'gemini-3.8-flash',
+        modelUsed: usedModel || 'gemini-4-hydrogen',
       },
     });
   } catch (error: any) {
-    console.error('Error in /api/extract-trade-screenshot:', error);
+    const compactMsg = String(error?.message || error || 'Unknown error').replace(/\s+/g, ' ').slice(0, 240);
+    console.warn('[ScreenshotExtract] Fallback after error:', compactMsg);
     res.status(500).json({
       success: false,
-      error: error.message || 'Terjadi kesalahan saat memproses gambar analisis.',
+      error: error?.message || 'Terjadi kesalahan saat memproses gambar analisis.',
     });
   }
 });
@@ -693,8 +716,11 @@ let cachedMacroFeeds: {
     us02y?: IntermarketAssetPulse;
     usoil: IntermarketAssetPulse;
     us10y: IntermarketAssetPulse;
+    vix?: VixRiskPulse;
+    goldPositioning?: GoldPositioningPulse;
   };
   breakingNews: BreakingNewsHeadline[];
+  rssFeedHealth?: RssFeedHealthStatus;
   cmeFedWatch: CmeFedWatchState;
 } | null = null;
 
@@ -856,35 +882,57 @@ async function fetchForexFactoryCalendarViaGoogleSearch(): Promise<any[]> {
   ).trim();
   if (!newsApiKey) return [];
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey: newsApiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
+  const candidateModels = [
+    'gemini-4-hydrogen',
+    'gemini-3.1-flash-lite',
+  ];
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: `Today is ${todayIso}. Search the live web (ForexFactory / Investing.com US economic calendar for this week and next week) for upcoming and recent USD High-Impact and Medium-Impact economic releases (such as CPI, Core CPI, PPI, Core PPI, NFP, Unemployment Rate, FOMC, PCE, Core PCE, GDP, Retail Sales, ISM PMI, Unemployment Claims).
+  const ai = new GoogleGenAI({
+    apiKey: newsApiKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const calendarPrompt = `Today is ${todayIso}. Search the live web (ForexFactory / Investing.com US economic calendar for this week and next week) for upcoming and recent USD High-Impact and Medium-Impact economic releases (such as CPI, Core CPI, PPI, Core PPI, NFP, Unemployment Rate, FOMC, PCE, Core PCE, GDP, Retail Sales, ISM PMI, Unemployment Claims).
 Return ONLY a valid JSON array (no markdown fences) where each object has:
 { "title": string, "country": "USD", "date": "ISO-8601 UTC timestamp e.g. 2026-11-13T13:30:00Z", "impact": "High" | "Medium", "previous": string, "forecast": string, "actual": string }
-CRITICAL RULE: Do NOT invent or fabricate numbers. Only include events whose exact Previous and Forecast (and Actual if released) are verified from live search results. If no verified calendar figures are found, return [].`,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
+CRITICAL RULE: Do NOT invent or fabricate numbers. Only include events whose exact Previous and Forecast (and Actual if released) are verified from live search results. If no verified calendar figures are found, return [].`;
 
-    const text = (response?.text || '').trim();
-    if (!text) return [];
-    const clean = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-    const firstBracket = clean.indexOf('[');
-    const lastBracket = clean.lastIndexOf(']');
-    if (firstBracket === -1 || lastBracket === -1 || lastBracket <= firstBracket) return [];
-    const parsed = JSON.parse(clean.slice(firstBracket, lastBracket + 1));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
+  for (const model of candidateModels) {
+    const cooldownUntil = newsQuotaCooldownUntilByModel.get(model) || 0;
+    if (Date.now() < cooldownUntil) continue;
+
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: calendarPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const text = (response?.text || '').trim();
+      if (!text) continue;
+      const clean = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+      const firstBracket = clean.indexOf('[');
+      const lastBracket = clean.lastIndexOf(']');
+      if (firstBracket === -1 || lastBracket === -1 || lastBracket <= firstBracket) continue;
+      const parsed = JSON.parse(clean.slice(firstBracket, lastBracket + 1));
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('Quota exceeded')
+      ) {
+        newsQuotaCooldownUntilByModel.set(model, Date.now() + 30 * 60 * 1000);
+        continue;
+      }
+      break;
+    }
   }
+  return [];
 }
 
 async function fetchServerYahooRawQuote(
@@ -894,7 +942,7 @@ async function fetchServerYahooRawQuote(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
     const encodedTicker = encodeURIComponent(yahooTicker);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=15m&range=5d`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=5m&range=5d&_t=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
       headers: {
@@ -911,7 +959,7 @@ async function fetchServerYahooRawQuote(
       const meta = json?.chart?.result?.[0]?.meta;
       if (meta) {
         const regPrice = Number(meta.regularMarketPrice);
-        const prev = Number(meta.chartPreviousClose ?? meta.previousClose);
+        const prev = Number(meta.previousClose ?? meta.chartPreviousClose);
         return {
           price: Number.isFinite(regPrice) && regPrice > 0 ? regPrice : null,
           previousClose: Number.isFinite(prev) && prev > 0 ? prev : null,
@@ -945,8 +993,8 @@ async function fetchServerYahooFedFundsAndTbillQuotes(
       irxYield: irxQuote.price,
       irxPreviousClose: irxQuote.previousClose,
       us2yYield: us2yQuote.price,
-      us10yYield: us10yPulse?.price ?? null,
-      us10yChangePercent: us10yPulse?.changePercent ?? 0,
+      us10yYield: us10yPulse?.isAvailable !== false ? (us10yPulse?.price ?? null) : null,
+      us10yChangePercent: us10yPulse?.isAvailable !== false ? (us10yPulse?.changePercent ?? 0) : 0,
     });
   } catch {
     return createUnavailableFedWatchState();
@@ -985,20 +1033,23 @@ async function fetchLiveCmeFedWatchWithGrounding(
     const backup = await futuresBackupPromise;
     if (backup.isAvailable) {
       cachedCmeFedWatch = { fetchedAt: Date.now(), data: backup };
+      return backup;
     }
-    return backup;
+    return cachedCmeFedWatch?.data?.isAvailable ? cachedCmeFedWatch.data : backup;
   }
 
-  try {
-    const ai = new GoogleGenAI({
-      apiKey: newsApiKey,
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-    });
+  const candidateModels = [
+    'gemini-4-hydrogen',
+    'gemini-3.1-flash-lite',
+  ];
 
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: `Today is ${todayIso}. Use Google Search with these exact specific search queries:
+  const ai = new GoogleGenAI({
+    apiKey: newsApiKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const fedWatchPrompt = `Today is ${todayIso}. Use Google Search with these exact specific search queries:
 1) "CME FedWatch December 2026 FOMC rate probability hike hold cut"
 2) "FedWatch tool target rate probabilities December 2026"
 
@@ -1019,63 +1070,82 @@ Return ONLY a valid JSON object (no markdown fences) with these exact fields:
   "cutProbability": number or null (0 to 100, probability of Rate Cut -25 bps or more, e.g. 0.0),
   "hawkishShiftDetected": boolean (true if probabilities shifted toward Rate Hike / Hold)
 }
-CRITICAL RULE: Do not invent numbers. If search results do not contain the exact percentage figures, set "isAvailable": false so our live 30-Day Fed Funds Futures (ZQ=F) and ^IRX calculator provides the real-time implied rate probabilities.`,
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
+CRITICAL RULE: Do not invent numbers. If search results do not contain the exact percentage figures, set "isAvailable": false so our live 30-Day Fed Funds Futures (ZQ=F) and ^IRX calculator provides the real-time implied rate probabilities.`;
 
-    const rawText = (response?.text || '').trim();
-    if (rawText) {
-      const parsed = parseAiJsonResponse(rawText);
-      const cutVal =
-        parsed.cutProbability !== null && parsed.cutProbability !== undefined
-          ? Number(parsed.cutProbability)
-          : null;
-      const holdVal =
-        parsed.holdProbability !== null && parsed.holdProbability !== undefined
-          ? Number(parsed.holdProbability)
-          : null;
-      const hikeVal =
-        parsed.hikeProbability !== null && parsed.hikeProbability !== undefined
-          ? Number(parsed.hikeProbability)
-          : 0;
+  for (const model of candidateModels) {
+    const cooldownUntil = newsQuotaCooldownUntilByModel.get(model) || 0;
+    if (Date.now() < cooldownUntil) continue;
 
-      if (
-        parsed.isAvailable !== false &&
-        cutVal !== null &&
-        holdVal !== null &&
-        Number.isFinite(cutVal) &&
-        Number.isFinite(holdVal) &&
-        cutVal + holdVal + (Number.isFinite(hikeVal) ? hikeVal : 0) > 0
-      ) {
-        const futuresData = await futuresBackupPromise;
-        const evaluated = evaluateCmeFedWatchScoring({
-          isAvailable: true,
-          fomcMeetingDate: 'FOMC Desember 2026',
-          targetRateRange: String(
-            parsed.targetRateRange || parsed.targetRateBps || futuresData.targetRateRange || ''
-          ),
-          cutProbability: cutVal,
-          holdProbability: holdVal,
-          hikeProbability: Number.isFinite(hikeVal) ? hikeVal : 0,
-          hawkishShiftDetected: Boolean(parsed.hawkishShiftDetected || (hikeVal ?? 0) >= 50),
-          sourceLabel: 'Sumber: CME FedWatch Grounding (Des 2026)',
-          impliedFedFundsRate: futuresData.impliedFedFundsRate ?? null,
-          zqFuturesPrice: futuresData.zqFuturesPrice ?? null,
-          irxTbillYield: futuresData.irxTbillYield ?? null,
-        });
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: fedWatchPrompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
 
-        cachedCmeFedWatch = {
-          fetchedAt: Date.now(),
-          data: evaluated,
-        };
+      const rawText = (response?.text || '').trim();
+      if (rawText) {
+        const parsed = parseAiJsonResponse(rawText);
+        const cutVal =
+          parsed.cutProbability !== null && parsed.cutProbability !== undefined
+            ? Number(parsed.cutProbability)
+            : null;
+        const holdVal =
+          parsed.holdProbability !== null && parsed.holdProbability !== undefined
+            ? Number(parsed.holdProbability)
+            : null;
+        const hikeVal =
+          parsed.hikeProbability !== null && parsed.hikeProbability !== undefined
+            ? Number(parsed.hikeProbability)
+            : 0;
 
-        return evaluated;
+        if (
+          parsed.isAvailable !== false &&
+          cutVal !== null &&
+          holdVal !== null &&
+          Number.isFinite(cutVal) &&
+          Number.isFinite(holdVal) &&
+          cutVal + holdVal + (Number.isFinite(hikeVal) ? hikeVal : 0) > 0
+        ) {
+          const futuresData = await futuresBackupPromise;
+          const evaluated = evaluateCmeFedWatchScoring({
+            isAvailable: true,
+            fomcMeetingDate: 'FOMC Desember 2026',
+            targetRateRange: String(
+              parsed.targetRateRange || parsed.targetRateBps || futuresData.targetRateRange || ''
+            ),
+            cutProbability: cutVal,
+            holdProbability: holdVal,
+            hikeProbability: Number.isFinite(hikeVal) ? hikeVal : 0,
+            hawkishShiftDetected: Boolean(parsed.hawkishShiftDetected || (hikeVal ?? 0) >= 50),
+            sourceLabel: 'Sumber: CME FedWatch Grounding (Des 2026)',
+            impliedFedFundsRate: futuresData.impliedFedFundsRate ?? null,
+            zqFuturesPrice: futuresData.zqFuturesPrice ?? null,
+            irxTbillYield: futuresData.irxTbillYield ?? null,
+          });
+
+          cachedCmeFedWatch = {
+            fetchedAt: Date.now(),
+            data: evaluated,
+          };
+
+          return evaluated;
+        }
       }
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('Quota exceeded')
+      ) {
+        newsQuotaCooldownUntilByModel.set(model, Date.now() + 30 * 60 * 1000);
+        continue;
+      }
+      break;
     }
-  } catch {
-    // Fall through to live ZQ=F & ^IRX bond/futures backup
   }
 
   const backup = await futuresBackupPromise;
@@ -1084,8 +1154,262 @@ CRITICAL RULE: Do not invent numbers. If search results do not contain the exact
       fetchedAt: Date.now(),
       data: backup,
     };
+    return backup;
   }
-  return backup;
+  return cachedCmeFedWatch?.data?.isAvailable ? cachedCmeFedWatch.data : backup;
+}
+
+interface TradingViewCalEvent {
+  title?: string;
+  indicator?: string;
+  date?: string;
+  actual?: number | null;
+  forecast?: number | null;
+  previous?: number | null;
+  unit?: string;
+  scale?: string;
+}
+
+let cachedTradingViewUsEvents: { fetchedAt: number; events: TradingViewCalEvent[] } | null = null;
+
+async function fetchTradingViewUsEventsWindow(minMs: number, maxMs: number): Promise<TradingViewCalEvent[]> {
+  if (cachedTradingViewUsEvents && Date.now() - cachedTradingViewUsEvents.fetchedAt < 2 * 60 * 1000) {
+    return cachedTradingViewUsEvents.events;
+  }
+  try {
+    const fromIso = new Date(minMs - 24 * 60 * 60 * 1000).toISOString();
+    const toIso = new Date(maxMs + 24 * 60 * 60 * 1000).toISOString();
+    const tvUrl = `https://economic-calendar.tradingview.com/events?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&countries=US`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(tvUrl, {
+      cache: 'no-store',
+      headers: {
+        Origin: 'https://www.tradingview.com',
+        Referer: 'https://www.tradingview.com/',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return cachedTradingViewUsEvents?.events || [];
+    const json = await res.json();
+    const list: TradingViewCalEvent[] = Array.isArray(json?.result) ? json.result : [];
+    if (list.length > 0) {
+      cachedTradingViewUsEvents = { fetchedAt: Date.now(), events: list };
+    }
+    return list;
+  } catch {
+    return cachedTradingViewUsEvents?.events || [];
+  }
+}
+
+function formatTradingViewActualString(
+  rawActual: number,
+  tvItem: TradingViewCalEvent,
+  ffUnit: string
+): { formatted: string; numericVal: number; unit: string } {
+  const tvUnit = String(tvItem.unit || '').trim();
+  const tvScale = String(tvItem.scale || '').trim();
+
+  if (ffUnit === 'K' && !tvScale && Math.abs(rawActual) >= 1000) {
+    const kVal = Number((rawActual / 1000).toFixed(1));
+    return { formatted: `${kVal}K`, numericVal: kVal, unit: 'K' };
+  }
+
+  const effectiveUnit =
+    tvUnit === '%'
+      ? '%'
+      : tvScale === 'K' || tvScale === 'M' || tvScale === 'B'
+      ? tvScale
+      : ffUnit || tvUnit || tvScale || '';
+
+  return {
+    formatted: `${rawActual}${effectiveUnit}`,
+    numericVal: rawActual,
+    unit: effectiveUnit,
+  };
+}
+
+function matchTradingViewActualForEvent(
+  ffTitle: string,
+  ffDateIso: string,
+  ffPreviousNum: number | null,
+  ffUnit: string,
+  tvEvents: TradingViewCalEvent[]
+): { formatted: string; numericVal: number; unit: string } | null {
+  const evMs = new Date(ffDateIso).getTime();
+  if (!Number.isFinite(evMs) || evMs > Date.now() - 2 * 60 * 1000) return null;
+
+  const t = ffTitle.toLowerCase();
+  if (isFedSpeechEvent(ffTitle) || /bank holiday|speaks|press conference|minutes|statement/i.test(t)) {
+    return null;
+  }
+
+  const ffIsCore = /\bcore\b/i.test(t);
+  const ffIsMom = /\bm\/m\b/i.test(t);
+  const ffIsYoy = /\by\/y\b/i.test(t);
+  const ffIsQoq = /\bq\/q\b/i.test(t);
+
+  let bestScore = 0;
+  let bestCandidate: TradingViewCalEvent | null = null;
+
+  for (const tv of tvEvents) {
+    if (tv.actual === null || tv.actual === undefined || !Number.isFinite(Number(tv.actual))) continue;
+    const tvMs = new Date(String(tv.date || '')).getTime();
+    if (!Number.isFinite(tvMs) || Math.abs(tvMs - evMs) > 35 * 60 * 1000) continue;
+
+    const tvTitle = String(tv.title || '').toLowerCase();
+    const tvInd = String(tv.indicator || '').toLowerCase();
+    const tvText = `${tvTitle} ${tvInd}`;
+    const tvUnit = String(tv.unit || '').trim();
+    const tvScale = String(tv.scale || '').trim();
+
+    // Strict unit & scale compatibility
+    if (ffUnit === '%' && tvUnit !== '%') continue;
+    if ((ffUnit === 'K' || ffUnit === 'M' || ffUnit === 'B') && tvUnit === '%') continue;
+
+    // Strict period compatibility
+    const tvIsMom = /\bmom\b|\bmm\b|\bm\/m\b/i.test(tvText);
+    const tvIsYoy = /\byoy\b|\byy\b|\by\/y\b/i.test(tvText);
+    const tvIsQoq = /\bqoq\b|\bqq\b|\bq\/q\b/i.test(tvText);
+    if (ffIsMom && !tvIsMom) continue;
+    if (ffIsYoy && !tvIsYoy) continue;
+    if (ffIsQoq && !tvIsQoq) continue;
+
+    // Strict Core vs Headline distinction
+    const tvIsCore = /\bcore\b|ex\s*food|exfood|ex\s*autos/i.test(tvText);
+    if (ffIsCore !== tvIsCore) continue;
+
+    let score = 0;
+    if (/\bcpi\b/i.test(t)) {
+      if (tvText.includes('cleveland') || tvText.includes('cpi-w') || tvText.includes('nsa')) continue;
+      if (tvText.includes('inflation rate') || tvText.includes('cpi')) score += 60;
+    } else if (/\bppi\b/i.test(t)) {
+      if (tvText.includes('machinery') || tvText.includes('trade services')) continue;
+      if (tvText.includes('ppi') || tvText.includes('producer price')) score += 60;
+    } else if (/\bpce\b/i.test(t)) {
+      if (tvText.includes('pce') || tvText.includes('personal consumption')) score += 60;
+    } else if (t.includes('unemployment claims') || t.includes('initial jobless claims')) {
+      if (tvText.includes('continuing') || tvText.includes('4-week')) continue;
+      if (tvText.includes('initial jobless')) score += 70;
+    } else if (t.includes('non-farm employment change') || t === 'nfp') {
+      if (tvText.includes('non farm payrolls') || tvText.includes('nonfarm')) score += 70;
+    } else if (t.includes('adp weekly')) {
+      if (tvText.includes('adp') && tvText.includes('weekly')) score += 65;
+    } else if (t.includes('adp non-farm')) {
+      if (!tvText.includes('weekly') && tvText.includes('adp employment')) score += 65;
+    } else if (t.includes('unemployment rate')) {
+      if (tvText.includes('unemployment rate')) score += 70;
+    } else if (t.includes('average hourly earnings')) {
+      if (tvText.includes('average hourly earnings')) score += 65;
+    } else if (t.includes('retail sales')) {
+      if (tvText.includes('retail sales')) score += 60;
+    } else if (t.includes('gdp price index')) {
+      if (tvText.includes('gdp price')) score += 65;
+    } else if (/\bgdp\b/i.test(t)) {
+      if (tvText.includes('gdp growth')) score += 65;
+    } else if (t.includes('ism manufacturing pmi')) {
+      if (tvText.includes('ism manufacturing pmi')) score += 70;
+    } else if (t.includes('ism services pmi')) {
+      if (tvText.includes('ism services pmi')) score += 70;
+    } else if (t.includes('existing home sales')) {
+      if (tvText.includes('existing home sales')) score += 65;
+    } else if (t.includes('new home sales')) {
+      if (tvText.includes('new home sales')) score += 65;
+    } else if (t.includes('federal budget balance')) {
+      if (tvText.includes('monthly budget') || tvText.includes('federal budget')) score += 65;
+    } else if (t.includes('crude oil inventories')) {
+      if (tvText.includes('eia crude oil stocks change')) score += 65;
+    } else if (t.includes('natural gas storage')) {
+      if (tvText.includes('eia natural gas storage')) score += 65;
+    } else if (t.includes('jolts job openings')) {
+      if (tvText.includes('jolts job openings')) score += 65;
+    } else {
+      const stopWords = new Set(['m/m', 'y/y', 'q/q', 'us', 'final', 'prelim', 'advance', 'revised']);
+      const ffTokens = t.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w));
+      const overlap = ffTokens.filter((w) => tvText.includes(w)).length;
+      if (ffTokens.length > 0 && overlap >= Math.min(2, ffTokens.length)) {
+        score += overlap * 20;
+      }
+    }
+
+    if (score === 0) continue;
+
+    // Bonus for exact timestamp and close previous number
+    if (Math.abs(tvMs - evMs) <= 5 * 60 * 1000) score += 15;
+    if (
+      ffPreviousNum !== null &&
+      tv.previous !== null &&
+      tv.previous !== undefined &&
+      Number.isFinite(Number(tv.previous))
+    ) {
+      const tvPrevNorm =
+        ffUnit === 'K' && !tvScale && Math.abs(Number(tv.previous)) >= 1000
+          ? Number(tv.previous) / 1000
+          : Number(tv.previous);
+      if (Math.abs(tvPrevNorm - ffPreviousNum) <= Math.max(0.2, Math.abs(ffPreviousNum) * 0.08)) {
+        score += 15;
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = tv;
+    }
+  }
+
+  if (!bestCandidate || bestScore < 50) return null;
+  return formatTradingViewActualString(Number(bestCandidate.actual), bestCandidate, ffUnit);
+}
+
+async function enrichEventsWithTradingViewActuals(events: MacroCalendarEvent[]): Promise<MacroCalendarEvent[]> {
+  if (!events || events.length === 0) return events;
+  const nowMs = Date.now();
+  const needsEnrich = events.some(
+    (ev) =>
+      (!ev.actual || !ev.actual.trim()) &&
+      !isFedSpeechEvent(ev.title) &&
+      (ev.forecastNum !== null || ev.previousNum !== null) &&
+      new Date(ev.date).getTime() < nowMs - 2 * 60 * 1000
+  );
+  if (!needsEnrich) return events;
+
+  const times = events.map((e) => new Date(e.date).getTime()).filter((t) => Number.isFinite(t));
+  const minMs = times.length > 0 ? Math.min(...times) : nowMs - 7 * 86400000;
+  const maxMs = times.length > 0 ? Math.max(...times) : nowMs + 7 * 86400000;
+  const tvEvents = await fetchTradingViewUsEventsWindow(minMs, maxMs);
+  if (tvEvents.length === 0) return events;
+
+  return events.map((ev) => {
+    if (ev.actual && ev.actual.trim()) return ev;
+    const matched = matchTradingViewActualForEvent(
+      ev.title,
+      ev.date,
+      ev.previousNum,
+      ev.unit,
+      tvEvents
+    );
+    if (!matched) return ev;
+
+    const evalResult = evaluateSingleEventForGold(
+      ev.title,
+      matched.numericVal,
+      ev.forecastNum,
+      ev.previousNum
+    );
+    return {
+      ...ev,
+      actual: matched.formatted,
+      actualNum: matched.numericVal,
+      unit: matched.unit || ev.unit,
+      eventBiasForGold: evalResult.bias,
+      biasReasonId: evalResult.reasonId,
+      biasReasonEn: evalResult.reasonEn,
+    };
+  });
 }
 
 async function fetchForexFactoryUsdCalendar(): Promise<MacroCalendarEvent[]> {
@@ -1103,18 +1427,46 @@ async function fetchForexFactoryUsdCalendar(): Promise<MacroCalendarEvent[]> {
 
     let combinedRaw = [...thisWeekList, ...nextWeekList];
     const nowTs = Date.now();
+
+    // Step A: Enrich missing past actuals using free public TradingView Economic Calendar API first (0 Gemini tokens)
+    if (combinedRaw.length > 0) {
+      const rawTimes = combinedRaw.map((i: any) => new Date(i.date || 0).getTime()).filter((t) => Number.isFinite(t));
+      const tvEvents =
+        rawTimes.length > 0
+          ? await fetchTradingViewUsEventsWindow(Math.min(...rawTimes), Math.max(...rawTimes))
+          : [];
+      if (tvEvents.length > 0) {
+        combinedRaw = combinedRaw.map((item: any) => {
+          const currentAct = String(item.actual ?? '').trim();
+          if (currentAct) return item;
+          const prevParsed = parseMacroNumeric(String(item.previous ?? item.prev ?? ''));
+          const fcstParsed = parseMacroNumeric(String(item.forecast ?? ''));
+          const unit = fcstParsed.unit || prevParsed.unit || '';
+          const matched = matchTradingViewActualForEvent(
+            String(item.title || ''),
+            String(item.date || ''),
+            prevParsed.value,
+            unit,
+            tvEvents
+          );
+          return matched ? { ...item, actual: matched.formatted } : item;
+        });
+      }
+    }
+
     const hasMissingPastActual = combinedRaw.some((item: any) => {
       const impact = String(item.impact || "").toLowerCase();
       const act = String(item.actual ?? "").trim();
       const evTs = new Date(item.date || 0).getTime();
-      return impact === "high" && !act && !isNaN(evTs) && evTs < nowTs - 5 * 60 * 1000;
+      const hasNums = String(item.forecast ?? "").trim() || String(item.previous ?? item.prev ?? "").trim();
+      return impact === "high" && !act && Boolean(hasNums) && !isFedSpeechEvent(String(item.title || "")) && !isNaN(evTs) && evTs < nowTs - 5 * 60 * 1000;
     });
 
     if (combinedRaw.length === 0) {
       // Fallback to Gemini Google Search Grounding if all direct & proxy feeds are blocked
       combinedRaw = await fetchForexFactoryCalendarViaGoogleSearch();
     } else if (hasMissingPastActual) {
-      // Enrich past High-Impact releases whose actual values are still empty in the public feed
+      // Enrich past High-Impact releases whose actual values are still empty after TradingView
       const enrichedRaw = await fetchForexFactoryCalendarViaGoogleSearch();
       if (Array.isArray(enrichedRaw) && enrichedRaw.length > 0) {
         const enrichedMap = new Map<string, string>();
@@ -1241,17 +1593,18 @@ async function fetchYahooAssetPulse(
   symbol: 'DXY' | 'USOIL' | 'US10Y' | 'US02Y',
   yahooTicker: string,
   name: string,
-  fallbackPrice: number,
-  fallbackPrevClose: number
+  _fallbackPrice: number,
+  _fallbackPrevClose: number
 ): Promise<IntermarketAssetPulse> {
-  let price = fallbackPrice;
-  let previousClose = fallbackPrevClose;
+  let price = 0;
+  let previousClose = 0;
+  let hasLivePrice = false;
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 4500);
     const encodedTicker = encodeURIComponent(yahooTicker);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=15m&range=5d`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=5m&range=5d&_t=${Date.now()}`;
     const res = await fetch(url, {
       cache: 'no-store',
       headers: {
@@ -1266,20 +1619,68 @@ async function fetchYahooAssetPulse(
 
     if (res.ok) {
       const json = await res.json();
-      const meta = json?.chart?.result?.[0]?.meta;
+      const result = json?.chart?.result?.[0];
+      const meta = result?.meta;
       if (meta) {
+        const timestamps: number[] = Array.isArray(result?.timestamp) ? result.timestamp : [];
+        const rawCloses: any[] = result?.indicators?.quote?.[0]?.close || [];
+        const validCloses = rawCloses
+          .map((c, idx) => ({ close: Number(c), ts: timestamps[idx] }))
+          .filter(
+            (item) =>
+              Number.isFinite(item.close) &&
+              item.close > 0 &&
+              (typeof item.ts !== 'number' ||
+                isMarketDay(item.ts, { useUtc: true, enforceFridayCloseUtc: true }))
+          )
+          .map((item) => item.close);
+        const latestCandleClose = validCloses.length > 0 ? validCloses[validCloses.length - 1] : NaN;
         const regPrice = Number(meta.regularMarketPrice);
-        const prev = Number(meta.chartPreviousClose ?? meta.previousClose);
-        if (Number.isFinite(regPrice) && regPrice > 0) {
-          price = regPrice;
-        }
-        if (Number.isFinite(prev) && prev > 0) {
-          previousClose = prev;
+        const effectivePrice =
+          Number.isFinite(regPrice) && regPrice > 0 ? regPrice : latestCandleClose;
+
+        // Prioritize daily previousClose over 5-day chartPreviousClose for accurate intraday change
+        const dailyPrev = Number(meta.previousClose ?? meta.regularMarketPreviousClose);
+        const chartPrev = Number(meta.chartPreviousClose);
+        const prev =
+          Number.isFinite(dailyPrev) && dailyPrev > 0
+            ? dailyPrev
+            : Number.isFinite(chartPrev) && chartPrev > 0
+            ? chartPrev
+            : effectivePrice;
+
+        if (Number.isFinite(effectivePrice) && effectivePrice > 0) {
+          price = effectivePrice;
+          hasLivePrice = true;
+          previousClose =
+            Number.isFinite(prev) && prev > 0 && Math.abs(effectivePrice - prev) > 1e-6
+              ? prev
+              : Number.isFinite(chartPrev) && chartPrev > 0
+              ? chartPrev
+              : effectivePrice;
         }
       }
     }
   } catch {
-    // Use fallback values
+    // Feed unavailable
+  }
+
+  if (!hasLivePrice) {
+    return {
+      symbol,
+      yahooTicker,
+      name,
+      price: 0,
+      previousClose: 0,
+      change: 0,
+      changePercent: 0,
+      direction: 'FLAT',
+      goldCorrelationEffect: 'NEUTRAL',
+      summaryId: `${name} sementara tidak tersedia — skor netral`,
+      summaryEn: `${name} temporarily unavailable — neutral score`,
+      updatedAt: new Date().toISOString(),
+      isAvailable: false,
+    };
   }
 
   const change = Number((price - previousClose).toFixed(3));
@@ -1360,12 +1761,14 @@ async function fetchYahooAssetPulse(
         : 'WTI Crude stable; monitor Strait of Hormuz / Middle East headlines';
   }
 
+  const decimals = symbol === 'USOIL' ? 2 : 3;
+
   return {
     symbol,
     yahooTicker,
     name,
-    price: Number(price.toFixed(2)),
-    previousClose: Number(previousClose.toFixed(2)),
+    price: Number(price.toFixed(decimals)),
+    previousClose: Number(previousClose.toFixed(decimals)),
     change,
     changePercent,
     direction,
@@ -1373,14 +1776,217 @@ async function fetchYahooAssetPulse(
     summaryId,
     summaryEn,
     updatedAt: new Date().toISOString(),
+    isAvailable: true,
+  };
+}
+
+async function fetchServerVixPulse(): Promise<VixRiskPulse> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent('^VIX')}?interval=5m&range=5d&_t=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const json = await res.json();
+      const meta = json?.chart?.result?.[0]?.meta;
+      if (meta) {
+        const regPrice = Number(meta.regularMarketPrice);
+        const prev = Number(meta.previousClose ?? meta.chartPreviousClose);
+        if (Number.isFinite(regPrice) && regPrice > 0) {
+          const previousClose = Number.isFinite(prev) && prev > 0 ? prev : regPrice;
+          const changePercent =
+            previousClose > 0 ? Number((((regPrice - previousClose) / previousClose) * 100).toFixed(2)) : 0;
+          const direction: 'UP' | 'DOWN' | 'FLAT' =
+            changePercent > 1.0 ? 'UP' : changePercent < -1.0 ? 'DOWN' : 'FLAT';
+          return {
+            yahooTicker: '^VIX',
+            price: Number(regPrice.toFixed(2)),
+            changePercent,
+            direction,
+            isAvailable: true,
+          };
+        }
+      }
+    }
+  } catch {
+    // Feed unavailable
+  }
+
+  return {
+    yahooTicker: '^VIX',
+    price: 0,
+    changePercent: 0,
+    direction: 'FLAT',
+    isAvailable: false,
+  };
+}
+
+async function fetchServerGoldPositioning(): Promise<GoldPositioningPulse> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent('GC=F')}?interval=60m&range=5d&_t=${Date.now()}`;
+    const res = await fetch(url, {
+      cache: 'no-store',
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (res.ok) {
+      const json = await res.json();
+      const result = json?.chart?.result?.[0];
+      const meta = result?.meta;
+      const quote = result?.indicators?.quote?.[0] || {};
+      const timestamps: number[] = Array.isArray(result?.timestamp) ? result.timestamp : [];
+      const rawCloses: any[] = quote?.close || [];
+      const rawHighs: any[] = quote?.high || [];
+      const rawLows: any[] = quote?.low || [];
+
+      const bars: Array<{ high: number; low: number; close: number }> = [];
+      for (let i = 0; i < rawCloses.length; i++) {
+        const ts = timestamps[i];
+        if (
+          typeof ts === 'number' &&
+          !isMarketDay(ts, { useUtc: true, enforceFridayCloseUtc: true })
+        ) {
+          continue;
+        }
+        const c = Number(rawCloses[i]);
+        const h = Number(rawHighs[i] ?? c);
+        const l = Number(rawLows[i] ?? c);
+        if (Number.isFinite(c) && c > 0) {
+          bars.push({
+            high: Number.isFinite(h) && h > 0 ? h : c,
+            low: Number.isFinite(l) && l > 0 ? l : c,
+            close: c,
+          });
+        }
+      }
+
+      const validCloses = bars.map((b) => b.close);
+      const regPrice = Number(meta?.regularMarketPrice ?? validCloses[validCloses.length - 1]);
+
+      if (Number.isFinite(regPrice) && regPrice > 0) {
+        const idx3dAgo = validCloses.length >= 24 ? Math.max(0, validCloses.length - 72) : Math.max(0, validCloses.length - 4);
+        const baseClose =
+          validCloses.length >= 3
+            ? validCloses[idx3dAgo]
+            : Number(meta?.chartPreviousClose ?? meta?.previousClose ?? regPrice);
+        const change3dPercent =
+          Number.isFinite(baseClose) && baseClose > 0
+            ? Number((((regPrice - baseClose) / baseClose) * 100).toFixed(2))
+            : 0;
+
+        const base6hClose =
+          validCloses.length >= 7
+            ? validCloses[validCloses.length - 7]
+            : validCloses.length > 0
+            ? validCloses[0]
+            : regPrice;
+        const change6hUsd =
+          Number.isFinite(base6hClose) && base6hClose > 0
+            ? Number((regPrice - base6hClose).toFixed(2))
+            : 0;
+        const change6hPercent =
+          Number.isFinite(base6hClose) && base6hClose > 0
+            ? Number((((regPrice - base6hClose) / base6hClose) * 100).toFixed(2))
+            : 0;
+
+        let atr14_1h = 12.0;
+        if (bars.length >= 3) {
+          const trs: number[] = [];
+          const startIdx = Math.max(1, bars.length - 14);
+          for (let i = startIdx; i < bars.length; i++) {
+            const cur = bars[i];
+            const prev = bars[i - 1];
+            const tr = Math.max(
+              cur.high - cur.low,
+              Math.abs(cur.high - prev.close),
+              Math.abs(cur.low - prev.close)
+            );
+            if (Number.isFinite(tr) && tr > 0) {
+              trs.push(tr);
+            }
+          }
+          if (trs.length > 0) {
+            atr14_1h = Number((trs.reduce((a, b) => a + b, 0) / trs.length).toFixed(2));
+          }
+        }
+
+        const state: GoldPositioningPulse['state'] =
+          change3dPercent >= 1.8 ? 'CROWDED_HIGH' : change3dPercent <= -1.8 ? 'OVERSOLD_LOW' : 'NEUTRAL';
+
+        const noteId =
+          state === 'CROWDED_HIGH'
+            ? `Emas (GC=F) sudah reli +${change3dPercent}% dalam 3–4 hari — posisi long ramai (waspada profit-taking / sell-the-fact).`
+            : state === 'OVERSOLD_LOW'
+            ? `Emas (GC=F) sudah terkoreksi ${change3dPercent}% dalam 3–4 hari — posisi oversold (waspada short squeeze saat rilis).`
+            : `Posisi 3 hari GC=F netral (${change3dPercent >= 0 ? '+' : ''}${change3dPercent}%) — belum ada ekstrem run-up.`;
+        const noteEn =
+          state === 'CROWDED_HIGH'
+            ? `Gold (GC=F) rallied +${change3dPercent}% over 3–4 days — crowded longs (watch for profit-taking / sell-the-fact).`
+            : state === 'OVERSOLD_LOW'
+            ? `Gold (GC=F) dropped ${change3dPercent}% over 3–4 days — oversold positioning (watch for short-covering squeeze).`
+            : `GC=F 3-day positioning is balanced (${change3dPercent >= 0 ? '+' : ''}${change3dPercent}%) — no extreme run-up.`;
+
+        return {
+          yahooTicker: 'GC=F',
+          price: Number(regPrice.toFixed(2)),
+          change3dPercent,
+          change6hUsd,
+          change6hPercent,
+          atr14_1h,
+          state,
+          isAvailable: true,
+          noteId,
+          noteEn,
+        };
+      }
+    }
+  } catch {
+    // Feed unavailable
+  }
+
+  return {
+    yahooTicker: 'GC=F',
+    price: 0,
+    change3dPercent: 0,
+    change6hUsd: 0,
+    change6hPercent: 0,
+    atr14_1h: 12.0,
+    state: 'NEUTRAL',
+    isAvailable: false,
+    noteId: 'Data posisi 3 hari GC=F tidak tersedia',
+    noteEn: 'GC=F 3-day positioning unavailable',
   };
 }
 
 function parseRssXmlItems(
   xmlText: string,
   sourceName: string
-): Array<{ title: string; source: string; pubDate: string; link?: string }> {
-  const items: Array<{ title: string; source: string; pubDate: string; link?: string }> = [];
+): Array<{ title: string; source: string; pubDate: string; link?: string; description?: string }> {
+  const items: Array<{
+    title: string;
+    source: string;
+    pubDate: string;
+    link?: string;
+    description?: string;
+  }> = [];
   if (!xmlText) return items;
 
   const itemMatches = xmlText.match(/<item[\s\S]*?<\/item>/gi) || [];
@@ -1388,12 +1994,14 @@ function parseRssXmlItems(
     const titleMatch = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
     const pubDateMatch = block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i);
     const linkMatch = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i);
+    const descMatch = block.match(/<description[^>]*>([\s\S]*?)<\/description>/i);
     if (titleMatch && titleMatch[1]) {
       items.push({
         title: titleMatch[1],
         source: sourceName,
         pubDate: pubDateMatch?.[1]?.trim() || new Date().toISOString(),
         link: linkMatch?.[1]?.trim(),
+        description: descMatch?.[1]?.trim(),
       });
     }
   }
@@ -1405,87 +2013,320 @@ function getFallbackBreakingHeadlines(): BreakingNewsHeadline[] {
   return [];
 }
 
-async function fetchPublicBreakingHeadlines(): Promise<BreakingNewsHeadline[]> {
-  const feeds = [
-    { url: 'https://www.financialjuice.com/feed.ashx?xy=rss', source: 'FinancialJuice' },
-    { url: 'https://www.fxstreet.com/rss/news', source: 'FXStreet' },
+async function fetchXmlTextFromUrls(urls: string[], timeoutMs = 5000): Promise<string> {
+  for (const url of urls) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(url, {
+        cache: 'no-store',
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          Accept: 'application/rss+xml, application/xml, text/xml, */*',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok) continue;
+      const xml = await res.text();
+      if (xml && xml.includes('<item')) {
+        return xml;
+      }
+    } catch {
+      // Try next fallback URL for this source
+    }
+  }
+  return '';
+}
+
+async function fetchPublicBreakingHeadlines(): Promise<{
+  headlines: BreakingNewsHeadline[];
+  rssFeedHealth: RssFeedHealthStatus;
+}> {
+  const feedConfigs: Array<{
+    id: RssFeedSourceStatus['id'];
+    name: string;
+    urls: string[];
+  }> = [
+    {
+      id: 'FINANCIAL_JUICE',
+      name: 'FinancialJuice',
+      urls: ['https://www.financialjuice.com/feed.ashx?xy=rss'],
+    },
+    {
+      id: 'CNBC',
+      name: 'CNBC Fed/Econ',
+      urls: [
+        'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258',
+        'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664',
+      ],
+    },
+    {
+      id: 'MARKETWATCH',
+      name: 'MarketWatch',
+      urls: [
+        'https://feeds.content.dowjones.io/public/rss/mw_realtimeheadlines',
+        'https://feeds.content.dowjones.io/public/rss/mw_topstories',
+      ],
+    },
+    {
+      id: 'FXSTREET',
+      name: 'FXStreet',
+      urls: [
+        'https://www.fxstreet.com/rss/news',
+        'https://news.google.com/rss/search?q=site:fxstreet.com+(gold+OR+XAUUSD+OR+Fed+OR+FOMC+OR+CPI+OR+PPI+OR+dollar+OR+yield)+when:1d&hl=en-US&gl=US&ceid=US:en',
+      ],
+    },
   ];
+
+  const sourceStatuses: RssFeedSourceStatus[] = [];
+  const combined: Array<{ title: string; source: string; pubDate: string; link?: string }> = [];
 
   try {
     const responses = await Promise.allSettled(
-      feeds.map(async (f) => {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4500);
-        const res = await fetch(f.url, {
-          cache: 'no-store',
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            Accept: 'application/rss+xml, application/xml, text/xml, */*',
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
-          },
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        if (!res.ok) return [];
-        const xml = await res.text();
-        return parseRssXmlItems(xml, f.source);
+      feedConfigs.map(async (cfg) => {
+        const xml = await fetchXmlTextFromUrls(cfg.urls, 5000);
+        const parsed = parseRssXmlItems(xml, cfg.name);
+        return { cfg, parsed };
       })
     );
 
-    const combined: Array<{ title: string; source: string; pubDate: string; link?: string }> = [];
-    for (const r of responses) {
-      if (r.status === 'fulfilled' && Array.isArray(r.value)) {
-        combined.push(...r.value);
+    for (let i = 0; i < responses.length; i++) {
+      const r = responses[i];
+      const cfg = feedConfigs[i];
+      if (r.status === 'fulfilled' && Array.isArray(r.value.parsed) && r.value.parsed.length > 0) {
+        combined.push(...r.value.parsed);
+        sourceStatuses.push({
+          id: cfg.id,
+          name: cfg.name,
+          active: true,
+          itemCount: r.value.parsed.length,
+        });
+      } else {
+        sourceStatuses.push({
+          id: cfg.id,
+          name: cfg.name,
+          active: false,
+          itemCount: 0,
+        });
       }
     }
 
+    const activeCount = sourceStatuses.filter((s) => s.active).length;
+    const rssFeedHealth: RssFeedHealthStatus = {
+      activeCount,
+      totalCount: feedConfigs.length,
+      sources: sourceStatuses,
+      updatedAt: new Date().toISOString(),
+    };
+
     const filtered = filterAndScoreBreakingHeadlines(combined);
-    if (filtered.length > 0) {
-      return filtered;
-    }
-    return getFallbackBreakingHeadlines();
+    return {
+      headlines: filtered.length > 0 ? filtered : getFallbackBreakingHeadlines(),
+      rssFeedHealth,
+    };
   } catch {
-    return getFallbackBreakingHeadlines();
+    return {
+      headlines: getFallbackBreakingHeadlines(),
+      rssFeedHealth: {
+        activeCount: 0,
+        totalCount: feedConfigs.length,
+        sources: feedConfigs.map((c) => ({ id: c.id, name: c.name, active: false, itemCount: 0 })),
+        updatedAt: new Date().toISOString(),
+      },
+    };
   }
 }
 
-async function gatherMacroPublicFeeds(forceRefresh = false) {
-  if (forceRefresh) {
-    cachedMacroFeeds = null;
-    lastServerMacroSnapshot = null;
-    cachedCmeFedWatch = null;
-  }
+function isIntermarketAssetLive(asset?: IntermarketAssetPulse | null): asset is IntermarketAssetPulse {
+  return Boolean(asset && asset.isAvailable !== false && Number.isFinite(asset.price) && asset.price > 0);
+}
 
+function mergeIntermarketPulseSet(
+  primary: {
+    dxy: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
+    usoil: IntermarketAssetPulse;
+    us10y: IntermarketAssetPulse;
+    vix?: VixRiskPulse;
+    goldPositioning?: GoldPositioningPulse;
+  },
+  secondary?: {
+    dxy?: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
+    usoil?: IntermarketAssetPulse;
+    us10y?: IntermarketAssetPulse;
+    vix?: VixRiskPulse;
+    goldPositioning?: GoldPositioningPulse;
+  } | null,
+  tertiary?: {
+    dxy?: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
+    usoil?: IntermarketAssetPulse;
+    us10y?: IntermarketAssetPulse;
+    vix?: VixRiskPulse;
+    goldPositioning?: GoldPositioningPulse;
+  } | null
+): {
+  dxy: IntermarketAssetPulse;
+  us02y?: IntermarketAssetPulse;
+  usoil: IntermarketAssetPulse;
+  us10y: IntermarketAssetPulse;
+  vix?: VixRiskPulse;
+  goldPositioning?: GoldPositioningPulse;
+} {
+  const pickAsset = <T extends IntermarketAssetPulse | undefined>(a: T, b?: IntermarketAssetPulse, c?: IntermarketAssetPulse): T => {
+    if (isIntermarketAssetLive(a)) return a;
+    if (isIntermarketAssetLive(b)) return b as T;
+    if (isIntermarketAssetLive(c)) return c as T;
+    return a;
+  };
+  const pickAvailable = <T extends { isAvailable: boolean; price: number }>(a?: T, b?: T, c?: T): T | undefined => {
+    if (a && a.isAvailable && Number.isFinite(a.price) && a.price > 0) return a;
+    if (b && b.isAvailable && Number.isFinite(b.price) && b.price > 0) return b;
+    if (c && c.isAvailable && Number.isFinite(c.price) && c.price > 0) return c;
+    return a ?? b ?? c;
+  };
+  return {
+    dxy: pickAsset(primary.dxy, secondary?.dxy, tertiary?.dxy),
+    us02y: pickAsset(primary.us02y, secondary?.us02y, tertiary?.us02y),
+    usoil: pickAsset(primary.usoil, secondary?.usoil, tertiary?.usoil),
+    us10y: pickAsset(primary.us10y, secondary?.us10y, tertiary?.us10y),
+    vix: pickAvailable(primary.vix, secondary?.vix, tertiary?.vix),
+    goldPositioning: pickAvailable(primary.goldPositioning, secondary?.goldPositioning, tertiary?.goldPositioning),
+  };
+}
+
+async function gatherMacroPublicFeeds(forceRefresh = false) {
   if (
     !forceRefresh &&
     cachedMacroFeeds &&
     cachedMacroFeeds.calendarEvents.length > 0 &&
-    Date.now() - cachedMacroFeeds.fetchedAt < 5 * 60 * 1000
+    Date.now() - cachedMacroFeeds.fetchedAt < 60 * 1000
   ) {
     return cachedMacroFeeds;
   }
 
-  const [calendarEvents, dxy, us02y, usoil, us10y, breakingNews] = await Promise.all([
+  const prevFeeds = cachedMacroFeeds;
+
+  const [calendarEvents, dxy, us02y, usoil, us10y, vix, goldPositioning, rssBundle] = await Promise.all([
     fetchForexFactoryUsdCalendar(),
-    fetchYahooAssetPulse('DXY', 'DX-Y.NYB', 'US Dollar Index (DXY)', 104.85, 104.42),
-    fetchYahooAssetPulse('US02Y', '2YY=F', 'US 2Y Treasury Yield', 4.25, 4.22),
-    fetchYahooAssetPulse('USOIL', 'CL=F', 'US Oil WTI Crude', 73.4, 71.95),
-    fetchYahooAssetPulse('US10Y', '^TNX', 'US 10Y Treasury Yield', 4.38, 4.31),
+    fetchYahooAssetPulse('DXY', 'DX-Y.NYB', 'US Dollar Index (DXY)', 0, 0),
+    fetchYahooAssetPulse('US02Y', '2YY=F', 'US 2Y Treasury Yield', 0, 0),
+    fetchYahooAssetPulse('USOIL', 'CL=F', 'US Oil WTI Crude', 0, 0),
+    fetchYahooAssetPulse('US10Y', '^TNX', 'US 10Y Treasury Yield', 0, 0),
+    fetchServerVixPulse(),
+    fetchServerGoldPositioning(),
     fetchPublicBreakingHeadlines(),
   ]);
-  const cmeFedWatch = await fetchLiveCmeFedWatchWithGrounding(forceRefresh, us10y);
 
-  cachedMacroFeeds = {
-    fetchedAt: Date.now(),
-    calendarEvents,
-    intermarketPulse: { dxy, us02y, usoil, us10y },
-    breakingNews,
-    cmeFedWatch,
+  const breakingNews = rssBundle.headlines;
+  const rssFeedHealth = rssBundle.rssFeedHealth;
+
+  const mergedPulse = mergeIntermarketPulseSet(
+    { dxy, us02y, usoil, us10y, vix, goldPositioning },
+    prevFeeds?.intermarketPulse
+  );
+
+  const rawFedWatch = await fetchLiveCmeFedWatchWithGrounding(forceRefresh, mergedPulse.us10y);
+  const resolvedFedWatch = rawFedWatch.isAvailable
+    ? rawFedWatch
+    : prevFeeds?.cmeFedWatch?.isAvailable
+    ? prevFeeds.cmeFedWatch
+    : rawFedWatch;
+
+  const resolvedCalendar =
+    calendarEvents.length > 0 ? calendarEvents : prevFeeds?.calendarEvents || [];
+  const resolvedBreakingNews =
+    breakingNews.length > 0 ? breakingNews : prevFeeds?.breakingNews || [];
+  const resolvedRssHealth =
+    rssFeedHealth.activeCount > 0 ? rssFeedHealth : prevFeeds?.rssFeedHealth || rssFeedHealth;
+
+  const nextFeeds = {
+    fetchedAt:
+      calendarEvents.length > 0 ? Date.now() : (prevFeeds?.fetchedAt ?? Date.now()),
+    calendarEvents: resolvedCalendar,
+    intermarketPulse: mergedPulse,
+    breakingNews: resolvedBreakingNews,
+    rssFeedHealth: resolvedRssHealth,
+    cmeFedWatch: resolvedFedWatch,
   };
 
-  return cachedMacroFeeds;
+  if (
+    resolvedCalendar.length > 0 ||
+    resolvedFedWatch.isAvailable ||
+    isIntermarketAssetLive(mergedPulse.dxy) ||
+    isIntermarketAssetLive(mergedPulse.us10y) ||
+    isIntermarketAssetLive(mergedPulse.usoil) ||
+    isIntermarketAssetLive(mergedPulse.us02y)
+  ) {
+    cachedMacroFeeds = nextFeeds;
+  }
+
+  return nextFeeds;
 }
+
+// Multi-Source Server-Side Anti-CORS RSS Aggregator endpoint
+app.get('/api/macro-news/rss', async (_req, res) => {
+  try {
+    const rssBundle = await fetchPublicBreakingHeadlines();
+    if (cachedMacroFeeds) {
+      if (rssBundle.headlines.length > 0) {
+        cachedMacroFeeds.breakingNews = rssBundle.headlines;
+      }
+      cachedMacroFeeds.rssFeedHealth = rssBundle.rssFeedHealth;
+    }
+    res.json({
+      success: true,
+      headlines: rssBundle.headlines,
+      rssFeedHealth: rssBundle.rssFeedHealth,
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Gagal mengambil RSS multi-sumber.',
+    });
+  }
+});
+
+// Real-Time Intermarket Pulse endpoint (0 Gemini tokens, always bypasses feed cache)
+app.get('/api/macro-news/intermarket-live', async (_req, res) => {
+  try {
+    const [dxy, us02y, usoil, us10y, vix, goldPositioning] = await Promise.all([
+      fetchYahooAssetPulse('DXY', 'DX-Y.NYB', 'US Dollar Index (DXY)', 0, 0),
+      fetchYahooAssetPulse('US02Y', '2YY=F', 'US 2Y Treasury Yield', 0, 0),
+      fetchYahooAssetPulse('USOIL', 'CL=F', 'US Oil WTI Crude', 0, 0),
+      fetchYahooAssetPulse('US10Y', '^TNX', 'US 10Y Treasury Yield', 0, 0),
+      fetchServerVixPulse(),
+      fetchServerGoldPositioning(),
+    ]);
+
+    const mergedPulse = mergeIntermarketPulseSet(
+      { dxy, us02y, usoil, us10y, vix, goldPositioning },
+      cachedMacroFeeds?.intermarketPulse
+    );
+
+    if (cachedMacroFeeds) {
+      cachedMacroFeeds.intermarketPulse = mergedPulse;
+    }
+    if (lastServerMacroSnapshot) {
+      lastServerMacroSnapshot.intermarketPulse = mergedPulse;
+    }
+
+    res.json({
+      success: true,
+      intermarketPulse: mergedPulse,
+      fetchedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err?.message || 'Gagal mengambil kuotasi intermarket live.',
+    });
+  }
+});
 
 // Passive public feed check endpoint (0 Gemini tokens consumed)
 app.get('/api/macro-news/feeds', async (_req, res) => {
@@ -1501,16 +2342,22 @@ app.get('/api/macro-news/feeds', async (_req, res) => {
     });
     deterministicSnap.isCalendarLiveFeed =
       feeds.calendarEvents.length > 0 && feeds.calendarEvents.every((e) => e.isLiveFeed === true);
+    deterministicSnap.rssFeedHealth = feeds.rssFeedHealth;
 
     res.json({
       success: true,
       dataFingerprint: deterministicSnap.dataFingerprint,
+      rssFeedHealth: feeds.rssFeedHealth,
       snapshot:
         lastServerMacroSnapshot &&
         lastServerMacroSnapshot.isCalendarLiveFeed &&
         lastServerMacroSnapshot.dataFingerprint === deterministicSnap.dataFingerprint &&
         isSnapshotFresh(lastServerMacroSnapshot, 30)
-          ? lastServerMacroSnapshot
+          ? {
+              ...lastServerMacroSnapshot,
+              intermarketPulse: feeds.intermarketPulse,
+              rssFeedHealth: feeds.rssFeedHealth,
+            }
           : deterministicSnap,
     });
   } catch (err: any) {
@@ -1529,43 +2376,55 @@ async function fetchPastActualsViaGoogleSearch(missingEvents: MacroCalendarEvent
     .map((e) => `- "${e.title}" (Scheduled: ${e.date}, Forecast: ${e.forecast || "N/A"}, Previous: ${e.previous || "N/A"})`)
     .join("\n");
   const prompt = `Search the web for the official released ACTUAL economic data values for these US USD economic indicators that have already been published:\n${listDesc}\n\nReturn ONLY a raw JSON object mapping the exact event title to its released actual value string (for example: {"Core CPI m/m": "0.3%", "CPI m/m": "0.2%"}). If an event has genuinely not been released yet, omit it. Do not include markdown fences or explanation.`;
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          tools: [{ google_search: {} }],
-          generationConfig: { temperature: 0.1 }
-        })
+
+  const candidateModels = [
+    'gemini-4-hydrogen',
+    'gemini-3.1-flash-lite',
+  ];
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+
+  for (const model of candidateModels) {
+    const cooldownUntil = newsQuotaCooldownUntilByModel.get(model) || 0;
+    if (Date.now() < cooldownUntil) continue;
+
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const rawText = (response?.text || '').trim();
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) continue;
+      const parsed = JSON.parse(jsonMatch[0]);
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof v === "string" && v.trim() && v.trim() !== "-" && !/menunggu|pending|n\/a/i.test(v)) {
+          out[k.trim().toLowerCase()] = v.trim();
+        }
       }
-    );
-    if (!res.ok) {
-      console.error("[ActualSearch] HTTP", res.status, (await res.text()).slice(0, 200));
-      return {};
-    }
-    const data = await res.json();
-    const rawText = (data?.candidates?.[0]?.content?.parts || [])
-      .map((p: any) => p.text || "")
-      .join("")
-      .trim();
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return {};
-    const parsed = JSON.parse(jsonMatch[0]);
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(parsed)) {
-      if (typeof v === "string" && v.trim() && v.trim() !== "-" && !/menunggu|pending|n\/a/i.test(v)) {
-        out[k.trim().toLowerCase()] = v.trim();
+      return out;
+    } catch (err: any) {
+      const msg = String(err?.message || err || '');
+      if (
+        msg.includes('429') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('Quota exceeded')
+      ) {
+        newsQuotaCooldownUntilByModel.set(model, Date.now() + 30 * 60 * 1000);
+        continue;
       }
+      break;
     }
-    console.log("[ActualSearch] Berhasil menarik actual rilis masa lalu:", out);
-    return out;
-  } catch (err) {
-    console.error("[ActualSearch] Error:", err);
-    return {};
   }
+  return {};
 }
 
 app.post('/api/macro-news/analyze', async (req, res) => {
@@ -1581,10 +2440,14 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         calendarEvents?: MacroCalendarEvent[];
         intermarketPulse?: {
           dxy: IntermarketAssetPulse;
+          us02y?: IntermarketAssetPulse;
           usoil: IntermarketAssetPulse;
           us10y: IntermarketAssetPulse;
+          vix?: VixRiskPulse;
+          goldPositioning?: GoldPositioningPulse;
         };
         breakingNews?: BreakingNewsHeadline[];
+        rssFeedHealth?: RssFeedHealthStatus;
         cmeFedWatch?: CmeFedWatchState;
       };
     };
@@ -1595,9 +2458,12 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         dxy: IntermarketAssetPulse;
         usoil: IntermarketAssetPulse;
         us10y: IntermarketAssetPulse;
-    us02y?: IntermarketAssetPulse;
+        us02y?: IntermarketAssetPulse;
+        vix?: VixRiskPulse;
+        goldPositioning?: GoldPositioningPulse;
       };
       breakingNews: BreakingNewsHeadline[];
+      rssFeedHealth?: RssFeedHealthStatus;
       cmeFedWatch: CmeFedWatchState;
     };
 
@@ -1609,81 +2475,128 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         (e) => e.isLiveFeed === true && !String(e.id || '').startsWith('ff-usd-')
       );
 
-    if (hasVerifiedClientLiveCalendar && clientFeeds?.intermarketPulse?.dxy && !forceRefresh) {
-      const serverFedWatch = await fetchLiveCmeFedWatchWithGrounding(
-        false,
-        clientFeeds.intermarketPulse.us10y
-      );
+    if (hasVerifiedClientLiveCalendar && isIntermarketAssetLive(clientFeeds?.intermarketPulse?.dxy) && !forceRefresh) {
+      const needServerRss = !clientFeeds.breakingNews || clientFeeds.breakingNews.length === 0 || !clientFeeds.rssFeedHealth;
+      const [serverFedWatch, enrichedClientCalendar, serverRssResult] = await Promise.all([
+        fetchLiveCmeFedWatchWithGrounding(false, clientFeeds.intermarketPulse.us10y),
+        enrichEventsWithTradingViewActuals(clientFeeds.calendarEvents!),
+        needServerRss ? fetchPublicBreakingHeadlines() : Promise.resolve(null),
+      ]);
       const cmeFedWatch = serverFedWatch.isAvailable
         ? serverFedWatch
         : clientFeeds.cmeFedWatch?.isAvailable
         ? evaluateCmeFedWatchScoring(clientFeeds.cmeFedWatch)
         : serverFedWatch;
       feeds = {
-        calendarEvents: clientFeeds.calendarEvents!,
+        calendarEvents: enrichedClientCalendar,
         intermarketPulse: clientFeeds.intermarketPulse,
-        breakingNews: clientFeeds.breakingNews || [],
+        breakingNews:
+          clientFeeds.breakingNews && clientFeeds.breakingNews.length > 0
+            ? clientFeeds.breakingNews
+            : serverRssResult?.headlines || [],
+        rssFeedHealth: clientFeeds.rssFeedHealth || serverRssResult?.rssFeedHealth,
         cmeFedWatch,
       };
     } else {
       const serverFeeds = await gatherMacroPublicFeeds(Boolean(forceRefresh));
-      // Wajib lengkapi actual rilis High-Impact yang sudah lewat jika masih kosong
-    const enrichPastMissingActuals = async (events: MacroCalendarEvent[]): Promise<MacroCalendarEvent[]> => {
-      const nowMs = Date.now();
-      const missing = events.some(
-        (ev) => ev.impact === "High" && (!ev.actual || !ev.actual.trim()) && new Date(ev.date).getTime() < nowMs - 5 * 60 * 1000
-      );
-      if (!missing) return events;
-      try {
-        const searched = await fetchForexFactoryCalendarViaGoogleSearch();
-        if (!Array.isArray(searched) || searched.length === 0) return events;
-        const map = new Map<string, string>();
-        for (const item of searched) {
-          const a = String(item.actual ?? "").trim();
-          if (a) map.set(String(item.title || "").trim().toLowerCase(), a);
-        }
-        return events.map((ev) => {
-          if (!ev.actual || !ev.actual.trim()) {
-            const found = map.get(ev.title.trim().toLowerCase());
-            if (found) {
-              const parsed = parseMacroNumeric(found);
-              return { ...ev, actual: found, actualNum: parsed.value };
-            }
+      // Wajib lengkapi actual rilis yang sudah lewat via TradingView terlebih dahulu, lalu Google Search jika masih ada High-Impact kosong
+      const enrichPastMissingActuals = async (events: MacroCalendarEvent[]): Promise<MacroCalendarEvent[]> => {
+        const tvEnriched = await enrichEventsWithTradingViewActuals(events);
+        const nowMs = Date.now();
+        const missing = tvEnriched.some(
+          (ev) =>
+            ev.impact === 'High' &&
+            !isFedSpeechEvent(ev.title) &&
+            (ev.forecastNum !== null || ev.previousNum !== null) &&
+            (!ev.actual || !ev.actual.trim()) &&
+            new Date(ev.date).getTime() < nowMs - 5 * 60 * 1000
+        );
+        if (!missing) return tvEnriched;
+        try {
+          const searched = await fetchForexFactoryCalendarViaGoogleSearch();
+          if (!Array.isArray(searched) || searched.length === 0) return tvEnriched;
+          const map = new Map<string, string>();
+          for (const item of searched) {
+            const a = String(item.actual ?? '').trim();
+            if (a) map.set(String(item.title || '').trim().toLowerCase(), a);
           }
-          return ev;
-        });
-      } catch (err) {
-        console.error("[MacroEnrich] Gagal enrich actual:", err);
-        return events;
-      }
-    };
+          return tvEnriched.map((ev) => {
+            if (!ev.actual || !ev.actual.trim()) {
+              const found = map.get(ev.title.trim().toLowerCase());
+              if (found) {
+                const parsed = parseMacroNumeric(found);
+                const evalResult = evaluateSingleEventForGold(
+                  ev.title,
+                  parsed.value,
+                  ev.forecastNum,
+                  ev.previousNum
+                );
+                return {
+                  ...ev,
+                  actual: found,
+                  actualNum: parsed.value,
+                  unit: parsed.unit || ev.unit,
+                  eventBiasForGold: evalResult.bias,
+                  biasReasonId: evalResult.reasonId,
+                  biasReasonEn: evalResult.reasonEn,
+                };
+              }
+            }
+            return ev;
+          });
+        } catch (err: any) {
+          console.warn('[MacroEnrich] Gagal enrich actual:', String(err?.message || err).replace(/\s+/g, ' ').slice(0, 180));
+          return tvEnriched;
+        }
+      };
 
-    const cmeFedWatch = serverFeeds.cmeFedWatch.isAvailable
+      const cmeFedWatch = serverFeeds.cmeFedWatch.isAvailable
         ? serverFeeds.cmeFedWatch
         : clientFeeds?.cmeFedWatch?.isAvailable
         ? evaluateCmeFedWatchScoring(clientFeeds.cmeFedWatch)
+        : cachedCmeFedWatch?.data?.isAvailable
+        ? cachedCmeFedWatch.data
         : serverFeeds.cmeFedWatch;
-      feeds = {
-        calendarEvents: await enrichPastMissingActuals(
+
+      const resolvedCalendar = await enrichPastMissingActuals(
         serverFeeds.calendarEvents.length > 0
           ? serverFeeds.calendarEvents
-          : Array.isArray(clientFeeds?.calendarEvents) && clientFeeds!.calendarEvents!.length > 0 ? clientFeeds!.calendarEvents! : (cachedMacroFeeds.calendarEvents || [])
-      ),
-        intermarketPulse: serverFeeds.intermarketPulse.dxy
-          ? serverFeeds.intermarketPulse
-          : clientFeeds?.intermarketPulse || serverFeeds.intermarketPulse,
+          : Array.isArray(clientFeeds?.calendarEvents) && clientFeeds!.calendarEvents!.length > 0
+          ? clientFeeds!.calendarEvents!
+          : cachedMacroFeeds?.calendarEvents || []
+      );
+
+      const resolvedIntermarket = mergeIntermarketPulseSet(
+        serverFeeds.intermarketPulse,
+        clientFeeds?.intermarketPulse,
+        cachedMacroFeeds?.intermarketPulse
+      );
+
+      feeds = {
+        calendarEvents: resolvedCalendar,
+        intermarketPulse: resolvedIntermarket,
         breakingNews:
           serverFeeds.breakingNews.length > 0
             ? serverFeeds.breakingNews
-            : clientFeeds?.breakingNews || [],
+            : clientFeeds?.breakingNews && clientFeeds.breakingNews.length > 0
+            ? clientFeeds.breakingNews
+            : cachedMacroFeeds?.breakingNews || [],
+        rssFeedHealth:
+          serverFeeds.rssFeedHealth ||
+          clientFeeds?.rssFeedHealth ||
+          cachedMacroFeeds?.rssFeedHealth,
         cmeFedWatch,
       };
     }
 
-    const resolvedNewsKey = (process.env.GEMINI_NEWS_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+    const resolvedNewsKey = (process.env.GEMINI_NEWS_API_KEY || process.env.GEMINI_API_KEY || '').trim();
     const nowCutoffMs = Date.now() - 5 * 60 * 1000;
     const pastMissing = (feeds.calendarEvents || []).filter(
-      (ev) => (!ev.actual || !ev.actual.trim()) && new Date(ev.date).getTime() < nowCutoffMs
+      (ev) =>
+        (!ev.actual || !ev.actual.trim()) &&
+        !isFedSpeechEvent(ev.title) &&
+        (ev.forecastNum !== null || ev.previousNum !== null) &&
+        new Date(ev.date).getTime() < nowCutoffMs
     );
     if (pastMissing.length > 0 && resolvedNewsKey) {
       const actualMap = await fetchPastActualsViaGoogleSearch(pastMissing, resolvedNewsKey);
@@ -1693,7 +2606,21 @@ app.post('/api/macro-news/analyze', async (req, res) => {
             const found = actualMap[ev.title.trim().toLowerCase()];
             if (found) {
               const parsed = parseMacroNumeric(found);
-              return { ...ev, actual: found, actualNum: parsed.value };
+              const evalResult = evaluateSingleEventForGold(
+                ev.title,
+                parsed.value,
+                ev.forecastNum,
+                ev.previousNum
+              );
+              return {
+                ...ev,
+                actual: found,
+                actualNum: parsed.value,
+                unit: parsed.unit || ev.unit,
+                eventBiasForGold: evalResult.bias,
+                biasReasonId: evalResult.reasonId,
+                biasReasonEn: evalResult.reasonEn,
+              };
             }
           }
           return ev;
@@ -1710,12 +2637,14 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       selectedEventId,
       sourceMode: 'RULE_BASED_FALLBACK',
       modelUsed: 'deterministic-playbook-v1',
+      priorCalendarEvents: cachedMacroFeeds?.calendarEvents,
     });
     baselineSnapshot.isCalendarLiveFeed =
       feeds.calendarEvents.length > 0 && feeds.calendarEvents.every((e) => e.isLiveFeed === true);
     baselineSnapshot.analyzedAt = new Date().toISOString();
+    baselineSnapshot.rssFeedHealth = feeds.rssFeedHealth;
 
-    // Step 2: If not forced and we already have a fresh server AI snapshot (< 30 mins) with matching fingerprint & event, return it (0 Gemini tokens)
+    // Step 2: If not forced and we already have a fresh server AI snapshot (< 30 mins) with matching fingerprint & event, return it with fresh intermarketPulse (0 Gemini tokens)
     if (
       !forceRefresh &&
       lastServerMacroSnapshot &&
@@ -1727,7 +2656,11 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       res.json({
         success: true,
         cached: true,
-        snapshot: lastServerMacroSnapshot,
+        snapshot: {
+          ...lastServerMacroSnapshot,
+          intermarketPulse: feeds.intermarketPulse,
+          rssFeedHealth: feeds.rssFeedHealth || lastServerMacroSnapshot.rssFeedHealth,
+        },
       });
       return;
     }
@@ -1759,8 +2692,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
     });
 
     const candidateModels = [
-      'gemini-3.8-flash',
-      'gemini-flash-latest',
+      'gemini-4-hydrogen',
       'gemini-3.1-flash-lite',
     ];
 
@@ -1794,12 +2726,15 @@ app.post('/api/macro-news/analyze', async (req, res) => {
           changePercent: feeds.intermarketPulse.us10y.changePercent,
           direction: feeds.intermarketPulse.us10y.direction,
         },
-      us02y: feeds.intermarketPulse.us02y ? {
-        price: feeds.intermarketPulse.us02y.price,
-        changePercent: feeds.intermarketPulse.us02y.changePercent,
-        direction: feeds.intermarketPulse.us02y.direction,
-      } : undefined,
+        us02y: feeds.intermarketPulse.us02y ? {
+          price: feeds.intermarketPulse.us02y.price,
+          changePercent: feeds.intermarketPulse.us02y.changePercent,
+          direction: feeds.intermarketPulse.us02y.direction,
+        } : undefined,
+        vix: feeds.intermarketPulse.vix?.isAvailable ? feeds.intermarketPulse.vix : undefined,
+        goldPositioning: feeds.intermarketPulse.goldPositioning?.isAvailable ? feeds.intermarketPulse.goldPositioning : undefined,
       },
+      preNewsFlow: baselineSnapshot.scenarioMatrix.preNewsFlow,
       breakingHeadlines: feeds.breakingNews.slice(0, 10).map((h) => ({
         title: h.title,
         keywords: h.matchedKeywords,
@@ -1811,7 +2746,14 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         mixedProbability: baselineSnapshot.scenarioMatrix.mixedProbability,
         dominantBias: baselineSnapshot.scenarioMatrix.dominantBias,
         dynamicPivotTriggered: baselineSnapshot.scenarioMatrix.dynamicPivotTriggered,
-      evaluationMode: baselineSnapshot.scenarioMatrix.evaluationMode || 'INDIVIDUAL_RELEASE',
+        evaluationMode: baselineSnapshot.scenarioMatrix.evaluationMode || 'INDIVIDUAL_RELEASE',
+        hasSpeechEvent: baselineSnapshot.scenarioMatrix.dualHorizon?.hasSpeechEvent ?? false,
+        speechEventsNearby: baselineSnapshot.scenarioMatrix.dualHorizon?.speechEventsNearby ?? [],
+        isPricedIn: baselineSnapshot.scenarioMatrix.dualHorizon?.isPricedIn ?? false,
+        move6hUsd: baselineSnapshot.scenarioMatrix.dualHorizon?.move6hUsd ?? 0,
+        atr14_1h: baselineSnapshot.scenarioMatrix.dualHorizon?.atr14_1h ?? 12.0,
+        movementType: baselineSnapshot.scenarioMatrix.dualHorizon?.movementType ?? 'TWO_WAY_SWEEP_FIRST',
+        movementBadgeId: baselineSnapshot.scenarioMatrix.dualHorizon?.movementBadgeId ?? 'TIPE PERGERAKAN: [2 ARAH — SWEEP FIRST]',
       },
     };
 
@@ -1825,7 +2767,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       try {
         const response = await ai.models.generateContent({
           model,
-          contents: `Analyze this real-time XAU/USD macro dataset (including CME FedWatch probabilities and simultaneous USD High-Impact events) and return the structured JSON Scenario Matrix in both Bahasa Indonesia (Id) and English (En):\n${JSON.stringify(
+          contents: `Analyze this real-time XAU/USD macro dataset (including CME FedWatch probabilities, simultaneous USD High-Impact events, and preNewsFlow intelligence such as Leading Indicator Chain, Consensus Tightness, 2s10s Yield Curve Spread, VIX risk regime, Gold 3-day GC=F positioning, and FOMC Blackout window while strictly preserving Master Playbook rules) and return the structured JSON Scenario Matrix in both Bahasa Indonesia (Id) and English (En):\n${JSON.stringify(
             promptPayload
           )}`,
           config: {
@@ -1897,6 +2839,22 @@ app.post('/api/macro-news/analyze', async (req, res) => {
             institutionalDeskThesisEn: {
               type: Type.STRING,
               description: 'Concise Institutional Desk Thesis in English covering cross-asset confirmation (DXY, US02Y, US10Y, USOIL), priced-in positioning, and pivot condition',
+            },
+            phase1Minute0to5Id: {
+              type: Type.STRING,
+              description: 'Fase 1 (Menit 0–5 Rilis): Initial sweep/push direction in Bahasa Indonesia, including warnings if IS_PRICED_IN or HAS_SPEECH_EVENT is active',
+            },
+            phase1Minute0to5En: {
+              type: Type.STRING,
+              description: 'Phase 1 (Minute 0–5 Release): Initial sweep/push direction in English, including warnings if IS_PRICED_IN or HAS_SPEECH_EVENT is active',
+            },
+            phase2Minute15PlusId: {
+              type: Type.STRING,
+              description: 'Fase 2 (Menit 15+ / Lanjutan): Primary institutional expansion direction in Bahasa Indonesia after intraday liquidity is swept',
+            },
+            phase2Minute15PlusEn: {
+              type: Type.STRING,
+              description: 'Phase 2 (Minute 15+ / Continuation): Primary institutional expansion direction in English after intraday liquidity is swept',
             },
               },
               required: [
@@ -1995,14 +2953,54 @@ app.post('/api/macro-news/analyze', async (req, res) => {
       ? 'STRONG 1-WAY BIAS (FINAL T-5M) — Prepare setup and lot calculation at M1/M5 structure zones before release second, use tight SL.'
       : 'TWO-WAY SPIKE / WHIPSAW RISK (FINAL T-5M) — Hold entry before release; let the first 1–2 minutes of liquidity sweep settle first.';
 
+    const baseDualHorizon = computeDualHorizonAnalysis({
+      breakingNews: feeds.breakingNews,
+      goldPositioning:
+        baselineSnapshot.scenarioMatrix.preNewsFlow?.goldPositioning ||
+        feeds.intermarketPulse.goldPositioning,
+      dominantBias,
+      buyProbability: buyProb,
+      sellProbability: sellProb,
+      mixedProbability: mixedProb,
+      cmeFedWatch: feeds.cmeFedWatch,
+      dxy: feeds.intermarketPulse.dxy,
+      us02y: feeds.intermarketPulse.us02y,
+      us10y: feeds.intermarketPulse.us10y,
+      primaryEvent: baselineSnapshot.scenarioMatrix.primaryEvent,
+      isSimultaneousRelease: baselineSnapshot.scenarioMatrix.isSimultaneousRelease,
+      simultaneousAlignment: baselineSnapshot.scenarioMatrix.simultaneousAlignment,
+      calendarEvents: feeds.calendarEvents,
+    });
+
+    const updatedDualHorizon = {
+      ...baseDualHorizon,
+      phase1Minute0to5Id:
+        typeof aiParsed.phase1Minute0to5Id === 'string' && aiParsed.phase1Minute0to5Id.trim()
+          ? aiParsed.phase1Minute0to5Id.trim()
+          : baseDualHorizon.phase1Minute0to5Id,
+      phase1Minute0to5En:
+        typeof aiParsed.phase1Minute0to5En === 'string' && aiParsed.phase1Minute0to5En.trim()
+          ? aiParsed.phase1Minute0to5En.trim()
+          : baseDualHorizon.phase1Minute0to5En,
+      phase2Minute15PlusId:
+        typeof aiParsed.phase2Minute15PlusId === 'string' && aiParsed.phase2Minute15PlusId.trim()
+          ? aiParsed.phase2Minute15PlusId.trim()
+          : baseDualHorizon.phase2Minute15PlusId,
+      phase2Minute15PlusEn:
+        typeof aiParsed.phase2Minute15PlusEn === 'string' && aiParsed.phase2Minute15PlusEn.trim()
+          ? aiParsed.phase2Minute15PlusEn.trim()
+          : baseDualHorizon.phase2Minute15PlusEn,
+    };
+
     const enrichedSnapshot: MacroNewsSnapshot = {
       ...baselineSnapshot,
       analyzedAt: new Date().toISOString(),
       sourceMode: 'GEMINI_AI',
-      modelUsed: usedModel || 'gemini-3.8-flash',
+      modelUsed: usedModel || 'gemini-4-hydrogen',
       impactLevel,
       dominantBias,
       cmeFedWatch: feeds.cmeFedWatch,
+      rssFeedHealth: feeds.rssFeedHealth,
       topBreakingAlert: updatedTopAlert,
       scenarioMatrix: {
         ...baselineSnapshot.scenarioMatrix,
@@ -2010,6 +3008,7 @@ app.post('/api/macro-news/analyze', async (req, res) => {
         sellProbability: sellProb,
         mixedProbability: mixedProb,
         dominantBias,
+        dualHorizon: updatedDualHorizon,
         dynamicPivotTriggered:
           typeof aiParsed.dynamicPivotTriggered === 'boolean'
             ? aiParsed.dynamicPivotTriggered
@@ -2056,6 +3055,9 @@ app.post('/api/macro-news/analyze', async (req, res) => {
   }
 });
 
+const httpServer = http.createServer(app);
+let viteServer: { close: () => Promise<void> } | null = null;
+
 // Vite dev server vs Production static server
 const isProd = process.env.NODE_ENV === 'production';
 if (isProd) {
@@ -2066,12 +3068,35 @@ if (isProd) {
 } else {
   const { createServer } = await import('vite');
   const vite = await createServer({
-    server: { middlewareMode: true },
+    server: {
+      middlewareMode: true,
+      allowedHosts: true,
+      ws: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+      hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
+    },
     appType: 'spa',
   });
+  viteServer = vite;
   app.use(vite.middlewares);
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`[TradeVault Server] Running at http://localhost:${PORT}`);
 });
+
+let isShuttingDown = false;
+const shutdown = () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  Promise.resolve(viteServer?.close())
+    .catch(() => {})
+    .finally(() => {
+      httpServer.close(() => {
+        process.exit(0);
+      });
+    });
+  setTimeout(() => process.exit(0), 500).unref();
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

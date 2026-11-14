@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   CandlestickChart,
   Newspaper,
+  Compass,
   User,
   ChevronRight,
   Moon,
@@ -62,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'risk', label: tr('Manajemen Risiko', 'Risk Management'), icon: ShieldAlert },
     { id: 'market-chart', label: tr('Chart Pasar', 'Market Chart'), icon: CandlestickChart },
     { id: 'macro-news', label: tr('Trade News', 'Trade News'), icon: Newspaper },
+    { id: 'cycle-confluence', label: 'Cycle & Confluence', icon: Compass },
   ];
 
   return (

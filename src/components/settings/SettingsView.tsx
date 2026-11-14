@@ -14,6 +14,14 @@ import { useLanguage } from '../../utils/language';
 import { CsvImportModal } from './CsvImportModal';
 import { FinancialAuditModal } from './FinancialAuditModal';
 import { TradingPreferencesModal, PreferenceCategory } from './TradingPreferencesModal';
+import {
+  getStandaloneBackendUrl,
+  getEnvStandaloneBackendUrl,
+  saveStandaloneBackendUrl,
+  clearStandaloneBackendUrl,
+  testStandaloneBackendConnection,
+  StandaloneBackendHealthResult,
+} from '../../utils/apiConfig';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -63,6 +71,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isConfirmingClearAll, setIsConfirmingClearAll] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Standalone Backend Server (Gemini AI & CORS Proxy) config state
+  const [isEditingBackend, setIsEditingBackend] = useState(false);
+  const [backendUrlInput, setBackendUrlInput] = useState(() => getStandaloneBackendUrl());
+  const [activeBackendUrl, setActiveBackendUrl] = useState(() => getStandaloneBackendUrl());
+  const [isTestingBackend, setIsTestingBackend] = useState(false);
+  const [backendHealth, setBackendHealth] = useState<StandaloneBackendHealthResult | null>(null);
+  const envBackendUrl = getEnvStandaloneBackendUrl();
 
   const demoCount = trades.filter((t) => isDemoTrade(t)).length;
   const realCount = trades.filter((t) => !isDemoTrade(t)).length;
@@ -114,6 +130,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         `Berhasil mengimpor ${newTrades.length} transaksi dari CSV!`,
         `Successfully imported ${newTrades.length} trades from CSV!`
       )
+    );
+  };
+
+  const handleTestBackend = async (customUrl?: string) => {
+    setIsTestingBackend(true);
+    const result = await testStandaloneBackendConnection(customUrl);
+    setBackendHealth(result);
+    setIsTestingBackend(false);
+  };
+
+  const handleSaveBackendUrl = async (andTest = false) => {
+    const saved = saveStandaloneBackendUrl(backendUrlInput);
+    setActiveBackendUrl(saved || envBackendUrl);
+    setBackendUrlInput(saved || envBackendUrl);
+    if (!saved && backendUrlInput.trim()) {
+      showFeedback(
+        tr(
+          'Format URL tidak valid. Gunakan URL http:// atau https:// yang benar.',
+          'Invalid URL format. Please enter a valid http:// or https:// URL.'
+        ),
+        'error'
+      );
+      return;
+    }
+    showFeedback(
+      saved
+        ? tr('URL Server Backend Mandiri disimpan.', 'Standalone Backend Server URL saved.')
+        : tr('Override URL dihapus; menggunakan konfigurasi bawaan.', 'URL override cleared; using default configuration.')
+    );
+    if (andTest) {
+      await handleTestBackend(saved || envBackendUrl);
+    }
+  };
+
+  const handleResetBackendUrl = () => {
+    clearStandaloneBackendUrl();
+    setActiveBackendUrl(envBackendUrl);
+    setBackendUrlInput(envBackendUrl);
+    setBackendHealth(null);
+    showFeedback(
+      envBackendUrl
+        ? tr('URL dikembalikan ke bawaan build.', 'URL reset to build default.')
+        : tr('Konfigurasi URL Server Backend dikosongkan.', 'Backend Server URL configuration cleared.')
     );
   };
 
@@ -475,7 +534,107 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           </div>
 
-          {/* Row 3: Penyimpanan Lokal */}
+          {/* Row 3: Server Backend Mandiri (Gemini AI & Proxy) */}
+          <div className="px-4 py-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] block">
+                  {tr(
+                    'Server Backend Mandiri (Gemini AI & Feed Proxy)',
+                    'Standalone Backend Server (Gemini AI & Feed Proxy)'
+                  )}
+                </span>
+                <span className="text-[11px] text-[#697586] dark:text-[#929BA9] block mt-0.5 truncate">
+                  {activeBackendUrl
+                    ? activeBackendUrl
+                    : tr(
+                        'Belum diatur — APK memakai feed langsung & scanner lokal; atur URL server Node.js mandiri untuk Gemini AI penuh.',
+                        'Not configured — APK uses direct feeds & local scanner; set your standalone Node.js server URL for full Gemini AI.'
+                      )}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  disabled={isTestingBackend}
+                  onClick={() => handleTestBackend(isEditingBackend ? backendUrlInput : activeBackendUrl)}
+                  className="text-xs font-medium text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] disabled:opacity-50 cursor-pointer"
+                >
+                  {isTestingBackend ? tr('Menguji...', 'Testing...') : tr('Tes Koneksi', 'Test')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingBackend((prev) => !prev);
+                    setBackendUrlInput(activeBackendUrl);
+                  }}
+                  className="text-xs font-semibold text-[#1458C4] dark:text-[#38BDF8] hover:underline cursor-pointer"
+                >
+                  {isEditingBackend ? tr('Tutup', 'Close') : tr('Atur ›', 'Configure ›')}
+                </button>
+              </div>
+            </div>
+
+            {backendHealth && (
+              <div
+                className={`px-3 py-2 rounded-lg border text-[11px] leading-relaxed ${
+                  backendHealth.reachable && backendHealth.geminiConfigured
+                    ? 'bg-[#EEF2F6] dark:bg-[#171D26] border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                    : backendHealth.reachable
+                    ? 'bg-[#EEF2F6] dark:bg-[#171D26] border-amber-500/30 text-amber-600 dark:text-amber-400'
+                    : 'bg-[#EEF2F6] dark:bg-[#171D26] border-rose-500/30 text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {language === 'id' ? backendHealth.messageId : backendHealth.messageEn}
+              </div>
+            )}
+
+            {isEditingBackend && (
+              <div className="pt-1 space-y-2">
+                <input
+                  type="url"
+                  value={backendUrlInput}
+                  onChange={(e) => setBackendUrlInput(e.target.value)}
+                  placeholder="https://tradevault-api.up.railway.app"
+                  className="w-full px-3 py-2 rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#929BA9] focus:outline-none focus:border-[#1458C4] dark:focus:border-[#38BDF8]"
+                />
+                <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
+                  {tr(
+                    'Arahkan ke deployment Node.js (server.ts) milik Anda yang menyimpan GEMINI_API_KEY di server — aman dan terpisah penuh dari Google AI Studio.',
+                    'Point to your self-hosted Node.js (server.ts) deployment with server-side GEMINI_API_KEY — secure and completely separate from Google AI Studio.'
+                  )}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isTestingBackend}
+                    onClick={() => handleSaveBackendUrl(true)}
+                    className="px-3 py-1.5 rounded-lg bg-[#1458C4] hover:bg-[#11469e] text-white text-[11px] font-semibold transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    {tr('Simpan & Tes Koneksi', 'Save & Test')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSaveBackendUrl(false)}
+                    className="px-3 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#252B34] text-[#151D2A] dark:text-[#F2F5F9] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    {tr('Simpan', 'Save')}
+                  </button>
+                  {activeBackendUrl && (
+                    <button
+                      type="button"
+                      onClick={handleResetBackendUrl}
+                      className="px-3 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9] hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-medium transition-colors cursor-pointer"
+                    >
+                      {tr('Reset', 'Reset')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Row 4: Penyimpanan Lokal */}
           <div className="px-4 py-3 flex items-center justify-between gap-4">
             <div className="min-w-0">
               <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] block">

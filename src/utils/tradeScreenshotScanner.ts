@@ -1,5 +1,6 @@
 import { TradePosition } from '../types/trade';
 import { CHART_PREFS_STORAGE_KEY } from '../components/chart/MarketChartView';
+import { getApiEndpointCandidates, nativeAwarePostJson } from './apiConfig';
 
 export interface ExtractedTradeScanData {
   detected: boolean;
@@ -86,12 +87,6 @@ export const INSTRUMENT_PRICE_RANGES: Record<
   SPX500: { min: 3000, max: 9000, decimals: 2, minSlTpDistance: 3 },
   GER40: { min: 12000, max: 30000, decimals: 2, minSlTpDistance: 5 },
 };
-
-const REMOTE_SCAN_API_ENDPOINTS = [
-  '/api/extract-trade-screenshot',
-  'https://ais-pre-qmgrbl6vkm3qzsovjavbgc-342426605045.asia-southeast1.run.app/api/extract-trade-screenshot',
-  'https://ais-dev-qmgrbl6vkm3qzsovjavbgc-342426605045.asia-southeast1.run.app/api/extract-trade-screenshot',
-];
 
 /**
  * Normalizes TradingView and MT5 price strings, specifically handling:
@@ -1094,7 +1089,7 @@ ${geometryHintBlock}
 export function normalizeGeminiScanResponse(
   parsedData: any,
   canvasHints?: CanvasZoneAnalysis | null,
-  modelUsed = 'gemini-3.8-flash',
+  modelUsed = 'gemini-4-hydrogen',
   resolvedImageUrl?: string
 ): ExtractedTradeScanData {
   const cleanInstrument = normalizeScanInstrument(parsedData?.instrument);
@@ -1784,16 +1779,9 @@ export async function scanTradeScreenshotOrUrl(inputSource: string): Promise<Ext
     payload.imageUrl = tvResolved.directImageUrl || trimmed;
   }
 
-  for (const endpoint of REMOTE_SCAN_API_ENDPOINTS) {
-    const serverRes = await safeFetchApiJson(
-      endpoint,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      },
-      12000
-    );
+  const scanEndpoints = getApiEndpointCandidates('/api/extract-trade-screenshot');
+  for (const endpoint of scanEndpoints) {
+    const serverRes = await nativeAwarePostJson(endpoint, payload, 15000);
 
     if (serverRes.ok && serverRes.json?.success && serverRes.json?.data) {
       const normalized = normalizeGeminiScanResponse(

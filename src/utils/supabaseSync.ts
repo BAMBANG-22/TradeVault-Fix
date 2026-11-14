@@ -17,6 +17,9 @@ import {
   decodeLifecycleMetaFromExecutionNotes,
   encodeLifecycleMetaIntoExecutionNotes,
 } from './tradeLifecycle';
+import { isMarketDay } from './date';
+
+export { isMarketDay };
 
 export interface SyncResult<T = void> {
   success: boolean;

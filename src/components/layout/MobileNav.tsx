@@ -11,6 +11,7 @@ import {
   ShieldAlert,
   CandlestickChart,
   Newspaper,
+  Compass,
   X,
   Plus,
   PlusCircle,
@@ -86,6 +87,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
     { id: 'risk', label: tr('Manajemen Risiko', 'Risk Management'), icon: ShieldAlert },
     { id: 'market-chart', label: tr('Chart Pasar', 'Market Chart'), icon: CandlestickChart },
     { id: 'macro-news', label: tr('Trade News', 'Trade News'), icon: Newspaper },
+    { id: 'cycle-confluence', label: 'Cycle & Confluence', icon: Compass },
   ];
 
   return (
