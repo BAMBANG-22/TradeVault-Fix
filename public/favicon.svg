@@ -1,13 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
-  <title>TradeVault — CV3-R2 — Dual Embrace</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 16 224 224" width="256" height="256">
+  <title>VLO — Orbit-Pulse Bowl</title>
   <style>
-    .base-path { fill: #172033; }
-    .accent-path { fill: #1458C4; }
+    .tile-bg { fill: #FFFFFF; stroke: #DDE3EA; }
+    .body-path { fill: #151D2A; }
+    .pulse-path { fill: #1769E8; }
+    .core-dot { fill: #059669; }
     @media (prefers-color-scheme: dark) {
-      .base-path { fill: #F8FAFC; }
-      .accent-path { fill: #38BDF8; }
+      .tile-bg { fill: #11151B; stroke: #252B34; }
+      .body-path { fill: #F2F5F9; }
+      .core-dot { fill: #10B981; }
     }
   </style>
-  <path class="base-path" d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"/>
-  <path class="accent-path" d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"/>
+  <rect class="tile-bg" x="19" y="19" width="218" height="218" rx="56" stroke-width="3"/>
+  <path class="body-path" fill-rule="evenodd" d="M 34.21 74.65 A 18.00 18.00 0 0 1 65.79 57.35 C 79.24 81.91, 97.88 100.71, 122.99 93.98 A 58.00 58.00 0 1 1 80.00 150.00 C 80.00 120.50, 49.58 102.72, 34.21 74.65 Z M 138.00 125.00 A 25.00 25.00 0 1 0 138.10 125.00 Z"/>
+  <path class="pulse-path" d="M 169.65 71.65 C 195.85 80.01, 216.99 101.01, 225.81 128.11 A 10.50 10.50 0 0 1 205.44 133.19 C 201.93 110.46, 187.25 90.60, 166.28 80.00 A 4.50 4.50 0 0 1 169.65 71.65 Z"/>
+  <path class="core-dot" d="M 138.00 136.00 A 14.00 14.00 0 1 1 137.90 136.00 Z"/>
 </svg>

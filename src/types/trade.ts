@@ -61,9 +61,65 @@ export interface Trade {
   disciplineRating?: number; // 1 to 5
   executionNotes?: string;
   closeExchangeRate?: HistoricalExchangeRateSnapshot; // Historical snapshot rate at close time (USD/IDR)
+  mistakeTags?: string[]; // e.g. ['FOMO', 'OVERLOT', 'EARLY_EXIT']
+  emotionTag?: string; // e.g. 'CALM', 'ANXIOUS', 'CONFIDENT'
+  accountId?: string; // Multi-account / sub-portfolio identifier
+  playbookId?: string; // Reference to A+ Setup Playbook entry
+  checklistPassed?: boolean; // Whether pre-trade SOP checklist was completed
+  ruleCompliant?: boolean; // Whether trade obeyed risk & daily loss guardrails
   isDemo?: boolean; // explicitly marks demo sample data
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface TradingAccount {
+  id: string;
+  name: string;
+  broker?: string;
+  accountType: 'LIVE' | 'PROP' | 'DEMO' | 'CENT';
+  startingBalance: number;
+  currency?: 'USD' | 'IDR' | 'EUR';
+  createdAt?: string;
+}
+
+export interface PreTradeChecklistItem {
+  id: string;
+  labelId: string;
+  labelEn: string;
+  enabled: boolean;
+}
+
+export interface PlaybookSetup {
+  id: string;
+  name: string;
+  session: TradingSession;
+  minRR: number;
+  summary: string;
+  criteria: string[];
+  exampleScreenshotUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PeriodicReview {
+  id: string;
+  periodType: 'WEEKLY' | 'MONTHLY';
+  periodKey: string; // e.g. '2026-W47' or '2026-11'
+  periodLabel: string;
+  accountId?: string;
+  whatWorked: string;
+  recurringMistakes: string;
+  nextPeriodFocus: string;
+  rating: number; // 1..5
+  snapshotStats: {
+    totalTrades: number;
+    winRate: number;
+    netProfit: number;
+    profitFactor: number;
+    avgR: number;
+    topMistake?: string;
+  };
+  updatedAt: string;
 }
 
 export interface TradeFilter {

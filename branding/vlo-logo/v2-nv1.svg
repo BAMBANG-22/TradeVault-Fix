@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="NV-1. Twin-Slab Vault">
+  <rect width="256" height="256" rx="56" fill="#1769E8"/>
+  <g fill="#FFFFFF"><path fill-rule="evenodd" d="M 40 74 A 34 34 0 0 1 74 40 H 88 L 120 216 H 74 A 34 34 0 0 1 40 182 Z"/></g>
+  <g fill="#0B0E14"><path fill-rule="evenodd" d="M 114 40 H 182 A 34 34 0 0 1 216 74 V 182 A 34 34 0 0 1 182 216 H 146 Z M 170 75 A 25 25 0 1 0 170.1 75 Z"/></g>
+  <g fill="#10B981"><path d="M 170 86 A 14 14 0 1 1 169.9 86 Z"/></g>
+</svg>

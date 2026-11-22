@@ -1,8 +1,16 @@
 apply plugin: 'com.android.application'
 
 def persistentSigningConfigured = System.getenv("ANDROID_KEYSTORE_PATH") != null
+def packageJsonFile = rootProject.file("../package.json")
+def packageAppVersion = "1.3.0"
+if (packageJsonFile.exists()) {
+    def parsedPackage = new groovy.json.JsonSlurper().parse(packageJsonFile)
+    if (parsedPackage?.version) {
+        packageAppVersion = parsedPackage.version.toString()
+    }
+}
 def tradeVaultVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
-def tradeVaultVersionName = System.getenv("VERSION_NAME") ?: "1.0"
+def tradeVaultVersionName = System.getenv("VERSION_NAME") ?: packageAppVersion
 
 android {
     namespace = "com.tradevault.journal"

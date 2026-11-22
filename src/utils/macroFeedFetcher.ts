@@ -7,15 +7,21 @@ import {
   CmeFedWatchState,
   RssFeedHealthStatus,
   RssFeedSourceStatus,
+  ExtendedMarketAssetPulse,
+  CftcCotGoldState,
+  FundamentalExtendedFeeds,
+  ExternalG10ChinaEvent,
   classifyFomcPillar,
   isInverseUsdIndicator,
   isRelevantUsdMacroEvent,
+  extractExternalG10AndChinaCalendarEvents,
   evaluateSingleEventForGold,
   filterAndScoreBreakingHeadlines,
   parseMacroNumeric,
   isPrimaryHighImpactEvent,
   computeImpliedFedWatchFromMarketQuotes,
   createUnavailableFedWatchState,
+  mapRawTradingViewEventsToCalendarEvents,
 } from './macroNewsEngine';
 import { isMarketDay } from './date';
 import {
@@ -452,6 +458,61 @@ export async function fetchClientForexFactoryCalendar(): Promise<MacroCalendarEv
   }
 }
 
+/**
+ * Fetches 90-day USD released historical economic calendar events (CPI, PPI, NFP, PCE, FOMC, GDP, Retail Sales, ISM)
+ * with 0 Gemini tokens consumed. Tries TradeVault server `/api/macro-news/history-backfill` first,
+ * falling back to direct CORS-proxy / native Capacitor fetch against TradingView Economic Calendar API.
+ */
+export async function fetchClientHistoricalActualsBackfill(days = 90): Promise<MacroCalendarEvent[]> {
+  const safeDays = Math.min(180, Math.max(7, Math.round(days)));
+  const endpoints = getApiEndpointCandidates(`/api/macro-news/history-backfill?days=${safeDays}`);
+
+  for (const endpoint of endpoints) {
+    try {
+      if (isNativeAndroidOrIos() && /^https?:\/\//i.test(endpoint)) {
+        const raw = await nativeHttpGetText(endpoint, 8000, 'application/json');
+        if (raw) {
+          const json = JSON.parse(raw);
+          if (json?.success && Array.isArray(json.events) && json.events.length > 0) {
+            return json.events as MacroCalendarEvent[];
+          }
+        }
+      } else {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(endpoint, {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.success && Array.isArray(json.events) && json.events.length > 0) {
+            return json.events as MacroCalendarEvent[];
+          }
+        }
+      }
+    } catch {
+      // Fall through to direct proxy-assisted TradingView calendar fetch
+    }
+  }
+
+  try {
+    const nowMs = Date.now();
+    const fromIso = new Date(nowMs - safeDays * 24 * 60 * 60 * 1000).toISOString();
+    const toIso = new Date(nowMs + 60 * 60 * 1000).toISOString();
+    const tvUrl = `https://economic-calendar.tradingview.com/events?from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&countries=US`;
+    const jsonStr = await fetchWithCorsProxy(tvUrl, 9000, 'application/json');
+    const json = JSON.parse(jsonStr);
+    const rawList = Array.isArray(json?.result) ? json.result : [];
+    return mapRawTradingViewEventsToCalendarEvents(rawList, nowMs);
+  } catch (err) {
+    console.warn('[MacroClient] Historical actuals backfill failed:', err);
+    return [];
+  }
+}
+
 function isWeekdayMarketTimestampSec(unixSec: number): boolean {
   if (!Number.isFinite(unixSec) || unixSec <= 0) return true;
   return isMarketDay(unixSec, { useUtc: true, enforceFridayCloseUtc: true });
@@ -754,7 +815,7 @@ export async function fetchClientBreakingHeadlinesWithHealth(): Promise<{
 
   const results = await Promise.allSettled(
     feedConfigs.map(async (cfg) => {
-      const items: Array<{ title: string; source: string; pubDate: string; link?: string }> = [];
+      const items: Array<{ title: string; source: string; pubDate: string; link?: string; description?: string }> = [];
       let anySuccess = false;
       for (const u of cfg.urls) {
         const xml = await fetchWithCorsProxy(u, 6000, 'application/rss+xml, text/xml');
@@ -769,7 +830,7 @@ export async function fetchClientBreakingHeadlinesWithHealth(): Promise<{
     })
   );
 
-  const combined: Array<{ title: string; source: string; pubDate: string; link?: string }> = [];
+  const combined: Array<{ title: string; source: string; pubDate: string; link?: string; description?: string }> = [];
   const sourcesStatus: RssFeedSourceStatus[] = [];
 
   for (let i = 0; i < results.length; i++) {
@@ -1115,4 +1176,295 @@ export async function fetchClientFedFundsFuturesBackup(
     return createUnavailableFedWatchState();
   }
 }
+
+async function fetchClientExtendedAsset(params: {
+  symbol: string;
+  yahooTicker: string;
+  name: string;
+  category: ExtendedMarketAssetPulse['category'];
+  bullishWhenUp?: boolean;
+}): Promise<ExtendedMarketAssetPulse> {
+  const { symbol, yahooTicker, name, category, bullishWhenUp = false } = params;
+  const unavailable = (): ExtendedMarketAssetPulse => ({
+    symbol,
+    yahooTicker,
+    name,
+    category,
+    price: 0,
+    previousClose: 0,
+    changePercent: 0,
+    change5dPercent: 0,
+    change20dPercent: 0,
+    direction: 'FLAT',
+    effectOnGold: 'NEUTRAL',
+    noteId: `${name} sementara tidak tersedia`,
+    noteEn: `${name} temporarily unavailable`,
+    isAvailable: false,
+    updatedAt: new Date().toISOString(),
+  });
+
+  try {
+    const encodedTicker = encodeURIComponent(yahooTicker);
+    const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedTicker}?interval=1d&range=1mo&_t=${Date.now()}`;
+    const jsonStr = await fetchWithCorsProxy(targetUrl, 6500, 'application/json');
+    const json = JSON.parse(jsonStr);
+    const result = json?.chart?.result?.[0];
+    const meta = result?.meta;
+    const rawCloses: any[] = result?.indicators?.quote?.[0]?.close || [];
+    const closes = rawCloses.map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    const latestClose = closes.length > 0 ? closes[closes.length - 1] : NaN;
+    const regPrice = Number(meta?.regularMarketPrice);
+    const price = Number.isFinite(regPrice) && regPrice > 0 ? regPrice : latestClose;
+
+    if (!Number.isFinite(price) || price <= 0) {
+      return unavailable();
+    }
+
+    const prevDaily = Number(meta?.previousClose ?? meta?.chartPreviousClose);
+    const previousClose =
+      Number.isFinite(prevDaily) && prevDaily > 0
+        ? prevDaily
+        : closes.length >= 2
+        ? closes[closes.length - 2]
+        : price;
+
+    const changePercent =
+      previousClose > 0 ? Number((((price - previousClose) / previousClose) * 100).toFixed(2)) : 0;
+
+    const base5d = closes.length >= 6 ? closes[closes.length - 6] : closes[0] ?? previousClose;
+    const change5dPercent =
+      Number.isFinite(base5d) && base5d > 0 ? Number((((price - base5d) / base5d) * 100).toFixed(2)) : 0;
+
+    const base20d = closes.length >= 1 ? closes[0] : previousClose;
+    const change20dPercent =
+      Number.isFinite(base20d) && base20d > 0 ? Number((((price - base20d) / base20d) * 100).toFixed(2)) : 0;
+
+    const direction: ExtendedMarketAssetPulse['direction'] =
+      changePercent > 0.12 ? 'UP' : changePercent < -0.12 ? 'DOWN' : 'FLAT';
+
+    const effectOnGold: ExtendedMarketAssetPulse['effectOnGold'] =
+      direction === 'FLAT'
+        ? 'NEUTRAL'
+        : bullishWhenUp
+        ? direction === 'UP'
+          ? 'BULLISH'
+          : 'BEARISH'
+        : direction === 'UP'
+        ? 'BEARISH'
+        : 'BULLISH';
+
+    return {
+      symbol,
+      yahooTicker,
+      name,
+      category,
+      price: Number(price.toFixed(price >= 100 ? 2 : 3)),
+      previousClose: Number(previousClose.toFixed(previousClose >= 100 ? 2 : 3)),
+      changePercent,
+      change5dPercent,
+      change20dPercent,
+      direction,
+      effectOnGold,
+      noteId: `${name}: ${changePercent >= 0 ? '+' : ''}${changePercent}% (1D), ${change5dPercent >= 0 ? '+' : ''}${change5dPercent}% (5D)`,
+      noteEn: `${name}: ${changePercent >= 0 ? '+' : ''}${changePercent}% (1D), ${change5dPercent >= 0 ? '+' : ''}${change5dPercent}% (5D)`,
+      isAvailable: true,
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return unavailable();
+  }
+}
+
+/**
+ * Fetches weekly CFTC Commitments of Traders (Disaggregated Managed Money) for Gold COMEX
+ * via CFTC's public Socrata Open Data API (0 API keys required).
+ */
+export async function fetchClientCftcCotGold(): Promise<CftcCotGoldState> {
+  const unavailable: CftcCotGoldState = {
+    isAvailable: false,
+    reportDate: '—',
+    managedMoneyLong: 0,
+    managedMoneyShort: 0,
+    netSpeculativeContracts: 0,
+    netPercentile1y: 50,
+    crowdingState: 'NEUTRAL',
+    noteId: 'Data CFTC COT mingguan sementara tidak tersedia',
+    noteEn: 'Weekly CFTC COT positioning temporarily unavailable',
+  };
+  try {
+    const cftcUrl =
+      'https://publicreporting.cftc.gov/resource/6dca-aqww.json?' +
+      "$where=commodity_name='GOLD'&$order=report_date_as_yyyy_mm_dd%20DESC&$limit=52";
+    const jsonStr = await fetchWithCorsProxy(cftcUrl, 7000, 'application/json');
+    const rows = JSON.parse(jsonStr);
+    if (!Array.isArray(rows) || rows.length === 0) return unavailable;
+
+    const netSeries: number[] = [];
+    let latestLong = 0;
+    let latestShort = 0;
+    let latestDate = '—';
+
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const lVal = Number(r.noncomm_positions_long_all ?? r.m_money_positions_long_all ?? 0);
+      const sVal = Number(r.noncomm_positions_short_all ?? r.m_money_positions_short_all ?? 0);
+      const net = lVal - sVal;
+      if (Number.isFinite(net)) {
+        netSeries.push(net);
+        if (i === 0) {
+          latestLong = lVal;
+          latestShort = sVal;
+          latestDate = String(r.report_date_as_yyyy_mm_dd || '').slice(0, 10) || '—';
+        }
+      }
+    }
+
+    if (netSeries.length === 0) return unavailable;
+    const latestNet = netSeries[0];
+    const minNet = Math.min(...netSeries);
+    const maxNet = Math.max(...netSeries);
+    const span = Math.max(1, maxNet - minNet);
+    const percentile = Math.round(((latestNet - minNet) / span) * 100);
+
+    const crowdingState: CftcCotGoldState['crowdingState'] =
+      percentile >= 85
+        ? 'EXTREME_LONG'
+        : percentile >= 65
+        ? 'ELEVATED_LONG'
+        : percentile <= 25
+        ? 'WASHED_OUT_SHORT'
+        : 'NEUTRAL';
+
+    return {
+      isAvailable: true,
+      reportDate: latestDate,
+      managedMoneyLong: Math.round(latestLong),
+      managedMoneyShort: Math.round(latestShort),
+      netSpeculativeContracts: Math.round(latestNet),
+      netPercentile1y: percentile,
+      crowdingState,
+      noteId: `CFTC COT (${latestDate}): Posisi bersih institusi ${Math.round(latestNet).toLocaleString()} kontrak (persentil ${percentile}/100 dalam 1 tahun).`,
+      noteEn: `CFTC COT (${latestDate}): Institutional net position at ${Math.round(latestNet).toLocaleString()} contracts (${percentile}th percentile over 1Y).`,
+    };
+  } catch {
+    return unavailable;
+  }
+}
+
+export async function fetchClientExternalG10ChinaCalendar(): Promise<ExternalG10ChinaEvent[]> {
+  try {
+    const [thisWeek, nextWeek] = await Promise.all([
+      fetchSingleCalendarSource(
+        'https://nfs.faireconomy.media/ff_calendar_thisweek.json',
+        'https://nfs.faireconomy.media/ff_calendar_thisweek.xml'
+      ),
+      fetchSingleCalendarSource(
+        'https://nfs.faireconomy.media/ff_calendar_nextweek.json',
+        'https://nfs.faireconomy.media/ff_calendar_nextweek.xml'
+      ),
+    ]);
+    return extractExternalG10AndChinaCalendarEvents([...thisWeek, ...nextWeek]);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetches all cross-asset structural feeds needed for Fundamental Gold (0 Gemini tokens):
+ * Real yields proxy (TIP/IEF), Wall Street Equities (ES=F/NQ=F), Bond Stress (^MOVE/HYG),
+ * Gold Vol (^GVZ), Metals & ETF (GLD/SI=F/HG=F), G10/China FX (EUR/JPY/CNH), BTC liquidity,
+ * CFTC COT Gold positioning, and G10/China policy calendar events.
+ */
+export async function fetchClientExtendedFundamentalFeeds(): Promise<FundamentalExtendedFeeds> {
+  // Fast path: backend aggregated endpoint (0 browser CORS)
+  const endpoints = getApiEndpointCandidates('/api/macro-news/fundamental-feeds');
+  for (const endpoint of endpoints) {
+    try {
+      const urlWithTs = `${endpoint}?_t=${Date.now()}`;
+      if (isNativeAndroidOrIos() && /^https?:\/\//i.test(urlWithTs)) {
+        const raw = await nativeHttpGetText(urlWithTs, 7000, 'application/json');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.success && parsed?.extendedFeeds) {
+            return parsed.extendedFeeds as FundamentalExtendedFeeds;
+          }
+        }
+      } else {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 7000);
+        const res = await fetch(urlWithTs, {
+          cache: 'no-store',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const parsed = await res.json();
+          if (parsed?.success && parsed?.extendedFeeds) {
+            return parsed.extendedFeeds as FundamentalExtendedFeeds;
+          }
+        }
+      }
+    } catch {
+      // Fallback to direct parallel client fetches below
+    }
+  }
+
+  const [
+    esFutures,
+    nqFutures,
+    tipEtf,
+    iefEtf,
+    hygEtf,
+    moveIndex,
+    gvzIndex,
+    gldEtf,
+    silverFutures,
+    copperFutures,
+    btcUsd,
+    eurUsd,
+    usdJpy,
+    usdCnh,
+    cotGold,
+    externalEvents,
+  ] = await Promise.all([
+    fetchClientExtendedAsset({ symbol: 'ES', yahooTicker: 'ES=F', name: 'S&P 500 Futures', category: 'EQUITY', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'NQ', yahooTicker: 'NQ=F', name: 'Nasdaq 100 Futures', category: 'EQUITY', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'TIP', yahooTicker: 'TIP', name: 'TIPS Inflation ETF', category: 'REAL_YIELD', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'IEF', yahooTicker: 'IEF', name: 'US 7-10Y Bond ETF', category: 'REAL_YIELD', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'HYG', yahooTicker: 'HYG', name: 'High Yield Credit ETF', category: 'CREDIT_STRESS', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'MOVE', yahooTicker: '^MOVE', name: 'Bond Volatility (MOVE)', category: 'VOLATILITY', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'GVZ', yahooTicker: '^GVZ', name: 'Gold Volatility (GVZ)', category: 'VOLATILITY', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'GLD', yahooTicker: 'GLD', name: 'SPDR Gold ETF', category: 'METALS_FLOW', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'SILVER', yahooTicker: 'SI=F', name: 'Silver Futures', category: 'METALS_FLOW', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'COPPER', yahooTicker: 'HG=F', name: 'Copper Futures', category: 'METALS_FLOW', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'BTC', yahooTicker: 'BTC-USD', name: 'Bitcoin Liquidity Barometer', category: 'LIQUIDITY', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'EURUSD', yahooTicker: 'EURUSD=X', name: 'EUR/USD', category: 'FX_G10', bullishWhenUp: true }),
+    fetchClientExtendedAsset({ symbol: 'USDJPY', yahooTicker: 'USDJPY=X', name: 'USD/JPY', category: 'FX_G10', bullishWhenUp: false }),
+    fetchClientExtendedAsset({ symbol: 'USDCNH', yahooTicker: 'USDCNH=X', name: 'USD/CNH (Offshore Yuan)', category: 'FX_G10', bullishWhenUp: true }),
+    fetchClientCftcCotGold(),
+    fetchClientExternalG10ChinaCalendar(),
+  ]);
+
+  return {
+    esFutures,
+    nqFutures,
+    tipEtf,
+    iefEtf,
+    hygEtf,
+    moveIndex,
+    gvzIndex,
+    gldEtf,
+    silverFutures,
+    copperFutures,
+    btcUsd,
+    eurUsd,
+    usdJpy,
+    usdCnh,
+    cotGold,
+    externalEvents,
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 

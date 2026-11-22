@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — Vlo Journal</title>
+    <meta
+      name="description"
+      content="Privacy Policy for Vlo Journal describing authentication data, cloud storage isolation, and user rights."
+    />
+    <style>
+      :root {
+        --bg: #f5f7fa;
+        --surface: #ffffff;
+        --border: #dde3ea;
+        --ink: #151d2a;
+        --muted: #5e6a7d;
+        --accent: #1769e8;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      .container {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        color: var(--ink);
+        font-weight: 700;
+        font-size: 16px;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      nav a:hover,
+      nav a.active {
+        color: var(--accent);
+      }
+      .lang-switch {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .lang-switch button {
+        border: 0;
+        background: transparent;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .lang-switch button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+      article {
+        margin-top: 28px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px 28px;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 26px;
+        letter-spacing: -0.02em;
+      }
+      .updated {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 24px;
+      }
+      h2 {
+        margin: 24px 0 8px;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+      p,
+      li {
+        font-size: 14px;
+        color: #334155;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      a {
+        color: var(--accent);
+      }
+      [data-lang="id"] {
+        display: none;
+      }
+      body.lang-id [data-lang="en"] {
+        display: none;
+      }
+      body.lang-id [data-lang="id"] {
+        display: block;
+      }
+      body.lang-id span[data-lang="id"] {
+        display: inline;
+      }
+      span[data-lang="id"] {
+        display: none;
+      }
+      footer {
+        margin-top: 32px;
+        text-align: center;
+        font-size: 12px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <a class="brand" href="./index.html">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="14 14 228 228" width="28" height="28" fill="none">
+            <path fill="#151D2A" fill-rule="evenodd" d="M 34.21 74.65 A 18.00 18.00 0 0 1 65.79 57.35 L 95.13 110.93 A 58.00 58.00 0 1 1 80.00 150.00 C 80.00 124.00, 54.00 106.00, 34.21 74.65 Z M 138.00 125.00 A 25.00 25.00 0 1 0 138.10 125.00 Z" />
+            <path fill="#1769E8" d="M 174.61 67.78 A 90.00 90.00 0 0 1 223.60 122.19 A 10.00 10.00 0 0 1 204.57 128.37 A 70.00 70.00 0 0 0 166.47 86.05 A 10.00 10.00 0 0 1 174.61 67.78 Z" />
+            <path fill="#059669" d="M 138.00 136.00 A 14.00 14.00 0 1 1 137.90 136.00 Z" />
+          </svg>
+          <span>Vlo Journal</span>
+        </a>
+        <nav>
+          <a href="./index.html">Home</a>
+          <a href="./privacy.html" class="active">Privacy Policy</a>
+          <a href="./terms.html">Terms</a>
+          <div class="lang-switch">
+            <button type="button" id="btn-en" class="active" onclick="setLang('en')">EN</button>
+            <button type="button" id="btn-id" onclick="setLang('id')">ID</button>
+          </div>
+        </nav>
+      </header>
+
+      <article>
+        <div data-lang="en">
+          <h1>Privacy Policy</h1>
+          <div class="updated">Effective Date: November 15, 2026</div>
+
+          <p>
+            Vlo Journal respects your privacy and is committed to protecting the personal and trading journal data you
+            store in the application. This Privacy Policy explains what information Vlo Journal collects, how it is
+            used, and how your data is isolated and secured.
+          </p>
+
+          <h2>1. Information We Collect</h2>
+          <ul>
+            <li>
+              <strong>Google &amp; OAuth Sign-In Information:</strong> When you sign in using Google or another supported
+              OAuth provider, Vlo Journal only requests basic authentication scopes (<code>openid</code>,
+              <code>userinfo.email</code>, and <code>userinfo.profile</code>) to receive your email address, display
+              name, and profile avatar URL. We do not access your Gmail messages, Google Drive files, contacts, or other
+              unrelated Google services.
+            </li>
+            <li>
+              <strong>VLO Account Information:</strong> If you register directly with email and password, we store your
+              email address, optional trader display name, and encrypted authentication credentials managed via Supabase
+              Auth.
+            </li>
+            <li>
+              <strong>Trading Journal &amp; Settings Data:</strong> Trade records, execution notes, risk settings, and
+              uploaded chart screenshots that you voluntarily enter into Vlo Journal.
+            </li>
+          </ul>
+
+          <h2>2. How We Use Information</h2>
+          <ul>
+            <li>To authenticate your identity and maintain your active login session across devices.</li>
+            <li>To synchronize and back up your personal trading journal, settings, and screenshots in VLO Cloud.</li>
+            <li>To allow you to export, restore, or delete your own journal records at any time.</li>
+          </ul>
+          <p>
+            Vlo Journal does <strong>not</strong> sell, rent, or share your personal information or trading logs with
+            third-party advertisers or data brokers.
+          </p>
+
+          <h2>3. Data Storage, Isolation &amp; Security</h2>
+          <p>
+            Cloud data is stored in Supabase (PostgreSQL &amp; Private Storage) protected by strict Row Level Security
+            (RLS) policies. Every trade row, settings record, and screenshot folder is scoped to your unique user ID
+            (<code>auth.uid()</code>), ensuring that no other user can read, modify, or delete your data. If you choose
+            <strong>Local Mode Without Account</strong>, your data stays solely on your device.
+          </p>
+
+          <h2>4. Data Retention &amp; Deletion</h2>
+          <p>
+            You may delete individual trades, reset your entire journal from <em>App Settings → Danger Zone</em>, or
+            request permanent account deletion by contacting
+            <a href="mailto:bambang.andika212@gmail.com">bambang.andika212@gmail.com</a>.
+          </p>
+
+          <h2>5. Contact Us</h2>
+          <p>
+            If you have any questions regarding this Privacy Policy or your data, please contact the developer at
+            <a href="mailto:bambang.andika212@gmail.com">bambang.andika212@gmail.com</a>.
+          </p>
+        </div>
+
+        <div data-lang="id">
+          <h1>Kebijakan Privasi</h1>
+          <div class="updated">Berlaku sejak: 15 November 2026</div>
+
+          <p>
+            Vlo Journal menghormati privasi Anda dan berkomitmen melindungi data akun serta catatan jurnal trading
+            Anda. Kebijakan Privasi ini menjelaskan data apa yang dikumpulkan, bagaimana penggunaannya, dan bagaimana
+            data Anda diisolasi secara aman.
+          </p>
+
+          <h2>1. Informasi yang Dikumpulkan</h2>
+          <ul>
+            <li>
+              <strong>Data Masuk Google &amp; OAuth:</strong> Saat Anda masuk menggunakan Google atau penyedia OAuth
+              lain, Vlo Journal hanya meminta izin dasar (<code>openid</code>, <code>userinfo.email</code>, dan
+              <code>userinfo.profile</code>) untuk mendapatkan alamat email, nama tampilan, dan foto profil Anda. Kami
+              tidak mengakses isi Gmail, Google Drive, kontak, atau layanan Google lainnya.
+            </li>
+            <li>
+              <strong>Akun VLO (Email &amp; Kata Sandi):</strong> Jika mendaftar langsung, kami menyimpan alamat email,
+              nama trader opsional, serta kredensial autentikasi terenkripsi melalui Supabase Auth.
+            </li>
+            <li>
+              <strong>Data Jurnal Trading:</strong> Riwayat transaksi, catatan eksekusi, pengaturan risiko, dan
+              screenshot chart yang Anda masukkan sendiri ke dalam aplikasi.
+            </li>
+          </ul>
+
+          <h2>2. Penggunaan Data</h2>
+          <ul>
+            <li>Memverifikasi identitas Anda dan menjaga sesi login lintas perangkat.</li>
+            <li>Menyinkronkan dan mencadangkan jurnal trading, pengaturan, serta screenshot Anda ke VLO Cloud.</li>
+            <li>Memungkinkan Anda mengekspor, memulihkan, atau menghapus data jurnal kapan saja.</li>
+          </ul>
+          <p>
+            Vlo Journal <strong>tidak</strong> menjual, menyewakan, atau membagikan data pribadi maupun riwayat trading
+            Anda kepada pihak ketiga atau pengiklan.
+          </p>
+
+          <h2>3. Penyimpanan &amp; Keamanan Data</h2>
+          <p>
+            Data cloud disimpan pada infrastruktur Supabase yang dilindungi kebijakan <em>Row Level Security (RLS)</em>.
+            Setiap data transaksi, pengaturan, dan folder screenshot dikunci berdasarkan ID unik pengguna
+            (<code>auth.uid()</code>), sehingga pengguna lain tidak dapat melihat, mengubah, atau menghapus data Anda.
+            Jika memilih <strong>Mode Lokal Tanpa Akun</strong>, seluruh data hanya tersimpan di perangkat Anda.
+          </p>
+
+          <h2>4. Penghapusan Data &amp; Akun</h2>
+          <p>
+            Anda dapat menghapus transaksi satuan atau mereset seluruh jurnal melalui menu
+            <em>Pengaturan → Zona Sensitif</em>, serta mengajukan penghapusan akun permanen dengan menghubungi
+            <a href="mailto:bambang.andika212@gmail.com">bambang.andika212@gmail.com</a>.
+          </p>
+
+          <h2>5. Kontak Pengembang</h2>
+          <p>
+            Untuk pertanyaan mengenai privasi atau data Anda, hubungi pengembang melalui email:
+            <a href="mailto:bambang.andika212@gmail.com">bambang.andika212@gmail.com</a>.
+          </p>
+        </div>
+      </article>
+
+      <footer>
+        &copy; 2026 Vlo Journal &middot; <a href="./index.html">Home</a> &middot; <a href="./terms.html">Terms of Service</a>
+      </footer>
+    </div>
+
+    <script>
+      function setLang(lang) {
+        document.body.classList.toggle('lang-id', lang === 'id');
+        document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+        document.getElementById('btn-id').classList.toggle('active', lang === 'id');
+        document.documentElement.lang = lang;
+      }
+    </script>
+  </body>
+</html>

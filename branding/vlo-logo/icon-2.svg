@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Lane VLO">
+  <rect width="256" height="256" rx="56" fill="#0E1219"/>
+  <g fill="#F2F5F9"><path fill-rule="evenodd" d="M 38 69 A 17 17 0 0 1 70 57 L 100 156 A 17 17 0 0 1 68 168 Z"/></g>
+  <g fill="#1769E8"><path d="M 116 62 A 17 17 0 0 1 150 62 V 136 C 150 156, 160 166, 180 166 H 202 A 17 17 0 0 1 202 200 H 176 C 138 200, 116 178, 116 138 Z"/></g>
+  <g fill="#10B981"><path d="M 192 61 A 25 25 0 1 1 191.9 61 Z"/></g>
+</svg>

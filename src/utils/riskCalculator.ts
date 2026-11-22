@@ -22,15 +22,15 @@ export interface LotCalculationInput {
   accountCurrency?: string;
 }
 
-export const XAUUSD_PIP_SIZE = 1.0; // Standar Pip XAUUSD TradeVault: 1 pip = 1.00 perubahan harga XAUUSD
+export const XAUUSD_PIP_SIZE = 0.1; // Standar Pip XAUUSD TradeVault: 1 pip = 0.10 perubahan harga XAUUSD (4000 -> 3995 = 50 pips)
 export const POSITION_SIZING_RISK_PRESETS = [0.5, 1.0, 1.5, 2.0, 3.0] as const;
 
 export interface LotCalculationResult {
   symbol?: string;
   riskAmount: number;
-  slDistancePrice: number; // in $ (e.g. $50.00)
-  slDistancePips: number; // in pips (1 pip = 1.00 perubahan harga XAUUSD, e.g. 50 pips)
-  slDistancePoints: number; // in points (e.g. 5000 points)
+  slDistancePrice: number; // in $ (e.g. $5.00)
+  slDistancePips: number; // in pips (1 pip = 0.10 perubahan harga XAUUSD, e.g. 50 pips)
+  slDistancePoints: number; // in points (e.g. 500 points)
   pipValuePerStandardLot?: number; // $10.00 per pip for 1.00 standard lot (100 oz)
   pipValuePer001Lot?: number; // $0.10 per pip for 0.01 lot (100 oz)
   pipValueForRecommendedLot?: number; // recommendedLot * pipValuePerStandardLot
@@ -172,13 +172,13 @@ function countStepDecimals(step: number): number {
 }
 
 /**
- * Converts XAUUSD price difference into TradeVault standard pips (1 pip = 1.00 perubahan harga XAUUSD).
+ * Converts XAUUSD price difference into TradeVault standard pips (1 pip = 0.10 perubahan harga XAUUSD).
  * Examples:
- * - Entry 4000, SL 3950 -> 50 pips
- * - Entry 4000, SL 3940 -> 60 pips
- * - Entry 4000, SL 3990 -> 10 pips
- * - Entry 4000, SL 3995 -> 5 pips
- * - Entry 4000, TP 4100 -> 100 pips
+ * - Entry 4000, SL 3995 -> 50 pips
+ * - Entry 4000, SL 3994 -> 60 pips
+ * - Entry 4000, SL 3999 -> 10 pips
+ * - Entry 4000, SL 3999.5 -> 5 pips
+ * - Entry 4000, TP 4010 -> 100 pips
  */
 export function convertXauusdPriceToPips(
   priceA: number,
@@ -545,7 +545,7 @@ export function calculateXauusdLot(
   const slDistancePoints = Math.round(slDistancePriceExact / pointDivisor);
 
   // ===========================================================================
-  // B. JARAK PIP: jarak harga / effectivePipSize (1.00 for XAUUSD)
+  // B. JARAK PIP: jarak harga / effectivePipSize (default 0.10 for XAUUSD)
   // ===========================================================================
   const pipSizeScaled = parseDecimalToScaledBigInt(effectivePipSize, 'NEAREST');
   const slDistancePipsScaled = (slDistanceScaled * BIGINT_SCALE_8) / pipSizeScaled;
@@ -1056,7 +1056,7 @@ export const MT5_SYMBOL_REGISTRY: Record<string, Mt5SymbolSpec> = {
     point: 0.01,
     tickSize: 0.01,
     tickValue: 1.0,
-    pipSize: 1.0, // Baseline: 4000 -> 3950 = 50 pips ($25 untuk 0.05 lot); dapat diubah ke 0.10 di Settings
+    pipSize: 0.1, // Baseline: 4000 -> 3995 = 50 pips ($25 untuk 0.05 lot); dapat diubah ke 1.00 di Settings
     pipValuePer001Lot: 0.1, // 0.01 lot × 1 pip = $0.10 (10 pips = $1.00, 50 pips = $5.00)
     pipValuePerStandardLot: 10.0, // 1.00 lot × 1 pip = $10.00 (50 pips = $500.00)
     minLot: 0.01,

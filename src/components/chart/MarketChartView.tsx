@@ -58,6 +58,7 @@ import type { Trade } from '../../types/trade';
 import type { AppSettings } from '../../types/settings';
 import { getTradeLifecycleStatus, resolveTradeLifecycle } from '../../utils/tradeLifecycle';
 import { useLanguage } from '../../utils/language';
+import { useTheme } from '../../utils/theme';
 
 interface MarketChartViewProps {
   isActive?: boolean;
@@ -524,21 +525,27 @@ export function normalizePositionPrices(
 export function computePositionPips(
   entryPrice: number,
   targetPrice: number,
-  pairLabel = 'XAUUSD'
+  pairLabel = 'XAUUSD',
+  xauusdPipSize = 0.1
 ): {
   pips: number;
   formattedPips: string;
   pipSize: number;
 } {
+  const activeXauPipSize =
+    typeof xauusdPipSize === 'number' && Number.isFinite(xauusdPipSize) && xauusdPipSize > 0
+      ? xauusdPipSize
+      : 0.1;
+
   if (!Number.isFinite(entryPrice) || !Number.isFinite(targetPrice)) {
-    return { pips: 0, formattedPips: '0 pips', pipSize: 0.1 };
+    return { pips: 0, formattedPips: '0 pips', pipSize: activeXauPipSize };
   }
 
   const cleanPair = (pairLabel || 'XAUUSD').trim().toUpperCase();
-  let pipSize = 0.1; // Standar XAUUSD: 1 pip = 0.10 harga (Contoh: 4000 -> 3995 = 50 pips)
+  let pipSize = activeXauPipSize; // Standar XAUUSD: 1 pip = 0.10 harga (Contoh: 4000 -> 3995 = 50 pips)
 
   if (cleanPair.includes('XAU') || cleanPair.includes('GOLD')) {
-    pipSize = 0.1;
+    pipSize = activeXauPipSize;
   } else if (
     cleanPair.includes('EURUSD') ||
     cleanPair.includes('GBPUSD') ||
@@ -620,7 +627,7 @@ const CandleCountdownBadge: React.FC<{
     <span
       data-testid="chart-bar-countdown-badge"
       title="Sisa waktu hingga penutupan candle aktif"
-      className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#1E222D] border border-white/[0.07] text-[9px] font-mono-numbers tabular-nums font-semibold text-[#D1D4DC] shrink-0"
+      className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#F4F4F5] dark:bg-[#1E222D] border border-[#E4E4E7] dark:border-white/[0.07] text-[9px] font-mono-numbers tabular-nums font-semibold text-[#0F172A] dark:text-[#D1D4DC] shrink-0"
     >
       {countdownText}
     </span>
@@ -648,13 +655,14 @@ export function computeRulerMetrics(
   p2: DrawingAnchor,
   pair: string,
   decimals: number,
-  tfSeconds: number
+  tfSeconds: number,
+  xauusdPipSize: number = 0.1
 ): RulerMeasurementMetrics {
   const priceDelta = p2.price - p1.price;
   const isPositive = priceDelta >= 0;
   const sign = isPositive ? '+' : '-';
   const formattedPriceDelta = `${sign}${Math.abs(priceDelta).toFixed(decimals)}`;
-  const pipsInfo = computePositionPips(p1.price, p2.price, pair);
+  const pipsInfo = computePositionPips(p1.price, p2.price, pair, xauusdPipSize);
   const signedPipsText = `${sign}${pipsInfo.formattedPips}`;
   const pctChange = p1.price !== 0 ? ((p2.price - p1.price) / p1.price) * 100 : 0;
   const formattedPct = `${pctChange >= 0 ? '+' : ''}${pctChange.toFixed(2)}%`;
@@ -768,12 +776,13 @@ export function computeRecommendedPositionSizing(
   pair: string,
   equity: number = 10000,
   riskPercent: number = 1,
-  xauusdPipValuePer001Lot: number = 0.1
+  xauusdPipValuePer001Lot: number = 0.1,
+  xauusdPipSize: number = 0.1
 ): PositionSizingRecommendation {
   const safeEquity = Number.isFinite(equity) && equity > 0 ? equity : 10000;
   const safeRiskPct = Number.isFinite(riskPercent) && riskPercent > 0 ? riskPercent : 1;
   const riskAmountUsd = safeEquity * (safeRiskPct / 100);
-  const pipsInfo = computePositionPips(entryPrice, slPrice, pair);
+  const pipsInfo = computePositionPips(entryPrice, slPrice, pair, xauusdPipSize);
   const slPips = pipsInfo.pips;
 
   const cleanPair = (pair || 'XAUUSD').toUpperCase();
@@ -783,7 +792,7 @@ export function computeRecommendedPositionSizing(
         ? xauusdPipValuePer001Lot
         : 0.1
       : 0.1;
-  const pipValuePerStandardLot = pipVal001 * 100; // $10 per 1.00 lot per Mode B pip
+  const pipValuePerStandardLot = pipVal001 * 100; // $10 per 1.00 lot (100 oz * $0.10/pip)
 
   const rawLots =
     slPips > 0 && pipValuePerStandardLot > 0
@@ -1977,14 +1986,14 @@ const DISPLAY_MODE_OPTIONS: Array<{
     label: 'Tampilan App',
     shortLabel: 'App',
     description:
-      'Tampilan standar di dalam aplikasi TradeVault dengan navbar atas dan navigasi bawah tetap terlihat.',
+      'Tampilan standar di dalam aplikasi VLO dengan navbar atas dan navigasi bawah tetap terlihat.',
   },
   {
     id: 'full',
     label: 'Tampilan Penuh',
     shortLabel: 'Penuh',
     description:
-      'Chart memenuhi seluruh area layar. Navbar atas dan navigasi bawah TradeVault disembunyikan.',
+      'Chart memenuhi seluruh area layar. Navbar atas dan navigasi bawah VLO disembunyikan.',
   },
   {
     id: 'landscape',
@@ -2740,6 +2749,7 @@ export interface TradingViewOandaWidgetProps {
   symbol: string;
   interval: string;
   theme?: 'dark' | 'light';
+  locale?: 'id' | 'en';
   candleColorStyle?: CandleColorStyle;
   showLiveDrawingTools?: boolean;
   isLiveCleanView?: boolean;
@@ -2751,6 +2761,7 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
     symbol,
     interval,
     theme = 'dark',
+    locale = 'id',
     candleColorStyle = 'monochrome',
     showLiveDrawingTools = false,
     isLiveCleanView = false,
@@ -2784,9 +2795,9 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
       }
       if (!container) return;
 
-      const nextConfigKey = `${symbol}|${tvInterval}|${theme}|${candleColorStyle}|${
+      const nextConfigKey = `${symbol}|${tvInterval}|${theme}|${locale}|${candleColorStyle}|${
         showLiveDrawingTools ? '1' : '0'
-      }|${isLiveCleanView ? '1' : '0'}|tvtouch_v2`;
+      }|${isLiveCleanView ? '1' : '0'}|tvtouch_v3`;
 
       if (
         mountedConfigKeyRef.current === nextConfigKey &&
@@ -2823,6 +2834,13 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
         host.appendChild(widgetContainer);
 
         const isMono = candleColorStyle !== 'classic';
+        const isLightTheme = theme === 'light';
+        const chartBg = isLightTheme ? '#FFFFFF' : '#000000';
+        const scaleTextColor = isLightTheme ? '#475569' : '#B2B5BE';
+        const scaleLineColor = isLightTheme ? '#E4E4E7' : 'rgba(0, 0, 0, 0)';
+        const monoUpColor = '#FFFFFF';
+        const monoDownColor = isLightTheme ? '#0F172A' : '#000000';
+        const monoBorderColor = isLightTheme ? '#0F172A' : '#FFFFFF';
 
         const script = document.createElement('script');
         script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
@@ -2833,9 +2851,9 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
           symbol: symbol,
           interval: tvInterval,
           timezone: 'Asia/Bangkok',
-          theme: theme === 'light' ? 'light' : 'dark',
+          theme: isLightTheme ? 'light' : 'dark',
           style: '1',
-          locale: 'id',
+          locale: locale,
           allow_symbol_change: false,
           calendar: false,
           hide_top_toolbar: Boolean(isLiveCleanView),
@@ -2846,10 +2864,10 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
           verttouchdrag: true,
           studies: [],
           save_image: true,
-          backgroundColor: '#000000',
+          backgroundColor: chartBg,
           gridColor: 'rgba(0, 0, 0, 0)',
           overrides: {
-            'paneProperties.background': '#000000',
+            'paneProperties.background': chartBg,
             'paneProperties.backgroundType': 'solid',
             'paneProperties.vertGridProperties.color': 'rgba(0, 0, 0, 0)',
             'paneProperties.horzGridProperties.color': 'rgba(0, 0, 0, 0)',
@@ -2857,19 +2875,19 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
             'paneProperties.bottomMargin': 8,
             'symbolWatermarkProperties.visibility': false,
             'symbolWatermarkProperties.color': 'rgba(0, 0, 0, 0)',
-            'scalesProperties.textColor': '#B2B5BE',
+            'scalesProperties.textColor': scaleTextColor,
             'scalesProperties.fontSize': 10,
-            'scalesProperties.lineColor': 'rgba(0, 0, 0, 0)',
+            'scalesProperties.lineColor': scaleLineColor,
             'volumePaneSize': 'tiny',
             'create_volume_indicator_by_default': false,
-            'mainSeriesProperties.candleStyle.upColor': isMono ? '#FFFFFF' : '#089981',
-            'mainSeriesProperties.candleStyle.downColor': isMono ? '#000000' : '#F23645',
+            'mainSeriesProperties.candleStyle.upColor': isMono ? monoUpColor : '#089981',
+            'mainSeriesProperties.candleStyle.downColor': isMono ? monoDownColor : '#F23645',
             'mainSeriesProperties.candleStyle.drawBorder': true,
-            'mainSeriesProperties.candleStyle.borderColor': '#FFFFFF',
-            'mainSeriesProperties.candleStyle.borderUpColor': isMono ? '#FFFFFF' : '#089981',
-            'mainSeriesProperties.candleStyle.borderDownColor': isMono ? '#FFFFFF' : '#F23645',
-            'mainSeriesProperties.candleStyle.wickUpColor': isMono ? '#FFFFFF' : '#089981',
-            'mainSeriesProperties.candleStyle.wickDownColor': isMono ? '#FFFFFF' : '#F23645',
+            'mainSeriesProperties.candleStyle.borderColor': monoBorderColor,
+            'mainSeriesProperties.candleStyle.borderUpColor': isMono ? monoBorderColor : '#089981',
+            'mainSeriesProperties.candleStyle.borderDownColor': isMono ? monoBorderColor : '#F23645',
+            'mainSeriesProperties.candleStyle.wickUpColor': isMono ? monoBorderColor : '#089981',
+            'mainSeriesProperties.candleStyle.wickDownColor': isMono ? monoBorderColor : '#F23645',
           },
           support_host: 'https://www.tradingview.com',
         });
@@ -2895,7 +2913,7 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
           initRafRef.current = null;
         }
       };
-    }, [isActive, symbol, tvInterval, theme, candleColorStyle, showLiveDrawingTools, isLiveCleanView]);
+    }, [isActive, symbol, tvInterval, theme, locale, candleColorStyle, showLiveDrawingTools, isLiveCleanView]);
 
     // Clean up container only when component truly unmounts from the tree
     useEffect(() => {
@@ -3006,7 +3024,7 @@ export const TradingViewOandaWidget: React.FC<TradingViewOandaWidgetProps> = Rea
       <div
         ref={tvWidgetContainerRef}
         data-testid="tradingview-oanda-widget-container"
-        className="tradingview-widget-container absolute inset-0 w-full h-full min-h-0 min-w-0 z-10 bg-[#000000] overflow-hidden overscroll-none"
+        className="tradingview-widget-container absolute inset-0 w-full h-full min-h-0 min-w-0 z-10 bg-white dark:bg-[#000000] overflow-hidden overscroll-none"
         style={{
           position: 'absolute',
           inset: 0,
@@ -3033,7 +3051,10 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
   onOpenAccount,
   onCreateTradeFromPosition,
 }) => {
-  const { tr } = useLanguage();
+  const { isEn, tr } = useLanguage();
+  const { isDark } = useTheme();
+  const isDarkRef = useRef<boolean>(isDark);
+  isDarkRef.current = isDark;
   const activeUserId: string | null = currentUser?.id || null;
 
   const translateToolName = useCallback(
@@ -4012,12 +4033,13 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
     const container = chartContainerRef.current;
     if (!container) return;
 
+    const initialDark = isDarkRef.current;
     const chart = createChart(container, {
       width: container.clientWidth || 360,
       height: container.clientHeight || 480,
       layout: {
-        background: { type: ColorType.Solid, color: '#000000' },
-        textColor: '#B2B5BE',
+        background: { type: ColorType.Solid, color: initialDark ? '#000000' : '#FFFFFF' },
+        textColor: initialDark ? '#B2B5BE' : '#475569',
         fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, sans-serif',
         fontSize: 9,
       },
@@ -4031,21 +4053,21 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: 'rgba(178, 181, 190, 0.45)',
+          color: initialDark ? 'rgba(178, 181, 190, 0.45)' : 'rgba(71, 85, 105, 0.45)',
           width: 1,
           style: LineStyle.Dashed,
           labelBackgroundColor: '#2962FF',
         },
         horzLine: {
-          color: 'rgba(178, 181, 190, 0.45)',
+          color: initialDark ? 'rgba(178, 181, 190, 0.45)' : 'rgba(71, 85, 105, 0.45)',
           width: 1,
           style: LineStyle.Dashed,
           labelBackgroundColor: '#2962FF',
         },
       },
       rightPriceScale: {
-        borderVisible: false,
-        borderColor: 'rgba(0, 0, 0, 0)',
+        borderVisible: !initialDark,
+        borderColor: initialDark ? 'rgba(0, 0, 0, 0)' : '#E4E4E7',
         autoScale: true,
         scaleMargins: {
           top: 0.25,
@@ -4053,8 +4075,8 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
         },
       },
       timeScale: {
-        borderVisible: false,
-        borderColor: 'rgba(0, 0, 0, 0)',
+        borderVisible: !initialDark,
+        borderColor: initialDark ? 'rgba(0, 0, 0, 0)' : '#E4E4E7',
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 40,
@@ -4324,21 +4346,51 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
     };
   }, [triggerSvgOverlaySync, startContinuousSync, stopContinuousSync, handleEmptyChartTapOrClick]);
 
-  // Update Candlestick colors dynamically when user toggles Monochrome vs Classic Green/Red
+  // Synchronize Lightweight Charts surface, axes & crosshair whenever Light/Dark theme changes
+  useEffect(() => {
+    const chart = chartApiRef.current;
+    if (!chart) return;
+    chart.applyOptions({
+      layout: {
+        background: { type: ColorType.Solid, color: isDark ? '#000000' : '#FFFFFF' },
+        textColor: isDark ? '#B2B5BE' : '#475569',
+      },
+      crosshair: {
+        vertLine: {
+          color: isDark ? 'rgba(178, 181, 190, 0.45)' : 'rgba(71, 85, 105, 0.45)',
+        },
+        horzLine: {
+          color: isDark ? 'rgba(178, 181, 190, 0.45)' : 'rgba(71, 85, 105, 0.45)',
+        },
+      },
+      rightPriceScale: {
+        borderVisible: !isDark,
+        borderColor: isDark ? 'rgba(0, 0, 0, 0)' : '#E4E4E7',
+      },
+      timeScale: {
+        borderVisible: !isDark,
+        borderColor: isDark ? 'rgba(0, 0, 0, 0)' : '#E4E4E7',
+      },
+    });
+  }, [isDark]);
+
+  // Update Candlestick colors dynamically when user toggles Monochrome vs Classic Green/Red or Light/Dark theme
   useEffect(() => {
     const candleSeries = candleSeriesRef.current;
     if (!candleSeries) return;
     const isMonochrome = prefs.candleColorStyle !== 'classic';
+    const monoBorder = isDark ? '#FFFFFF' : '#0F172A';
+    const monoDown = isDark ? '#000000' : '#0F172A';
     candleSeries.applyOptions({
       upColor: isMonochrome ? '#FFFFFF' : '#089981',
-      downColor: isMonochrome ? '#000000' : '#F23645',
+      downColor: isMonochrome ? monoDown : '#F23645',
       borderVisible: true,
-      borderUpColor: isMonochrome ? '#FFFFFF' : '#089981',
-      borderDownColor: isMonochrome ? '#FFFFFF' : '#F23645',
-      wickUpColor: isMonochrome ? '#FFFFFF' : '#089981',
-      wickDownColor: isMonochrome ? '#FFFFFF' : '#F23645',
+      borderUpColor: isMonochrome ? monoBorder : '#089981',
+      borderDownColor: isMonochrome ? monoBorder : '#F23645',
+      wickUpColor: isMonochrome ? monoBorder : '#089981',
+      wickDownColor: isMonochrome ? monoBorder : '#F23645',
     });
-  }, [prefs.candleColorStyle]);
+  }, [prefs.candleColorStyle, isDark]);
 
   // Update priceFormat precision when switching Pair
   useEffect(() => {
@@ -5245,7 +5297,8 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
         pairName,
         currentEquity ?? settings?.startingBalance ?? 10000,
         settings?.defaultRiskPercent ?? 1,
-        settings?.xauusdPipValuePer001Lot ?? 0.1
+        settings?.xauusdPipValuePer001Lot ?? 0.1,
+        settings?.xauusdPipSize ?? 0.1
       );
 
       if (onCreateTradeFromPosition) {
@@ -5271,6 +5324,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
       settings?.startingBalance,
       settings?.defaultRiskPercent,
       settings?.xauusdPipValuePer001Lot,
+      settings?.xauusdPipSize,
     ]
   );
 
@@ -6367,10 +6421,10 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
         width: `${workspaceLayout.width}px`,
         height: `${workspaceLayout.height}px`,
         zIndex: workspaceLayout.zIndex,
-        backgroundColor: '#000000',
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
         ...safeAreaStyle,
       }}
-      className="fixed flex flex-col min-h-0 min-w-0 overflow-hidden overscroll-none bg-black"
+      className="fixed flex flex-col min-h-0 min-w-0 overflow-hidden overscroll-none bg-white dark:bg-black"
     >
       {/* =====================================================================
           FOCUSED TRADING WORKSPACE HEADER (TradingView Institutional Style)
@@ -6595,7 +6649,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
           WebkitOverflowScrolling: 'touch',
           pointerEvents: 'auto',
         }}
-        className="relative flex-1 flex flex-col w-full h-full min-h-0 min-w-0 overflow-hidden bg-black touch-none"
+        className="relative flex-1 flex flex-col w-full h-full min-h-0 min-w-0 overflow-hidden bg-white dark:bg-black touch-none"
       >
         {/* SECTION A.1 & A.5: Persistent Single-Iframe Live Advanced Chart Container
             Pinned to 100% absolute bounds of market-chart-viewport. Never collapsed to 0x0 on mode switch. */}
@@ -6615,14 +6669,15 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
           }}
           className={
             isLiveMode
-              ? 'absolute inset-0 w-full h-full z-10 bg-black overflow-hidden overscroll-none touch-none'
+              ? 'absolute inset-0 w-full h-full z-10 bg-white dark:bg-black overflow-hidden overscroll-none touch-none'
               : 'absolute inset-0 w-full h-full -z-10 opacity-0 invisible pointer-events-none overflow-hidden touch-none'
           }
         >
           <TradingViewOandaWidget
             symbol={prefs.symbol}
             interval={prefs.interval}
-            theme="dark"
+            theme={isDark ? 'dark' : 'light'}
+            locale={isEn ? 'en' : 'id'}
             candleColorStyle={prefs.candleColorStyle}
             showLiveDrawingTools={showLiveDrawingTools}
             isLiveCleanView={isLiveCleanView}
@@ -6638,7 +6693,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
           className={
             isLiveMode
               ? 'hidden pointer-events-none'
-              : 'relative flex-1 w-full h-full min-h-0 min-w-0 overflow-hidden bg-black overscroll-none transform-gpu'
+              : 'relative flex-1 w-full h-full min-h-0 min-w-0 overflow-hidden bg-white dark:bg-black overscroll-none transform-gpu'
           }
         />
 
@@ -6969,8 +7024,8 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                             data-testid="drawing-open-position-direct-btn"
                             onClick={() => handleCreateTradeFromSelectedPosition(selectedDrawingObj)}
                             title={tr(
-                              'Eksekusi Posisi Baru langsung ke Jurnal TradeVault',
-                              'Execute New Position directly to TradeVault Journal'
+                              'Eksekusi Posisi Baru langsung ke Jurnal VLO',
+                              'Execute New Position directly to VLO Journal'
                             )}
                             className={`inline-flex items-center gap-1 h-6 px-2 rounded text-white text-[10px] font-bold transition-colors cursor-pointer shadow-sm ${
                               selectedDrawingObj.type === 'long_position' || selectedDrawingObj.type === 'long'
@@ -7074,15 +7129,17 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                           ? 'bg-[#2A2E39] text-[#F59E0B] border-white/15'
                           : 'bg-[#1E222D] text-[#D1D4DC] border-white/10';
                   const inspectorPair = selectedDrawingObj.pair || activePairMeta.label;
-                  const slPipsInfo = computePositionPips(norm.entryPrice, norm.slPrice, inspectorPair);
-                  const tpPipsInfo = computePositionPips(norm.entryPrice, norm.tpPrice, inspectorPair);
+                  const xauPipSz = settings?.xauusdPipSize ?? 0.1;
+                  const slPipsInfo = computePositionPips(norm.entryPrice, norm.slPrice, inspectorPair, xauPipSz);
+                  const tpPipsInfo = computePositionPips(norm.entryPrice, norm.tpPrice, inspectorPair, xauPipSz);
                   const sizingInfo = computeRecommendedPositionSizing(
                     norm.entryPrice,
                     norm.slPrice,
                     inspectorPair,
                     currentEquity ?? settings?.startingBalance ?? 10000,
                     settings?.defaultRiskPercent ?? 1,
-                    settings?.xauusdPipValuePer001Lot ?? 0.1
+                    settings?.xauusdPipValuePer001Lot ?? 0.1,
+                    xauPipSz
                   );
 
                   return (
@@ -7224,7 +7281,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
 
                       <span
                         data-testid="position-inspector-lot-recommendation"
-                        title="Rekomendasi Lot Ideal sesuai Equity & Risiko Jurnal TradeVault"
+                        title="Rekomendasi Lot Ideal sesuai Equity & Risiko Jurnal VLO"
                         className="px-1.5 py-0.5 rounded bg-[#2962FF]/15 border border-[#2962FF]/35 text-[#60A5FA] font-semibold whitespace-nowrap"
                       >
                         Lot Ideal: {sizingInfo.recommendedLot.toFixed(2)} Lot (${sizingInfo.riskAmountUsd.toFixed(0)} · {sizingInfo.riskPercent}%)
@@ -7361,7 +7418,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                               handleSelectToolFromMenu(tool.id);
                             }
                           }}
-                          title={tool.name}
+                          title={translateToolName(tool.name)}
                           className={`inline-flex items-center justify-center h-6 w-6 rounded transition-colors cursor-pointer ${
                             isSelected
                               ? 'bg-[#2A2E39] text-white border border-white/15'
@@ -7439,10 +7496,10 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
             {isLoadingData && (
               <div
                 data-testid="market-chart-loading"
-                className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-black/75 pointer-events-none"
+                className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/85 dark:bg-black/75 pointer-events-none"
               >
-                <RefreshCw className="h-5 w-5 text-white animate-spin mb-2 stroke-[1.75]" />
-                <span className="text-xs font-medium text-neutral-300">
+                <RefreshCw className="h-5 w-5 text-[#0F172A] dark:text-white animate-spin mb-2 stroke-[1.75]" />
+                <span className="text-xs font-medium text-[#526071] dark:text-neutral-300">
                   {tr(
                     `Memuat 500 Candle ${activePairItem.label} (${activeTfItem.label})...`,
                     `Loading 500 Candles ${activePairItem.label} (${activeTfItem.label})...`
@@ -7457,11 +7514,11 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                 data-testid="replay-cutter-overlay"
                 className="absolute inset-0 z-20 pointer-events-none overflow-hidden select-none"
               >
-                {/* Semi-transparent dark preview shade to the right of the Cutter Line */}
+                {/* Semi-transparent preview shade to the right of the Cutter Line */}
                 <div
                   data-testid="replay-cutter-preview-shade"
                   style={{ left: `${curtainX}px` }}
-                  className="absolute inset-y-0 right-0 bg-black/45 pointer-events-none"
+                  className="absolute inset-y-0 right-0 bg-[#0F172A]/15 dark:bg-black/45 pointer-events-none"
                 />
 
                 {/* Draggable Vertical Line (1.5px) + Clean Handle in Center */}
@@ -8487,8 +8544,9 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
 
                 const rightBadgeX = Math.max(8, svgWidth - 54);
                 const pairForPips = item.pair || activePairMeta.label;
-                const tpPipsInfo = computePositionPips(norm.entryPrice, norm.tpPrice, pairForPips);
-                const slPipsInfo = computePositionPips(norm.entryPrice, norm.slPrice, pairForPips);
+                const activeChartXauPipSize = settings?.xauusdPipSize ?? 0.1;
+                const tpPipsInfo = computePositionPips(norm.entryPrice, norm.tpPrice, pairForPips, activeChartXauPipSize);
+                const slPipsInfo = computePositionPips(norm.entryPrice, norm.slPrice, pairForPips, activeChartXauPipSize);
                 const tpBannerText = `TP ${norm.tpPrice.toFixed(activePairMeta.decimals)} (${tpPipsInfo.formattedPips}) · 1:${geom.rrRatio}${
                   ohlcStatus.status === 'TP_HIT' ? ' · HIT' : ''
                 }`;
@@ -8795,7 +8853,8 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                   { ...item.p2, logical: effectiveP2Logical },
                   item.pair || activePairMeta.label,
                   activePairMeta.decimals,
-                  activeTimeframeSeconds
+                  activeTimeframeSeconds,
+                  settings?.xauusdPipSize ?? 0.1
                 );
                 const rx = Math.min(p1.x, p2.x);
                 const ry = Math.min(p1.y, p2.y);
@@ -9015,7 +9074,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                         <h3 className="text-[11px] font-semibold text-[#868993] uppercase tracking-wider mt-4 mb-2">
                           {translateSectionName(sectionName)}
                         </h3>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                           {toolsInSection.map((tool) => {
                             const isFav = favoriteTools.includes(tool.id);
                             const isActiveTool = activeDrawingTool === tool.id;
@@ -9042,7 +9101,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                                 <button
                                   type="button"
                                   data-testid={`drawing-tool-star-${tool.id}`}
-                                  aria-label={`Favorit ${tool.name}`}
+                                  aria-label={tr(`Favorit ${tool.name}`, `Favorite ${translateToolName(tool.name)}`)}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleToggleFavoriteTool(tool.id);

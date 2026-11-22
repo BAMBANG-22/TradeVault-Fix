@@ -1,4 +1,4 @@
-name: Build TradeVault Android APK
+name: Build Vlo Journal Android APK
 
 on:
   workflow_dispatch:
@@ -71,9 +71,11 @@ jobs:
         run: |
           set -euo pipefail
           VERSION_CODE=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          APP_VERSION_NAME="$(node -p "require('./package.json').version")"
           echo "VERSION_CODE=$VERSION_CODE" >> "$GITHUB_ENV"
-          echo "VERSION_NAME=1.0.$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=$APP_VERSION_NAME" >> "$GITHUB_ENV"
           echo "Android versionCode: $VERSION_CODE"
+          echo "Android versionName: $APP_VERSION_NAME"
 
           if [ -z "${ANDROID_KEYSTORE_BASE64:-}" ]; then
             echo "::notice::ANDROID_KEYSTORE_BASE64 secret is not configured in this repository; building APK with standard Android debug signing."
@@ -194,7 +196,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TradeVault-Next-Persistent-Signed-Debug-APK
+          name: Vlo-Journal-Persistent-Signed-Debug-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14

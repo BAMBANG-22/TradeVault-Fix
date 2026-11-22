@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vlo Journal — XAUUSD Trading Journal & Risk Analytics</title>
+    <meta
+      name="description"
+      content="Vlo Journal is a dedicated XAUUSD trading journal, performance analytics, risk calculator, and cloud-synced workspace for disciplined traders."
+    />
+    <style>
+      :root {
+        --bg: #f5f7fa;
+        --surface: #ffffff;
+        --surface-muted: #f8fafc;
+        --border: #dde3ea;
+        --ink: #151d2a;
+        --muted: #5e6a7d;
+        --accent: #1769e8;
+        --emerald: #059669;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .container {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding-bottom: 24px;
+        border-bottom: 1px solid var(--border);
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        text-decoration: none;
+        color: var(--ink);
+      }
+      .brand-tile {
+        width: 44px;
+        height: 44px;
+        border-radius: 11px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .brand-text strong {
+        display: block;
+        font-size: 16px;
+        letter-spacing: -0.02em;
+      }
+      .brand-text span {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+      }
+      nav a:hover,
+      nav a.active {
+        color: var(--accent);
+      }
+      .lang-switch {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        border-radius: 8px;
+        padding: 2px;
+      }
+      .lang-switch button {
+        border: 0;
+        background: transparent;
+        padding: 4px 10px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--muted);
+      }
+      .lang-switch button.active {
+        background: var(--accent);
+        color: #fff;
+      }
+      .hero {
+        margin-top: 32px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 32px 28px;
+      }
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin-bottom: 10px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 28px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        max-width: 660px;
+      }
+      .grid {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+      }
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+      }
+      .card p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .security-box {
+        margin-top: 24px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--emerald);
+        border-radius: 12px;
+        padding: 20px 22px;
+      }
+      .security-box h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+      .security-box p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      footer {
+        margin-top: 40px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      footer a {
+        color: var(--ink);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      footer a:hover {
+        color: var(--accent);
+      }
+      [data-lang="en"] {
+        display: none;
+      }
+      body.lang-en [data-lang="id"] {
+        display: none;
+      }
+      body.lang-en [data-lang="en"] {
+        display: block;
+      }
+      body.lang-en span[data-lang="en"],
+      body.lang-en a[data-lang="en"] {
+        display: inline;
+      }
+      span[data-lang="en"],
+      a[data-lang="en"] {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <a class="brand" href="./index.html">
+          <span class="brand-tile">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="14 14 228 228" width="38" height="38" fill="none" aria-label="Vlo Journal">
+              <path fill="#151D2A" fill-rule="evenodd" d="M 34.21 74.65 A 18.00 18.00 0 0 1 65.79 57.35 L 95.13 110.93 A 58.00 58.00 0 1 1 80.00 150.00 C 80.00 124.00, 54.00 106.00, 34.21 74.65 Z M 138.00 125.00 A 25.00 25.00 0 1 0 138.10 125.00 Z" />
+              <path fill="#1769E8" d="M 174.61 67.78 A 90.00 90.00 0 0 1 223.60 122.19 A 10.00 10.00 0 0 1 204.57 128.37 A 70.00 70.00 0 0 0 166.47 86.05 A 10.00 10.00 0 0 1 174.61 67.78 Z" />
+              <path fill="#059669" d="M 138.00 136.00 A 14.00 14.00 0 1 1 137.90 136.00 Z" />
+            </svg>
+          </span>
+          <span class="brand-text">
+            <strong>Vlo Journal</strong>
+            <span>Trading Journal Workspace</span>
+          </span>
+        </a>
+
+        <nav>
+          <a href="./index.html" class="active">
+            <span data-lang="id">Beranda</span>
+            <span data-lang="en">Home</span>
+          </a>
+          <a href="./privacy.html">
+            <span data-lang="id">Kebijakan Privasi</span>
+            <span data-lang="en">Privacy Policy</span>
+          </a>
+          <a href="./terms.html">
+            <span data-lang="id">Ketentuan Layanan</span>
+            <span data-lang="en">Terms of Service</span>
+          </a>
+          <div class="lang-switch" aria-label="Language switch">
+            <button type="button" id="btn-id" class="active" onclick="setLang('id')">ID</button>
+            <button type="button" id="btn-en" onclick="setLang('en')">EN</button>
+          </div>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="eyebrow">VLO JOURNAL OFFICIAL INFORMATION</div>
+          <h1 data-lang="id">Jurnal Trading XAUUSD, Analitik Performa, &amp; Manajemen Risiko</h1>
+          <h1 data-lang="en">XAUUSD Trading Journal, Performance Analytics &amp; Risk Workspace</h1>
+          <p class="lead" data-lang="id">
+            Vlo Journal adalah aplikasi pencatatan transaksi dan evaluasi disiplin trading yang membantu trader memantau
+            ekuitas, menghitung ukuran posisi (lot) secara presisi, meninjau berita makro serta siklus pasar, dan
+            menyinkronkan jurnal lintas perangkat secara aman melalui VLO Cloud.
+          </p>
+          <p class="lead" data-lang="en">
+            Vlo Journal is a structured trade logging and execution review application built to help traders track
+            equity curves, calculate position sizes accurately, monitor macro events and market cycles, and securely
+            synchronize journals across devices via VLO Cloud.
+          </p>
+        </section>
+
+        <section class="grid">
+          <article class="card">
+            <h2 data-lang="id">Jurnal &amp; Audit Eksekusi</h2>
+            <h2 data-lang="en">Trade Log &amp; Execution Audit</h2>
+            <p data-lang="id">
+              Catat entri, stop loss, take profit, komisi, swap, serta screenshot sebelum dan sesudah transaksi dalam
+              satu ruang kerja terstruktur.
+            </p>
+            <p data-lang="en">
+              Record entry, stop loss, take profit, commission, swap, and before/after trade chart screenshots in one
+              organized journal.
+            </p>
+          </article>
+
+          <article class="card">
+            <h2 data-lang="id">Analitik &amp; Kalkulator Risiko</h2>
+            <h2 data-lang="en">Analytics &amp; Risk Sizing</h2>
+            <p data-lang="id">
+              Pantau Win Rate, Profit Factor, Expectancy, Drawdown, batas kerugian harian, dan simulasi risiko secara
+              real-time.
+            </p>
+            <p data-lang="en">
+              Monitor Win Rate, Profit Factor, Expectancy, Drawdown, daily loss limits, and position risk simulations
+              in real time.
+            </p>
+          </article>
+
+          <article class="card">
+            <h2 data-lang="id">Mode Cloud &amp; Mode Lokal</h2>
+            <h2 data-lang="en">Cloud Sync &amp; Local Mode</h2>
+            <p data-lang="id">
+              Masuk dengan Google atau Akun VLO untuk sinkronisasi cloud, atau gunakan Mode Lokal di perangkat tanpa
+              akun.
+            </p>
+            <p data-lang="en">
+              Sign in with Google or a VLO Account for encrypted cloud sync, or use Local Mode directly on your device.
+            </p>
+          </article>
+        </section>
+
+        <section class="security-box">
+          <h3 data-lang="id">Privasi &amp; Isolasi Data Pengguna (RLS)</h3>
+          <h3 data-lang="en">User Data Privacy &amp; Row-Level Security</h3>
+          <p data-lang="id">
+            Setiap akun pengguna memiliki isolasi data ketat berbasis Row Level Security (RLS) dan folder penyimpanan
+            privat terenkripsi. Informasi profil OAuth hanya digunakan untuk autentikasi sesi login.
+          </p>
+          <p data-lang="en">
+            Every user account is strictly isolated using database Row Level Security (RLS) and private storage buckets.
+            OAuth profile information is used solely for authenticating your Vlo Journal account.
+          </p>
+        </section>
+      </main>
+
+      <footer>
+        <span>&copy; 2026 Vlo Journal &middot; Contact: <a href="mailto:bambang.andika212@gmail.com">bambang.andika212@gmail.com</a></span>
+        <span>
+          <a href="./privacy.html">Privacy Policy</a> &middot; <a href="./terms.html">Terms of Service</a>
+        </span>
+      </footer>
+    </div>
+
+    <script>
+      function setLang(lang) {
+        document.body.classList.toggle('lang-en', lang === 'en');
+        document.getElementById('btn-id').classList.toggle('active', lang === 'id');
+        document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+        document.documentElement.lang = lang;
+      }
+    </script>
+  </body>
+</html>

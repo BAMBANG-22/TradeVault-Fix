@@ -419,7 +419,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
     .join(' ');
 
   const isNegativeGrowth = compoundingResult.clampedGrowthRatePercent < 0;
-  const primaryStrokeColor = isNegativeGrowth ? '#E05260' : '#3478DC';
+  const primaryStrokeColor = isNegativeGrowth ? '#E05260' : '#00A878';
 
   const capitalPresets = currency === 'IDR' ? CAPITAL_PRESETS_IDR : CAPITAL_PRESETS_USD;
   const step1Comp = compoundingResult.steps[0];
@@ -432,12 +432,12 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           1. HEADER & CURRENCY / BALANCE CONTROLS
          ========================================================================== */}
       <div className="space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#DDE3EA] dark:border-[#20252D]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#E4E4E7] dark:border-[#20252D]">
           <div>
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7]">
               {tr('Simulator Compounding', 'Compounding Simulator')}
             </h2>
-            <p className="text-xs text-[#667085] dark:text-[#98A2B3] mt-0.5">
+            <p className="text-xs text-[#526071] dark:text-[#929BA9] mt-0.5">
               {tr(
                 'Proyeksi pertumbuhan modal (Compounding vs Saldo Tetap / Tarik Profit) dalam USD & IDR',
                 'Capital growth projection (Compounding vs Fixed Balance / Profit Withdrawal) in USD & IDR'
@@ -447,16 +447,16 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Currency Switcher (USD / IDR / EUR) */}
-            <div className="inline-flex items-center p-0.5 rounded-lg bg-[#EEF2F6] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D]">
+            <div className="inline-flex items-center p-0.5 rounded-full bg-[#F4F4F5] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D]">
               {(['USD', 'IDR', 'EUR'] as CurrencyCode[]).map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => handleCurrencySwitch(c)}
-                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                  className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                     currency === c
-                      ? 'bg-[#151D2A] text-white dark:bg-[#161A22] dark:text-[#F2F4F7] border border-black/10 dark:border-white/[0.14]'
-                      : 'text-[#667085] dark:text-[#98A2B3] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                      ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607]'
+                      : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
                   }`}
                 >
                   {c === 'IDR' ? 'IDR (Rp)' : c === 'USD' ? 'USD ($)' : 'EUR (€)'}
@@ -471,7 +471,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 setStartingCapitalInput(String(liveAccountBalanceInSelectedCurrency));
                 setTablePage(1);
               }}
-              className="px-3 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#101318] hover:border-[#151D2A]/30 dark:hover:border-white/[0.2] text-xs font-medium text-[#151D2A] dark:text-[#F2F4F7] transition-colors font-mono-numbers tabular-nums"
+              className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] hover:border-[#0F172A]/45 dark:hover:border-white/45 text-xs font-medium text-[#0F172A] dark:text-[#F2F4F7] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none transition-colors font-mono-numbers tabular-nums cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             >
               {tr('Gunakan Saldo Akun', 'Use Account Balance')} ({formatCurrency(liveAccountBalanceInSelectedCurrency, activeSettings)})
             </button>
@@ -485,13 +485,13 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           {/* Modal Awal (Initial Capital) */}
           <div className="sm:col-span-2 lg:col-span-1">
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 {tr('Modal Awal', 'Initial Capital')} ({activeSettings.currencySymbol})
               </label>
               <button
                 type="button"
                 onClick={() => handleCurrencySwitch(currency === 'IDR' ? 'USD' : 'IDR')}
-                className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#3478DC] hover:underline"
+                className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] hover:underline cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
                 title={tr('Ubah mata uang dan konversi otomatis', 'Switch currency and convert automatically')}
               >
                 <ArrowRightLeft className="w-3 h-3" />
@@ -500,7 +500,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
             </div>
 
             <div className="relative">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold font-mono-numbers text-[#667085] dark:text-[#98A2B3] pointer-events-none">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold font-mono-numbers text-[#526071] dark:text-[#929BA9] pointer-events-none">
                 {activeSettings.currencySymbol}
               </span>
               <input
@@ -511,9 +511,9 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   handleCapitalOrDepositInput(e.target.value, setStartingCapitalInput);
                   setTablePage(1);
                 }}
-                className={`w-full rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] ${
+                className={`w-full rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none ${
                   currency === 'IDR' ? 'pl-9' : 'pl-7'
-                } pr-3.5 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7] focus:border-[#151D2A] dark:focus:border-white/[0.28] focus:outline-none transition-colors`}
+                } pr-3.5 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] focus:border-[#0F172A] dark:focus:border-white focus:outline-none transition-colors`}
                 placeholder={currency === 'IDR' ? '10.000.000' : '1000'}
               />
             </div>
@@ -530,10 +530,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       setStartingCapitalInput(String(preset.value));
                       setTablePage(1);
                     }}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-mono-numbers tabular-nums transition-colors border ${
+                    className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono-numbers tabular-nums transition-colors border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                       isSelected
-                        ? 'bg-[#151D2A] text-white border-[#151D2A] dark:bg-[#161A22] dark:text-[#F2F4F7] dark:border-white/[0.2]'
-                        : 'bg-transparent text-[#667085] dark:text-[#98A2B3] border-[#DDE3EA] dark:border-[#20252D] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                        ? 'bg-[#0F172A] text-white border-[#0F172A] dark:bg-white dark:text-[#050607] dark:border-white'
+                        : 'bg-transparent text-[#526071] dark:text-[#929BA9] border-[#E4E4E7] dark:border-[#20252D] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
                     }`}
                   >
                     {preset.label}
@@ -543,7 +543,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
             </div>
 
             {crossCurrencyHint && (
-              <p className="text-[10px] font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3] mt-1.5">
+              <p className="text-[10px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] mt-1.5">
                 {crossCurrencyHint}
               </p>
             )}
@@ -552,7 +552,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           {/* Return (%) & Periode */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 {intervalReturnLabel}
               </label>
               <select
@@ -561,15 +561,15 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   setInterval(e.target.value as CompoundingInterval);
                   setTablePage(1);
                 }}
-                className="bg-transparent text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F4F7] focus:outline-none cursor-pointer"
+                className="bg-transparent text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] focus:outline-none cursor-pointer rounded"
               >
-                <option value="monthly" className="bg-white dark:bg-[#0B0D11] text-[#151D2A] dark:text-[#F2F4F7]">
+                <option value="monthly" className="bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7]">
                   {tr('Per Bulan', 'Monthly')}
                 </option>
-                <option value="weekly" className="bg-white dark:bg-[#0B0D11] text-[#151D2A] dark:text-[#F2F4F7]">
+                <option value="weekly" className="bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7]">
                   {tr('Per Minggu', 'Weekly')}
                 </option>
-                <option value="daily" className="bg-white dark:bg-[#0B0D11] text-[#151D2A] dark:text-[#F2F4F7]">
+                <option value="daily" className="bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7]">
                   {tr('Per Hari', 'Daily')}
                 </option>
               </select>
@@ -580,14 +580,14 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 inputMode="decimal"
                 value={growthRateInput}
                 onChange={(e) => handleCleanNumberInput(e.target.value, setGrowthRateInput, true, true)}
-                className="w-full rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] px-3.5 pr-8 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7] focus:border-[#151D2A] dark:focus:border-white/[0.28] focus:outline-none transition-colors"
+                className="w-full rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none px-3.5 pr-8 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] focus:border-[#0F172A] dark:focus:border-white focus:outline-none transition-colors"
                 placeholder="5"
               />
-              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-mono-numbers text-[#667085] dark:text-[#98A2B3] pointer-events-none">
+              <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-mono-numbers text-[#526071] dark:text-[#929BA9] pointer-events-none">
                 %
               </span>
             </div>
-            <p className="text-[10px] font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3] mt-1.5">
+            <p className="text-[10px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] mt-1.5">
               {tr('Profit periode ke-1', '1st period profit')}: {formatSignedCurrency(step1Comp ? step1Comp.growthProfit : 0)}
             </p>
           </div>
@@ -595,7 +595,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           {/* Durasi Periode */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 {tr('Durasi', 'Duration')} ({intervalUnitLabel})
               </label>
               <div className="flex items-center gap-1">
@@ -610,10 +610,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                         setDurationInput(p.duration);
                         setTablePage(1);
                       }}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-mono-numbers tabular-nums transition-colors border ${
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-mono-numbers tabular-nums transition-colors border cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                         isActive
-                          ? 'bg-[#151D2A] text-white border-[#151D2A] dark:bg-[#161A22] dark:text-[#F2F4F7] dark:border-white/[0.2] font-semibold'
-                          : 'bg-transparent text-[#667085] dark:text-[#98A2B3] border-transparent hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                          ? 'bg-[#0F172A] text-white border-[#0F172A] dark:bg-white dark:text-[#050607] dark:border-white font-semibold'
+                          : 'bg-transparent text-[#526071] dark:text-[#929BA9] border-transparent hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
                       }`}
                     >
                       {tr(p.shortLabelId, p.shortLabelEn)}
@@ -632,10 +632,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 handleCleanNumberInput(e.target.value, setDurationInput, false);
                 setTablePage(1);
               }}
-              className="w-full rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] px-3.5 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7] focus:border-[#151D2A] dark:focus:border-white/[0.28] focus:outline-none transition-colors"
+              className="w-full rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none px-3.5 py-2.5 text-sm font-semibold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] focus:border-[#0F172A] dark:focus:border-white focus:outline-none transition-colors"
               placeholder="12"
             />
-            <p className="text-[10px] text-[#667085] dark:text-[#98A2B3] mt-1.5">
+            <p className="text-[10px] text-[#526071] dark:text-[#929BA9] mt-1.5">
               {tr(
                 `Simulasi selama ${duration} ${intervalUnitLabel.toLowerCase()} ke depan`,
                 `Simulated over the next ${duration} ${intervalUnitLabel.toLowerCase()}${duration > 1 ? 's' : ''}`
@@ -646,7 +646,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           {/* Tambah Deposit Rutin & Reset */}
           <div className="flex flex-col justify-between gap-2">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 {tr('Setoran Tambahan', 'Recurring Deposit')}
               </span>
               {regularDeposit > 0 && (
@@ -656,7 +656,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                     setDepositInput('0');
                     setShowAdvancedDeposit(false);
                   }}
-                  className="text-[10px] text-[#E05260] hover:underline"
+                  className="text-[10px] text-[#E11D48] dark:text-[#E05260] hover:underline cursor-pointer"
                 >
                   {tr('Reset Deposit', 'Reset Deposit')}
                 </button>
@@ -666,10 +666,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
             <button
               type="button"
               onClick={() => setShowAdvancedDeposit((prev) => !prev)}
-              className={`w-full rounded-xl border px-3.5 py-2.5 text-xs font-semibold transition-colors flex items-center justify-between ${
+              className={`w-full rounded-full border px-4 py-2.5 text-xs font-semibold shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none transition-colors flex items-center justify-between cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                 showAdvancedDeposit || regularDeposit > 0
-                  ? 'bg-[#EEF2F6] dark:bg-[#161A22] border-[#151D2A]/20 dark:border-white/[0.16] text-[#151D2A] dark:text-[#F2F4F7]'
-                  : 'bg-[#F5F7FA] dark:bg-[#101318] border-[#DDE3EA] dark:border-[#20252D] text-[#667085] dark:text-[#98A2B3] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                  ? 'bg-[#F4F4F5] dark:bg-[#161A22] border-[#0F172A]/45 dark:border-white/45 text-[#0F172A] dark:text-[#F2F4F7]'
+                  : 'bg-white dark:bg-[#101318] border-[#E4E4E7] dark:border-[#20252D] text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
               }`}
             >
               <span className="truncate font-mono-numbers tabular-nums">
@@ -684,7 +684,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
               />
             </button>
 
-            <p className="text-[10px] text-[#667085] dark:text-[#98A2B3]">
+            <p className="text-[10px] text-[#526071] dark:text-[#929BA9]">
               {regularDeposit > 0
                 ? `${tr('Total setoran', 'Total deposits')}: ${formatCurrency(compoundingResult.totalDeposits, activeSettings)}`
                 : tr('Tanpa deposit tambahan per periode', 'No additional deposit per period')}
@@ -694,13 +694,13 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* Optional Regular Deposit Section */}
         {(showAdvancedDeposit || regularDeposit > 0) && (
-          <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="p-4 rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3] mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] mb-1.5">
                 {tr(`Deposit Rutin per ${intervalUnitLabel}`, `Recurring Deposit per ${intervalUnitLabel}`)} ({activeSettings.currencySymbol})
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold font-mono-numbers text-[#667085] dark:text-[#98A2B3] pointer-events-none">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-semibold font-mono-numbers text-[#526071] dark:text-[#929BA9] pointer-events-none">
                   {activeSettings.currencySymbol}
                 </span>
                 <input
@@ -708,25 +708,25 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   inputMode="decimal"
                   value={formatCapitalInputForDisplay(depositInput, currency)}
                   onChange={(e) => handleCapitalOrDepositInput(e.target.value, setDepositInput)}
-                  className={`w-full rounded-xl bg-white dark:bg-[#0B0D11] border border-[#DDE3EA] dark:border-[#20252D] ${
+                  className={`w-full rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] ${
                     currency === 'IDR' ? 'pl-9' : 'pl-7'
-                  } pr-3.5 py-2 text-sm font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7] focus:border-[#151D2A] dark:focus:border-white/[0.28] focus:outline-none transition-colors`}
+                  } pr-3.5 py-2 text-sm font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] focus:border-[#0F172A] dark:focus:border-white focus:outline-none transition-colors`}
                   placeholder="0"
                 />
               </div>
             </div>
             <div>
-              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#667085] dark:text-[#98A2B3] mb-1.5">
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] mb-1.5">
                 {tr('Waktu Setor Deposit (Mode Compounding)', 'Deposit Timing (Compounding Mode)')}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setDepositTiming('end_of_period')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-semibold transition-colors ${
+                  className={`py-2 px-3 rounded-full border text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                     depositTiming === 'end_of_period'
-                      ? 'bg-[#151D2A] text-white border-[#151D2A] dark:bg-[#161A22] dark:text-[#F2F4F7] dark:border-white/[0.18]'
-                      : 'bg-white dark:bg-[#0B0D11] text-[#667085] dark:text-[#98A2B3] border-[#DDE3EA] dark:border-[#20252D]'
+                      ? 'bg-[#0F172A] text-white border-[#0F172A] dark:bg-white dark:text-[#050607] dark:border-white'
+                      : 'bg-[#FAFAFA] dark:bg-[#0B0E13] text-[#526071] dark:text-[#929BA9] border-[#E4E4E7] dark:border-[#20252D]'
                   }`}
                 >
                   {tr('Akhir Periode', 'End of Period')}
@@ -734,10 +734,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 <button
                   type="button"
                   onClick={() => setDepositTiming('start_of_period')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-semibold transition-colors ${
+                  className={`py-2 px-3 rounded-full border text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                     depositTiming === 'start_of_period'
-                      ? 'bg-[#151D2A] text-white border-[#151D2A] dark:bg-[#161A22] dark:text-[#F2F4F7] dark:border-white/[0.18]'
-                      : 'bg-white dark:bg-[#0B0D11] text-[#667085] dark:text-[#98A2B3] border-[#DDE3EA] dark:border-[#20252D]'
+                      ? 'bg-[#0F172A] text-white border-[#0F172A] dark:bg-white dark:text-[#050607] dark:border-white'
+                      : 'bg-[#FAFAFA] dark:bg-[#0B0E13] text-[#526071] dark:text-[#929BA9] border-[#E4E4E7] dark:border-[#20252D]'
                   }`}
                 >
                   {tr('Awal Periode', 'Start of Period')}
@@ -748,7 +748,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
         )}
 
         {isGrowthRateOutOfBounds && (
-          <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-2">
+          <div className="p-3 rounded-xl bg-[#D97706]/10 dark:bg-[#F59E0B]/10 border border-[#D97706]/25 dark:border-[#F59E0B]/25 text-[#D97706] dark:text-[#F59E0B] text-xs flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>
               {tr(
@@ -763,45 +763,42 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
       {/* ==========================================================================
           3. SIDE-BY-SIDE SUMMARY: SKENARIO 1 (COMPOUNDING) vs SKENARIO 2 (FIXED BALANCE)
          ========================================================================== */}
-      <div className="pt-5 border-t border-[#DDE3EA] dark:border-[#20252D] space-y-4">
+      <div className="pt-5 border-t border-[#E4E4E7] dark:border-[#20252D] space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* SKENARIO 1: MODE COMPOUNDING (PROFIT DIGULUNG) */}
-          <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] space-y-3.5">
-            <div className="flex items-start justify-between gap-2 pb-3 border-b border-[#DDE3EA] dark:border-[#20252D]">
+          <div className="p-4 rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none space-y-3.5">
+            <div className="flex items-start justify-between gap-2 pb-3 border-b border-[#E4E4E7] dark:border-[#20252D]">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#3478DC]" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                    {tr('Skenario 1: Mode Compounding', 'Scenario 1: Compounding Mode')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#667085] dark:text-[#98A2B3] mt-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {tr('Skenario 1: Mode Compounding', 'Scenario 1: Compounding Mode')}
+                </span>
+                <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1">
                   {tr(
                     `Profit tidak ditarik — langsung digabung ke modal ${intervalUnitLabel.toLowerCase()} berikutnya (bunga berbunga).`,
                     `Profits are not withdrawn — reinvested directly into the next ${intervalUnitLabel.toLowerCase()}'s principal.`
                   )}
                 </p>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#3478DC]/15 text-[#3478DC] shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7] shrink-0">
                 {tr('Profit Digulung', 'Reinvested')}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <span className="text-[11px] text-[#667085] dark:text-[#98A2B3] block mb-1">
+                <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mb-1">
                   {tr('Saldo Akhir Akun', 'Ending Account Balance')} ({duration} {intervalUnitLabel})
                 </span>
-                <div className="text-lg sm:text-xl font-bold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+                <div className="text-lg sm:text-xl font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                   {formatCurrency(compoundingResult.endingBalance, activeSettings)}
                 </div>
-                <span className="text-[11px] font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3] block mt-0.5">
+                <span className="text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] block mt-0.5">
                   {tr('Modal Awal', 'Initial Capital')}: {formatCurrency(startingCapital, activeSettings)}
                 </span>
               </div>
 
               <div>
-                <span className="text-[11px] text-[#667085] dark:text-[#98A2B3] block mb-1">
+                <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mb-1">
                   {tr('Total Profit Compound', 'Total Compounded Profit')}
                 </span>
                 <div
@@ -813,15 +810,15 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 >
                   {formatSignedCurrency(compoundingResult.pureGrowthProfit)}
                 </div>
-                <span className="text-[11px] font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3] block mt-0.5">
+                <span className="text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] block mt-0.5">
                   {tr('Pertumbuhan', 'Total Growth')}: {formatSignedPercent(compoundingResult.profitToTotalContributedPercent)}
                 </span>
               </div>
             </div>
 
-            <div className="pt-2.5 border-t border-[#DDE3EA] dark:border-[#20252D] flex items-center justify-between text-[11px] text-[#667085] dark:text-[#98A2B3]">
+            <div className="pt-2.5 border-t border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between text-[11px] text-[#526071] dark:text-[#929BA9]">
               <span>{tr(`Alur Profit per ${intervalUnitLabel}:`, `Profit Flow per ${intervalUnitLabel}:`)}</span>
-              <span className="font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+              <span className="font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                 {step1Comp ? formatSignedCurrency(step1Comp.growthProfit) : '0'}
                 {step2Comp ? ` → ${formatSignedCurrency(step2Comp.growthProfit)} → ...` : ''} ({tr('Makin Besar', 'Growing')})
               </span>
@@ -829,42 +826,39 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           </div>
 
           {/* SKENARIO 2: MODE FIXED BALANCE (PROFIT DITARIK TIAP PERIODE) */}
-          <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] space-y-3.5">
-            <div className="flex items-start justify-between gap-2 pb-3 border-b border-[#DDE3EA] dark:border-[#20252D]">
+          <div className="p-4 rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none space-y-3.5">
+            <div className="flex items-start justify-between gap-2 pb-3 border-b border-[#E4E4E7] dark:border-[#20252D]">
               <div>
-                <div className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-[#00A878]" />
-                  <span className="text-xs font-bold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
-                    {tr('Skenario 2: Mode Saldo Tetap', 'Scenario 2: Fixed Balance Mode')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#667085] dark:text-[#98A2B3] mt-1">
+                <span className="text-xs font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {tr('Skenario 2: Mode Saldo Tetap', 'Scenario 2: Fixed Balance Mode')}
+                </span>
+                <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1">
                   {tr(
                     `Profit selalu ditarik keluar setiap akhir ${intervalUnitLabel.toLowerCase()} — modal di akun dijaga tetap.`,
                     `Profits are withdrawn at the end of every ${intervalUnitLabel.toLowerCase()} — principal in account stays constant.`
                   )}
                 </p>
               </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#00A878]/15 text-[#059669] dark:text-[#00A878] shrink-0">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-[#059669] dark:text-[#00A878] shrink-0">
                 {tr('Profit Ditarik', 'Withdrawn')}
               </span>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
               <div>
-                <span className="text-[11px] text-[#667085] dark:text-[#98A2B3] block mb-1">
+                <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mb-1">
                   {tr('Saldo Tetap di Akun', 'Fixed Account Balance')}
                 </span>
-                <div className="text-sm sm:text-base font-bold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+                <div className="text-sm sm:text-base font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                   {formatCurrency(withdrawnResult.endingBalance, activeSettings)}
                 </div>
-                <span className="text-[10px] text-[#667085] dark:text-[#98A2B3] block mt-0.5">
+                <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block mt-0.5">
                   {tr('Modal tidak berubah', 'Principal unchanged')}
                 </span>
               </div>
 
               <div>
-                <span className="text-[11px] text-[#667085] dark:text-[#98A2B3] block mb-1">
+                <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mb-1">
                   {tr('Total Profit Ditarik', 'Total Withdrawn Profit')}
                 </span>
                 <div
@@ -876,27 +870,27 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 >
                   {formatSignedCurrency(withdrawnResult.totalWithdrawnProfit)}
                 </div>
-                <span className="text-[10px] font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3] block mt-0.5">
+                <span className="text-[10px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] block mt-0.5">
                   {duration}x {tr('tarik', 'withdrawals')} @ {formatCurrency(Math.max(0, fixedPeriodProfit), activeSettings)}
                 </span>
               </div>
 
               <div>
-                <span className="text-[11px] text-[#667085] dark:text-[#98A2B3] block mb-1">
+                <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mb-1">
                   {tr('Total Hasil Gabungan', 'Combined Total Wealth')}
                 </span>
-                <div className="text-sm sm:text-base font-bold font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+                <div className="text-sm sm:text-base font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                   {formatCurrency(withdrawnResult.combinedTotalWealth, activeSettings)}
                 </div>
-                <span className="text-[10px] text-[#667085] dark:text-[#98A2B3] block mt-0.5">
+                <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block mt-0.5">
                   {tr('Saldo Akun + Tarik', 'Account + Withdrawn')}
                 </span>
               </div>
             </div>
 
-            <div className="pt-2.5 border-t border-[#DDE3EA] dark:border-[#20252D] flex items-center justify-between text-[11px] text-[#667085] dark:text-[#98A2B3]">
+            <div className="pt-2.5 border-t border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between text-[11px] text-[#526071] dark:text-[#929BA9]">
               <span>{tr(`Alur Profit per ${intervalUnitLabel}:`, `Profit Flow per ${intervalUnitLabel}:`)}</span>
-              <span className="font-mono-numbers tabular-nums text-[#151D2A] dark:text-[#F2F4F7]">
+              <span className="font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                 {tr(
                   `Tetap ${step1Fixed ? formatSignedCurrency(step1Fixed.growthProfit) : '0'} setiap ${intervalUnitLabel.toLowerCase()}`,
                   `Constant ${step1Fixed ? formatSignedCurrency(step1Fixed.growthProfit) : '0'} each ${intervalUnitLabel.toLowerCase()}`
@@ -908,8 +902,8 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* Ringkasan Selisih Efek Compounding */}
         {compoundingAdvantageAmount > 0 && (
-          <div className="px-4 py-3 rounded-xl bg-[#EEF2F6]/70 dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-            <span className="text-[#667085] dark:text-[#98A2B3]">
+          <div className="px-4 py-3 rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <span className="text-[#526071] dark:text-[#929BA9]">
               {tr(
                 `Keunggulan Mode Compounding dibanding Saldo Tetap setelah ${duration} ${intervalUnitLabel.toLowerCase()}:`,
                 `Compounding Mode advantage over Fixed Balance after ${duration} ${intervalUnitLabel.toLowerCase()}${duration > 1 ? 's' : ''}:`
@@ -925,13 +919,13 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
       {/* ==========================================================================
           4. GROWTH PROJECTION CHART (3 Jelas Garis: Compounding, Total Hasil Fixed, Saldo Akun Fixed)
          ========================================================================== */}
-      <div className="pt-5 border-t border-[#DDE3EA] dark:border-[#20252D] space-y-4">
+      <div className="pt-5 border-t border-[#E4E4E7] dark:border-[#20252D] space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2">
           <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7]">
               {tr('Grafik Proyeksi Pertumbuhan', 'Growth Projection Chart')}
             </h3>
-            <p className="text-[11px] text-[#667085] dark:text-[#98A2B3] mt-0.5">
+            <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-0.5">
               {tr(
                 'Perbandingan kurva eksponensial Compounding vs garis lurus Saldo Tetap',
                 'Comparison of exponential Compounding curve vs linear Fixed Balance growth'
@@ -940,9 +934,9 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           </div>
 
           <div className="flex flex-wrap items-center gap-4 text-[11px]">
-            <span className="inline-flex items-center gap-1.5 text-[#151D2A] dark:text-[#F2F4F7] font-medium">
+            <span className="inline-flex items-center gap-1.5 text-[#0F172A] dark:text-[#F2F4F7] font-medium">
               <span
-                className="h-2.5 w-2.5 rounded-full"
+                className="h-0.5 w-3.5 inline-block"
                 style={{ backgroundColor: primaryStrokeColor }}
               />
               <span>
@@ -950,15 +944,15 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
               </span>
             </span>
 
-            <span className="inline-flex items-center gap-1.5 text-[#667085] dark:text-[#98A2B3]">
-              <span className="h-0.5 w-3.5 bg-[#00A878] inline-block" />
+            <span className="inline-flex items-center gap-1.5 text-[#526071] dark:text-[#929BA9]">
+              <span className="h-0.5 w-3.5 bg-[#059669] dark:bg-[#00A878] inline-block" />
               <span>
                 {tr('Total Hasil Tetap: Modal + Profit Ditarik', 'Fixed Total Wealth: Principal + Withdrawn')} ({formatCurrency(withdrawnResult.combinedTotalWealth, activeSettings)})
               </span>
             </span>
 
-            <span className="inline-flex items-center gap-1.5 text-[#667085] dark:text-[#98A2B3]">
-              <span className="h-0.5 w-3.5 bg-[#667085] dark:bg-[#98A2B3] inline-block opacity-70" />
+            <span className="inline-flex items-center gap-1.5 text-[#526071] dark:text-[#929BA9]">
+              <span className="h-0.5 w-3.5 bg-[#526071] dark:bg-[#929BA9] inline-block opacity-70" />
               <span>
                 {tr('Saldo Tetap di Akun', 'Fixed Account Balance')} ({formatCurrency(withdrawnResult.endingBalance, activeSettings)})
               </span>
@@ -986,16 +980,17 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       y1={y}
                       x2={chartWidth - padding.right}
                       y2={y}
-                      className="stroke-[#DDE3EA] dark:stroke-white/[0.06]"
+                      className="stroke-[#E4E4E7] dark:stroke-[#20252D]"
                       strokeDasharray="4 4"
                     />
                     <text
                       x={padding.left - 8}
                       y={y + 4}
-                      fill="#98A2B3"
+                      fill="#929BA9"
                       fontSize="10"
                       textAnchor="end"
-                      fontFamily="Arial, Helvetica, sans-serif"
+                      fontFamily="var(--font-sans)"
+                      className="tabular-nums"
                     >
                       {formatAxisValue(val, currency)}
                     </text>
@@ -1009,7 +1004,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
               <path
                 d={fixedBalanceLinePath}
                 fill="none"
-                stroke="#667085"
+                stroke="#526071"
                 strokeWidth="1.25"
                 strokeDasharray="2 3"
                 strokeOpacity="0.7"
@@ -1040,29 +1035,32 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
               <text
                 x={padding.left}
                 y={chartHeight - 6}
-                fill="#98A2B3"
+                fill="#929BA9"
                 fontSize="10"
-                fontFamily="Arial, Helvetica, sans-serif"
+                fontFamily="var(--font-sans)"
+                className="tabular-nums"
               >
                 {tr('Awal', 'Start')} ({intervalUnitLabel} 0)
               </text>
               <text
                 x={padding.left + innerWidth / 2}
                 y={chartHeight - 6}
-                fill="#98A2B3"
+                fill="#929BA9"
                 fontSize="10"
                 textAnchor="middle"
-                fontFamily="Arial, Helvetica, sans-serif"
+                fontFamily="var(--font-sans)"
+                className="tabular-nums"
               >
                 {intervalUnitLabel} {Math.max(1, Math.round(duration / 2))}
               </text>
               <text
                 x={chartWidth - padding.right}
                 y={chartHeight - 6}
-                fill="#98A2B3"
+                fill="#929BA9"
                 fontSize="10"
                 textAnchor="end"
-                fontFamily="Arial, Helvetica, sans-serif"
+                fontFamily="var(--font-sans)"
+                className="tabular-nums"
               >
                 {intervalUnitLabel} {duration}
               </text>
@@ -1074,32 +1072,32 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
       {/* ==========================================================================
           5. CARA MEMBACA SIMULASI & TABEL PROJECTION PERIODE DEMI PERIODE
          ========================================================================== */}
-      <div className="pt-5 border-t border-[#DDE3EA] dark:border-[#20252D] space-y-4">
+      <div className="pt-5 border-t border-[#E4E4E7] dark:border-[#20252D] space-y-4">
         {/* Interactive Guide Toggle & Table Mode Selector */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#151D2A] dark:text-[#F2F4F7]">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7]">
               {tr(`Tabel Rincian Proyeksi per ${intervalUnitLabel}`, `Projection Breakdown per ${intervalUnitLabel}`)}
             </h3>
             <button
               type="button"
               onClick={() => setShowReadingGuide((prev) => !prev)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-[#EEF2F6] dark:bg-[#101318] text-[#151D2A] dark:text-[#F2F4F7] border border-[#DDE3EA] dark:border-[#20252D]"
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-medium bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             >
-              <HelpCircle className="w-3 h-3 text-[#3478DC]" />
+              <HelpCircle className="w-3 h-3 text-[#526071] dark:text-[#929BA9]" />
               <span>{showReadingGuide ? tr('Tutup Panduan Baca', 'Hide Reading Guide') : tr('Cara Membaca Tabel', 'How to Read Table')}</span>
             </button>
           </div>
 
           {/* Mode Tampilan Tabel */}
-          <div className="inline-flex items-center p-0.5 rounded-lg bg-[#EEF2F6] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] self-start sm:self-auto">
+          <div className="inline-flex items-center p-0.5 rounded-full bg-[#F4F4F5] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] self-start sm:self-auto">
             <button
               type="button"
               onClick={() => setTableViewMode('comparison')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                 tableViewMode === 'comparison'
-                  ? 'bg-[#151D2A] text-white dark:bg-[#161A22] dark:text-[#F2F4F7] border border-black/10 dark:border-white/[0.14]'
-                  : 'text-[#667085] dark:text-[#98A2B3] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607]'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
               }`}
             >
               {tr('Perbandingan', 'Comparison')}
@@ -1107,10 +1105,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
             <button
               type="button"
               onClick={() => setTableViewMode('compounding_only')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                 tableViewMode === 'compounding_only'
-                  ? 'bg-[#151D2A] text-white dark:bg-[#161A22] dark:text-[#F2F4F7] border border-black/10 dark:border-white/[0.14]'
-                  : 'text-[#667085] dark:text-[#98A2B3] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607]'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
               }`}
             >
               {tr('Fokus Compound', 'Compounding Only')}
@@ -1118,10 +1116,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
             <button
               type="button"
               onClick={() => setTableViewMode('fixed_only')}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40 ${
                 tableViewMode === 'fixed_only'
-                  ? 'bg-[#151D2A] text-white dark:bg-[#161A22] dark:text-[#F2F4F7] border border-black/10 dark:border-white/[0.14]'
-                  : 'text-[#667085] dark:text-[#98A2B3] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607]'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
               }`}
             >
               {tr('Fokus Saldo Tetap', 'Fixed Balance Only')}
@@ -1129,18 +1127,18 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
           </div>
         </div>
 
-        {/* Panduan Cara Membaca Simulasi (Menggunakan Angka Aktual Pengguna) */}
+        {/* Panduan Cara Membaca Simulasi (Flattened without nested cards) */}
         {showReadingGuide && step1Comp && (
-          <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] space-y-2.5 text-xs">
-            <div className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
+          <div className="p-4 rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none space-y-3 text-xs">
+            <div className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
               {tr(
                 `Cara Membaca Perbandingan Simulasi Ini (Modal Awal ${formatCurrency(startingCapital, activeSettings)}, Return ${compoundingResult.clampedGrowthRatePercent}% per ${intervalUnitLabel.toLowerCase()}):`,
                 `How to Read This Simulation Comparison (Initial Capital ${formatCurrency(startingCapital, activeSettings)}, Return ${compoundingResult.clampedGrowthRatePercent}% per ${intervalUnitLabel.toLowerCase()}):`
               )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] text-[#667085] dark:text-[#98A2B3] leading-relaxed">
-              <div className="p-3 rounded-lg bg-white dark:bg-[#0B0D11] border border-[#DDE3EA] dark:border-[#20252D]">
-                <span className="font-semibold text-[#3478DC] block mb-1">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+              <div className="border-l-2 border-[#0F172A] dark:border-[#F2F4F7] pl-3">
+                <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block mb-1 text-left">
                   {tr('1. Kolom Skenario Compounding (Gulung Modal)', '1. Compounding Scenario Columns (Reinvested Profit)')}
                 </span>
                 {tr(
@@ -1158,8 +1156,8 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 )}
               </div>
 
-              <div className="p-3 rounded-lg bg-white dark:bg-[#0B0D11] border border-[#DDE3EA] dark:border-[#20252D]">
-                <span className="font-semibold text-[#059669] dark:text-[#00A878] block mb-1">
+              <div className="border-l-2 border-[#059669] dark:border-[#00A878] pl-3">
+                <span className="font-semibold text-[#059669] dark:text-[#00A878] block mb-1 text-left">
                   {tr('2. Kolom Skenario Saldo Tetap (Tarik Profit)', '2. Fixed Balance Scenario Columns (Withdrawn Profit)')}
                 </span>
                 {tr(
@@ -1193,46 +1191,46 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* TABLE VIEW 1: SIDE-BY-SIDE COMPARISON WITH GROUP HEADERS */}
         {tableViewMode === 'comparison' && (
-          <div className="overflow-x-auto rounded-xl border border-[#DDE3EA] dark:border-[#20252D]">
-            <table className="w-full text-left text-xs text-[#151D2A] dark:text-[#F2F4F7]">
+          <div className="overflow-x-auto rounded-xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318]">
+            <table className="w-full text-left text-xs text-[#0F172A] dark:text-[#F2F4F7]">
               <thead>
                 {/* Group Header Row */}
-                <tr className="border-b border-[#DDE3EA] dark:border-[#20252D] bg-[#EEF2F6]/70 dark:bg-[#101318] text-[10px] font-bold uppercase tracking-wider">
-                  <th className="py-2 px-3 text-[#667085] dark:text-[#98A2B3] border-r border-[#DDE3EA] dark:border-[#20252D]">
+                <tr className="border-b border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] text-[10px] font-bold uppercase tracking-wider">
+                  <th className="py-2 px-3 text-[#526071] dark:text-[#929BA9] border-r border-[#E4E4E7] dark:border-[#20252D]">
                     {tr('Periode', 'Period')}
                   </th>
                   <th
                     colSpan={3}
-                    className="py-2 px-3 text-[#3478DC] border-r border-[#DDE3EA] dark:border-[#20252D]"
+                    className="py-2 px-3 text-[#0F172A] dark:text-[#F2F4F7] border-r border-[#E4E4E7] dark:border-[#20252D]"
                   >
                     {tr('Skenario 1: Compounding (Profit Digulung)', 'Scenario 1: Compounding (Reinvested Profit)')}
                   </th>
                   <th
                     colSpan={3}
-                    className="py-2 px-3 text-[#059669] dark:text-[#00A878] border-r border-[#DDE3EA] dark:border-[#20252D]"
+                    className="py-2 px-3 text-[#059669] dark:text-[#00A878] border-r border-[#E4E4E7] dark:border-[#20252D]"
                   >
                     {tr('Skenario 2: Saldo Tetap (Profit Ditarik)', 'Scenario 2: Fixed Balance (Withdrawn Profit)')}
                   </th>
-                  <th className="py-2 px-3 text-[#151D2A] dark:text-[#F2F4F7]">
+                  <th className="py-2 px-3 text-[#0F172A] dark:text-[#F2F4F7]">
                     {tr('Selisih', 'Difference')}
                   </th>
                 </tr>
 
                 {/* Sub-Column Header Row */}
-                <tr className="border-b border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#0B0D11] text-[11px] uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
-                  <th className="py-2.5 px-3 border-r border-[#DDE3EA] dark:border-[#20252D]">
+                <tr className="border-b border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] text-[11px] uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  <th className="py-2.5 px-3 border-r border-[#E4E4E7] dark:border-[#20252D]">
                     {intervalUnitLabel}
                   </th>
                   {/* Compounding columns */}
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Modal Awal', 'Start Balance')}</th>
                   <th className="py-2.5 px-3 font-mono-numbers">{tr(`Profit ${intervalUnitLabel} Ini`, `Period Profit`)}</th>
-                  <th className="py-2.5 px-3 font-mono-numbers border-r border-[#DDE3EA] dark:border-[#20252D]">
+                  <th className="py-2.5 px-3 font-mono-numbers border-r border-[#E4E4E7] dark:border-[#20252D]">
                     {tr('Saldo Akhir', 'End Balance')}
                   </th>
                   {/* Fixed Balance columns */}
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Saldo di Akun', 'Account Balance')}</th>
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Tarik Kumulatif', 'Cum. Withdrawn')}</th>
-                  <th className="py-2.5 px-3 font-mono-numbers border-r border-[#DDE3EA] dark:border-[#20252D]">
+                  <th className="py-2.5 px-3 font-mono-numbers border-r border-[#E4E4E7] dark:border-[#20252D]">
                     {tr('Total Hasil', 'Combined Total')}
                   </th>
                   {/* Advantage column */}
@@ -1240,7 +1238,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                 </tr>
               </thead>
 
-              <tbody className="divide-y divide-[#DDE3EA] dark:divide-[#20252D] font-mono-numbers tabular-nums">
+              <tbody className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] font-mono-numbers tabular-nums">
                 {paginatedCompSteps.map((cStep, idx) => {
                   const globalIdx = startIdx + idx;
                   const wStep = withdrawnResult.steps[globalIdx];
@@ -1249,13 +1247,13 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   return (
                     <tr
                       key={cStep.period}
-                      className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                      className="hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] transition-colors"
                     >
-                      <td className="py-2.5 px-3 font-sans font-semibold text-[#667085] dark:text-[#98A2B3] border-r border-[#DDE3EA] dark:border-[#20252D]">
+                      <td className="py-2.5 px-3 font-sans font-semibold text-[#526071] dark:text-[#929BA9] border-r border-[#E4E4E7] dark:border-[#20252D]">
                         {intervalUnitLabel} {cStep.period}
                       </td>
                       {/* Compounding */}
-                      <td className="py-2.5 px-3 text-[#667085] dark:text-[#98A2B3]">
+                      <td className="py-2.5 px-3 text-[#526071] dark:text-[#929BA9]">
                         {formatCurrency(cStep.startBalance, activeSettings)}
                       </td>
                       <td
@@ -1267,12 +1265,12 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       >
                         {formatSignedCurrency(cStep.growthProfit)}
                       </td>
-                      <td className="py-2.5 px-3 font-bold text-[#151D2A] dark:text-[#F2F4F7] border-r border-[#DDE3EA] dark:border-[#20252D]">
+                      <td className="py-2.5 px-3 font-bold text-[#0F172A] dark:text-[#F2F4F7] border-r border-[#E4E4E7] dark:border-[#20252D]">
                         {formatCurrency(cStep.endBalance, activeSettings)}
                       </td>
 
                       {/* Fixed Balance */}
-                      <td className="py-2.5 px-3 text-[#667085] dark:text-[#98A2B3]">
+                      <td className="py-2.5 px-3 text-[#526071] dark:text-[#929BA9]">
                         {formatCurrency(wStep ? wStep.endBalance : startingCapital, activeSettings)}
                       </td>
                       <td
@@ -1284,7 +1282,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       >
                         {formatSignedCurrency(wStep ? wStep.cumulativeWithdrawnProfit : 0)}
                       </td>
-                      <td className="py-2.5 px-3 font-semibold text-[#151D2A] dark:text-[#F2F4F7] border-r border-[#DDE3EA] dark:border-[#20252D]">
+                      <td className="py-2.5 px-3 font-semibold text-[#0F172A] dark:text-[#F2F4F7] border-r border-[#E4E4E7] dark:border-[#20252D]">
                         {formatCurrency(fixedTotal, activeSettings)}
                       </td>
 
@@ -1292,10 +1290,10 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       <td
                         className={`py-2.5 px-3 font-semibold ${
                           diff > 0
-                            ? 'text-[#3478DC]'
+                            ? 'text-[#059669] dark:text-[#00A878]'
                             : diff < 0
                             ? 'text-[#E11D48] dark:text-[#E05260]'
-                            : 'text-[#667085] dark:text-[#98A2B3]'
+                            : 'text-[#526071] dark:text-[#929BA9]'
                         }`}
                       >
                         {formatSignedCurrency(diff)}
@@ -1310,9 +1308,9 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* TABLE VIEW 2: FOKUS COMPOUNDING */}
         {tableViewMode === 'compounding_only' && (
-          <div className="overflow-x-auto rounded-xl border border-[#DDE3EA] dark:border-[#20252D]">
-            <table className="w-full text-left text-xs text-[#151D2A] dark:text-[#F2F4F7]">
-              <thead className="border-b border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#101318] text-[11px] uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+          <div className="overflow-x-auto rounded-xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318]">
+            <table className="w-full text-left text-xs text-[#0F172A] dark:text-[#F2F4F7]">
+              <thead className="border-b border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] text-[11px] uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 <tr>
                   <th className="py-2.5 px-3">{intervalUnitLabel}</th>
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Modal Awal Periode', 'Period Start Balance')}</th>
@@ -1326,16 +1324,16 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Total Profit Kumulatif', 'Cumulative Profit')}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#DDE3EA] dark:divide-[#20252D] font-mono-numbers tabular-nums">
+              <tbody className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] font-mono-numbers tabular-nums">
                 {paginatedCompSteps.map((cStep) => (
                   <tr
                     key={cStep.period}
-                    className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                    className="hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] transition-colors"
                   >
-                    <td className="py-2.5 px-3 font-sans font-semibold text-[#667085] dark:text-[#98A2B3]">
+                    <td className="py-2.5 px-3 font-sans font-semibold text-[#526071] dark:text-[#929BA9]">
                       {intervalUnitLabel} {cStep.period}
                     </td>
-                    <td className="py-2.5 px-3 text-[#667085] dark:text-[#98A2B3]">
+                    <td className="py-2.5 px-3 text-[#526071] dark:text-[#929BA9]">
                       {formatCurrency(cStep.startBalance, activeSettings)}
                     </td>
                     <td
@@ -1348,11 +1346,11 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       {formatSignedCurrency(cStep.growthProfit)}
                     </td>
                     {regularDeposit > 0 && (
-                      <td className="py-2.5 px-3 text-[#667085] dark:text-[#98A2B3]">
+                      <td className="py-2.5 px-3 text-[#526071] dark:text-[#929BA9]">
                         +{formatCurrency(cStep.deposit, activeSettings)}
                       </td>
                     )}
-                    <td className="py-2.5 px-3 font-bold text-[#151D2A] dark:text-[#F2F4F7]">
+                    <td className="py-2.5 px-3 font-bold text-[#0F172A] dark:text-[#F2F4F7]">
                       {formatCurrency(cStep.endBalance, activeSettings)}
                     </td>
                     <td
@@ -1373,9 +1371,9 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* TABLE VIEW 3: FOKUS FIXED BALANCE (TARIK PROFIT) */}
         {tableViewMode === 'fixed_only' && (
-          <div className="overflow-x-auto rounded-xl border border-[#DDE3EA] dark:border-[#20252D]">
-            <table className="w-full text-left text-xs text-[#151D2A] dark:text-[#F2F4F7]">
-              <thead className="border-b border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#101318] text-[11px] uppercase tracking-wider text-[#667085] dark:text-[#98A2B3]">
+          <div className="overflow-x-auto rounded-xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318]">
+            <table className="w-full text-left text-xs text-[#0F172A] dark:text-[#F2F4F7]">
+              <thead className="border-b border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] text-[11px] uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
                 <tr>
                   <th className="py-2.5 px-3">{intervalUnitLabel}</th>
                   <th className="py-2.5 px-3 font-mono-numbers">{tr('Saldo Tetap di Akun', 'Fixed Account Balance')}</th>
@@ -1390,7 +1388,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#DDE3EA] dark:divide-[#20252D] font-mono-numbers tabular-nums">
+              <tbody className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] font-mono-numbers tabular-nums">
                 {paginatedCompSteps.map((cStep, idx) => {
                   const globalIdx = startIdx + idx;
                   const wStep = withdrawnResult.steps[globalIdx];
@@ -1398,12 +1396,12 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                   return (
                     <tr
                       key={wStep.period}
-                      className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors"
+                      className="hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] transition-colors"
                     >
-                      <td className="py-2.5 px-3 font-sans font-semibold text-[#667085] dark:text-[#98A2B3]">
+                      <td className="py-2.5 px-3 font-sans font-semibold text-[#526071] dark:text-[#929BA9]">
                         {intervalUnitLabel} {wStep.period}
                       </td>
-                      <td className="py-2.5 px-3 text-[#667085] dark:text-[#98A2B3]">
+                      <td className="py-2.5 px-3 text-[#526071] dark:text-[#929BA9]">
                         {formatCurrency(wStep.endBalance, activeSettings)}
                       </td>
                       <td
@@ -1424,7 +1422,7 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
                       >
                         {formatSignedCurrency(wStep.cumulativeWithdrawnProfit)}
                       </td>
-                      <td className="py-2.5 px-3 font-bold text-[#151D2A] dark:text-[#F2F4F7]">
+                      <td className="py-2.5 px-3 font-bold text-[#0F172A] dark:text-[#F2F4F7]">
                         {formatCurrency(wStep.combinedWealth, activeSettings)}
                       </td>
                     </tr>
@@ -1437,23 +1435,23 @@ export const CompoundingCalculatorTab: React.FC<CompoundingCalculatorTabProps> =
 
         {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between pt-3 border-t border-[#DDE3EA] dark:border-[#20252D] text-xs">
+          <div className="flex items-center justify-between pt-3 border-t border-[#E4E4E7] dark:border-[#20252D] text-xs">
             <button
               type="button"
               onClick={() => setTablePage((p) => Math.max(1, p - 1))}
               disabled={tablePage <= 1}
-              className="px-3.5 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#101318] text-[#151D2A] dark:text-[#F2F4F7] disabled:opacity-40 transition-colors"
+              className="px-4 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none disabled:opacity-40 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             >
               {tr('Sebelumnya', 'Previous')}
             </button>
-            <span className="font-mono-numbers tabular-nums text-[#667085] dark:text-[#98A2B3]">
+            <span className="font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9]">
               {tr('Halaman', 'Page')} {tablePage} {tr('dari', 'of')} {totalPages} ({compoundingResult.steps.length} {intervalUnitLabel})
             </span>
             <button
               type="button"
               onClick={() => setTablePage((p) => Math.min(totalPages, p + 1))}
               disabled={tablePage >= totalPages}
-              className="px-3.5 py-1.5 rounded-lg border border-[#DDE3EA] dark:border-[#20252D] bg-[#F5F7FA] dark:bg-[#101318] text-[#151D2A] dark:text-[#F2F4F7] disabled:opacity-40 transition-colors"
+              className="px-4 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none disabled:opacity-40 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             >
               {tr('Berikutnya', 'Next')}
             </button>

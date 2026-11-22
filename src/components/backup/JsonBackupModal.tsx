@@ -7,19 +7,12 @@ import {
   AlertTriangle,
   X,
   FileSpreadsheet,
-  ShieldAlert,
-  ArrowRight,
   Database,
-  Layers,
   Cloud,
   FileArchive,
-  Image,
   Loader2,
   RefreshCw,
   AlertCircle,
-  ExternalLink,
-  ShieldCheck,
-  Check,
   Info,
 } from 'lucide-react';
 import { Trade } from '../../types/trade';
@@ -32,7 +25,6 @@ import {
   ZipBackupProgress,
   ZipBackupFailedItem,
   GenerateZipResult,
-  MAX_SAFE_TOTAL_SIZE_BYTES,
   ParsedZipArchive,
   RestoreZipProgress,
   RestoreZipResult,
@@ -101,7 +93,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
   const [isExportingCsv, setIsExportingCsv] = useState<boolean>(false);
   const [isRestoringJson, setIsRestoringJson] = useState<boolean>(false);
 
-  // Restore ZIP Progress & Execution States (Tahap 2)
+  // Restore ZIP Progress & Execution States
   const [restoreZipPhase, setRestoreZipPhase] = useState<'idle' | 'uploading' | 'completed' | 'failed'>('idle');
   const [restoreZipProgress, setRestoreZipProgress] = useState<RestoreZipProgress | null>(null);
   const [restoreZipFailedItems, setRestoreZipFailedItems] = useState<
@@ -110,7 +102,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
   const [restoreZipSuccessSummary, setRestoreZipSuccessSummary] = useState<RestoreZipResult | null>(null);
   const restoreAbortControllerRef = useRef<AbortController | null>(null);
 
-  // Upload cache: prevents re-uploading already succeeded files when user clicks Retry
+  // Upload cache for retries
   const uploadCacheRef = useRef<Map<string, string>>(new Map());
 
   // Export States
@@ -146,7 +138,6 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, isBackupOrRestoreBusy, onClose]);
 
-  // Memoized screenshot breakdown for Export
   const screenshotStats = useMemo(() => {
     let storageCount = 0;
     let base64Count = 0;
@@ -166,7 +157,6 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     };
   }, [trades]);
 
-  // Conflict preview for Merge Mode
   const mergeStats = useMemo(() => {
     if (!validationReport?.backupTrades) return null;
     const incomingIds = new Set(validationReport.backupTrades.map((t) => t.id));
@@ -185,7 +175,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Handle Standard JSON Export (Tahap 1 & Lama)
+  // Handle Standard JSON Export
   const handleDownloadBackup = async () => {
     if (isExportingJson) return;
     setIsExportingJson(true);
@@ -193,7 +183,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     try {
       const exportReadyTrades = await prepareTradesForJsonBackup(trades, currentUser?.id || null);
       const jsonStr = generateBackupJson(exportReadyTrades, settings);
-      const fileName = `TradeVault_Backup_${new Date().toISOString().slice(0, 10)}.json`;
+      const fileName = `VLO_Backup_${new Date().toISOString().slice(0, 10)}.json`;
       const result = await exportFile({
         data: jsonStr,
         fileName,
@@ -201,24 +191,18 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
       });
       if (result.status === 'saved') {
         setExportStatusMsg({
-          text: tr(
-            `File cadangan JSON (${result.fileName}) berhasil disimpan.`,
-            `JSON backup file (${result.fileName}) saved successfully.`
-          ),
+          text: tr(`File ${result.fileName} berhasil disimpan.`, `File ${result.fileName} saved.`),
           type: 'success',
         });
       } else {
         setExportStatusMsg({
-          text: tr(
-            'Penyimpanan cadangan JSON dibatalkan oleh pengguna.',
-            'JSON backup save cancelled by user.'
-          ),
+          text: tr('Penyimpanan JSON dibatalkan.', 'JSON backup cancelled.'),
           type: 'info',
         });
       }
     } catch (err: any) {
       setExportStatusMsg({
-        text: err?.message || tr('Gagal menyimpan file cadangan JSON.', 'Failed to save JSON backup file.'),
+        text: err?.message || tr('Gagal menyimpan cadangan JSON.', 'Failed to save JSON backup.'),
         type: 'error',
       });
     } finally {
@@ -231,7 +215,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     if (isExportingCsv) return;
     if (trades.length === 0) {
       setExportStatusMsg({
-        text: tr('Belum ada transaksi untuk diekspor ke CSV.', 'No trades available to export to CSV.'),
+        text: tr('Belum ada transaksi untuk diekspor.', 'No trades available to export.'),
         type: 'error',
       });
       return;
@@ -240,16 +224,16 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     setExportStatusMsg(null);
     try {
       const csvStr = exportTradesToCsv(trades);
-      const fileName = `TradeVault_Export_${new Date().toISOString().slice(0, 10)}.csv`;
+      const fileName = `VLO_Export_${new Date().toISOString().slice(0, 10)}.csv`;
       const res = await downloadCsvFile(csvStr, fileName);
       if (res.status === 'saved') {
         setExportStatusMsg({
-          text: tr(`Berkas CSV (${fileName}) berhasil disimpan.`, `CSV file (${fileName}) saved successfully.`),
+          text: tr(`Berkas ${fileName} berhasil disimpan.`, `File ${fileName} saved.`),
           type: 'success',
         });
       } else {
         setExportStatusMsg({
-          text: tr('Penyimpanan berkas CSV dibatalkan oleh pengguna.', 'CSV file save cancelled by user.'),
+          text: tr('Penyimpanan CSV dibatalkan.', 'CSV export cancelled.'),
           type: 'info',
         });
       }
@@ -263,7 +247,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     }
   };
 
-  // Handle Full ZIP Backup Export (Tahap 1)
+  // Handle Full ZIP Backup Export
   const handleStartZipBackup = async (allowPartial = false) => {
     if (zipPhase === 'running' || isRedownloadingZip) return;
     const controller = new AbortController();
@@ -274,7 +258,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
       phase: 'scanning',
       currentStep: 0,
       totalSteps: trades.length,
-      message: tr('Mempersiapkan proses cadangan arsip...', 'Preparing archive backup process...'),
+      message: tr('Menyiapkan arsip...', 'Preparing archive...'),
       percent: 5,
     });
     setZipFailedItems([]);
@@ -300,7 +284,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
           phase: 'packaging',
           currentStep: trades.length,
           totalSteps: trades.length,
-          message: tr('Menyimpan arsip ZIP ke perangkat...', 'Saving ZIP archive to device...'),
+          message: tr('Menyimpan arsip ZIP...', 'Saving ZIP archive...'),
           percent: 99,
         });
         const saveRes = await exportFile({
@@ -311,17 +295,14 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         setZipPhase('completed');
         if (saveRes.status === 'saved') {
           setExportStatusMsg({
-            text: tr(
-              `Cadangan lengkap ZIP (${saveRes.fileName}) berhasil disimpan.`,
-              `Full ZIP backup (${saveRes.fileName}) saved successfully.`
-            ),
+            text: tr(`Arsip ${saveRes.fileName} berhasil disimpan.`, `Archive ${saveRes.fileName} saved.`),
             type: 'success',
           });
         } else {
           setExportStatusMsg({
             text: tr(
-              'Penyimpanan ZIP dibatalkan. Anda dapat menekan "Unduh Ulang ZIP" tanpa membuat ulang arsip.',
-              'ZIP save cancelled. You can press "Redownload ZIP" without rebuilding the archive.'
+              'Penyimpanan dibatalkan. Gunakan "Unduh Ulang ZIP" untuk menyimpan file.',
+              'Save cancelled. Use "Redownload ZIP" to save the archive.'
             ),
             type: 'info',
           });
@@ -335,15 +316,12 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         setZipPhase('idle');
         setZipProgress(null);
       } else {
-        console.error('Error in zip backup:', err);
         setZipFailedItems([
           {
             tradeId: 'GLOBAL',
             sourceType: 'storage',
             pathOrRef: tr('Arsip Cadangan', 'Backup Archive'),
-            error:
-              err?.message ||
-              tr('Gagal memproses atau menyimpan arsip ZIP.', 'Failed to process or save ZIP archive.'),
+            error: err?.message || tr('Gagal membuat arsip ZIP.', 'Failed to create ZIP archive.'),
           },
         ]);
         setZipPhase('failed');
@@ -365,21 +343,18 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
       });
       if (saveRes.status === 'saved') {
         setExportStatusMsg({
-          text: tr(
-            `Cadangan lengkap ZIP (${saveRes.fileName}) berhasil disimpan.`,
-            `Full ZIP backup (${saveRes.fileName}) saved successfully.`
-          ),
+          text: tr(`Arsip ${saveRes.fileName} berhasil disimpan.`, `Archive ${saveRes.fileName} saved.`),
           type: 'success',
         });
       } else {
         setExportStatusMsg({
-          text: tr('Penyimpanan ulang ZIP dibatalkan oleh pengguna.', 'ZIP redownload cancelled by user.'),
+          text: tr('Penyimpanan ulang dibatalkan.', 'Redownload cancelled.'),
           type: 'info',
         });
       }
     } catch (err: any) {
       setExportStatusMsg({
-        text: err?.message || tr('Gagal menyimpan ulang arsip ZIP.', 'Failed to redownload ZIP archive.'),
+        text: err?.message || tr('Gagal menyimpan ulang ZIP.', 'Failed to redownload ZIP.'),
         type: 'error',
       });
     } finally {
@@ -401,10 +376,6 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     setZipFailedItems([]);
     setExportStatusMsg(null);
   };
-
-  // ==========================================================================
-  // RESTORE / IMPORT LOGIC (Tahap 1 JSON & Tahap 2 ZIP)
-  // ==========================================================================
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -430,7 +401,6 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     }
   };
 
-  // Validate ZIP Archive (Tahap 2)
   const validateSelectedZipFile = async (file: File) => {
     setIsAnalyzingFile(true);
     try {
@@ -471,8 +441,8 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         hasSettings: false,
         errors: [
           tr(
-            `Gagal memvalidasi arsip ZIP: ${err.message || 'Format tidak dikenali'}`,
-            `Failed to validate ZIP archive: ${err.message || 'Unrecognized format'}`
+            `Arsip ZIP tidak valid: ${err.message || 'Format tidak dikenali'}`,
+            `Invalid ZIP archive: ${err.message || 'Unrecognized format'}`
           ),
         ],
       });
@@ -481,7 +451,6 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
     }
   };
 
-  // Validate JSON File with Fail-Closed Sanitizer and Active Owner Scope
   const validateSelectedJsonFile = (file: File) => {
     setParsedZipArchive(null);
     const reader = new FileReader();
@@ -523,7 +492,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
           backupTotalProfit: totalProfit,
           errors:
             validTrades.length === 0
-              ? [tr('Tidak ada transaksi yang valid dalam file JSON.', 'No valid trades found in JSON file.')]
+              ? [tr('Tidak ada transaksi valid dalam file JSON.', 'No valid trades in JSON file.')]
               : [],
         });
       } catch (err: any) {
@@ -536,34 +505,23 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
           validTradesCount: 0,
           invalidTradesCount: 0,
           hasSettings: false,
-          errors: [
-            tr(
-              `File tidak dapat dibaca sebagai format JSON valid: ${err.message}`,
-              `File could not be read as valid JSON: ${err.message}`
-            ),
-          ],
+          errors: [tr(`Format JSON gagal dibaca: ${err.message}`, `Failed to read JSON: ${err.message}`)],
         });
       }
     };
     reader.readAsText(file);
   };
 
-  // Execute Restore: Branch to JSON or ZIP
   const handleExecuteRestore = async () => {
     if (isRestoringJson) return;
     if (!validationReport || !validationReport.isValid || !validationReport.backupTrades) {
-      setErrorMessage(
-        tr('Pilih berkas cadangan yang valid terlebih dahulu.', 'Please select a valid backup file first.')
-      );
+      setErrorMessage(tr('Pilih file cadangan yang valid terlebih dahulu.', 'Select a valid backup file first.'));
       return;
     }
 
     if (importMode === 'replace' && !confirmOverwrite) {
       setErrorMessage(
-        tr(
-          'Anda harus mencentang kotak konfirmasi sebelum menimpa seluruh data.',
-          'You must check the confirmation box before overwriting all data.'
-        )
+        tr('Centang kotak konfirmasi sebelum mengganti seluruh data.', 'Check confirmation box before replacing all data.')
       );
       return;
     }
@@ -582,16 +540,13 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         );
         onClose();
       } catch (err: any) {
-        setErrorMessage(
-          err?.message || tr('Gagal memulihkan file cadangan JSON.', 'Failed to restore JSON backup file.')
-        );
+        setErrorMessage(err?.message || tr('Gagal memulihkan file JSON.', 'Failed to restore JSON file.'));
       } finally {
         setIsRestoringJson(false);
       }
     }
   };
 
-  // Execute ZIP Restore (Tahap 2)
   const handleExecuteZipRestore = async (allowPartialScreenshots = false) => {
     if (!parsedZipArchive || !validationReport?.backupTrades) return;
 
@@ -606,10 +561,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
       phase: 'uploading_images',
       currentStep: 0,
       totalSteps: parsedZipArchive.archivedImagesCount,
-      message: tr(
-        'Mempersiapkan pengunggahan tangkapan layar dan pemulihan data...',
-        'Preparing screenshot uploads and data restoration...'
-      ),
+      message: tr('Mengunggah gambar dan memulihkan data...', 'Uploading images and restoring data...'),
       percent: 5,
     });
 
@@ -640,10 +592,7 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         if (saveRes && saveRes.success === false) {
           setErrorMessage(
             saveRes.error ||
-              tr(
-                'Gagal menyimpan data pemulihan ke penyimpanan lokal browser.',
-                'Failed to save restored data to local browser storage.'
-              )
+              tr('Gagal menyimpan hasil pemulihan ke browser.', 'Failed to save restored data locally.')
           );
         }
       } else {
@@ -655,14 +604,11 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
         setRestoreZipPhase('idle');
         setRestoreZipProgress(null);
       } else {
-        console.error('Error during zip restore:', err);
         setRestoreZipFailedItems([
           {
             tradeId: 'GLOBAL',
             archivePath: tr('Arsip ZIP', 'ZIP Archive'),
-            error:
-              err.message ||
-              tr('Kesalahan sistem saat memulihkan arsip.', 'System error while restoring archive.'),
+            error: err.message || tr('Kesalahan sistem saat memulihkan arsip.', 'System error restoring archive.'),
           },
         ]);
         setRestoreZipPhase('failed');
@@ -681,1083 +627,863 @@ export const JsonBackupModal: React.FC<JsonBackupModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="relative w-full max-w-xl rounded-2xl border border-[#DDE3EA] dark:border-[#252B34] bg-white dark:bg-[#11151B] p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto text-[#151D2A] dark:text-[#F2F5F9]">
-        {/* Close Button */}
-        <button
-          onClick={() => {
-            if (!isBackupOrRestoreBusy) {
-              onClose();
-            }
-          }}
-          disabled={isBackupOrRestoreBusy}
-          className="absolute right-4 top-4 p-1.5 rounded-lg text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] transition-colors disabled:opacity-50"
-          aria-label={tr('Tutup menu cadangan data', 'Close data backup menu')}
-        >
-          <X className="h-5 w-5 stroke-[1.75]" />
-        </button>
-
-        {/* Modal Header */}
-        <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-[#EEF2F6] dark:bg-[#171D26] border border-[#DDE3EA] dark:border-[#252B34] flex items-center justify-center text-[#697586] dark:text-[#929BA9] shrink-0">
-            <Database className="h-6 w-6 stroke-[1.75]" />
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-[#151D2A] dark:text-[#F2F5F9]">
-              {tr('Cadangan Data (Ekspor & Impor)', 'Data Backup (Export & Import)')}
-            </h3>
-            <p className="text-xs text-[#697586] dark:text-[#929BA9]">
-              {tr(
-                'Mendukung Cadangan Lengkap Arsip ZIP (Data & Tangkapan Layar) dan Cadangan Ringkas JSON',
-                'Supports Full ZIP Archive Backup (Data & Screenshots) and Compact JSON Backup'
-              )}
-            </p>
-          </div>
-        </div>
-
-        {/* Tab Switcher */}
-        <div className="flex rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] p-1 border border-[#DDE3EA] dark:border-[#252B34]">
-          <button
-            type="button"
-            onClick={() => setActiveTab('export')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'export'
-                ? 'bg-[#1769E8] text-white font-bold'
-                : 'text-[#697586] hover:text-[#151D2A] dark:text-[#929BA9] dark:hover:text-[#F2F5F9]'
-            }`}
-          >
-            <Download className="h-4 w-4 stroke-[1.75]" />
-            <span>{tr('Ekspor Cadangan', 'Export Backup')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('import')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'import'
-                ? 'bg-[#1769E8] text-white font-bold'
-                : 'text-[#697586] hover:text-[#151D2A] dark:text-[#929BA9] dark:hover:text-[#F2F5F9]'
-            }`}
-          >
-            <Upload className="h-4 w-4 stroke-[1.75]" />
-            <span>{tr('Impor Cadangan', 'Import Backup')}</span>
-          </button>
-        </div>
-
-        {/* ================================================================= */}
-        {/* TAB 1: EXPORT (Tahap 1) */}
-        {/* ================================================================= */}
-        {activeTab === 'export' && (
-          <div className="space-y-4">
-            {/* Format Selection Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setExportFormat('zip');
-                  if (zipPhase === 'completed') handleResetZipState();
-                }}
-                className={`p-3.5 rounded-xl border text-left transition-colors relative flex flex-col justify-between ${
-                  exportFormat === 'zip'
-                    ? 'bg-[#1769E8]/10 dark:bg-[#1769E8]/15 border-[#1769E8]'
-                    : 'bg-[#F5F7FA] dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#252B34] hover:border-[#697586] text-[#697586] dark:text-[#929BA9]'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9]">
-                      <FileArchive className="h-4 w-4 stroke-[1.75]" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9] block">
-                        {tr('Cadangan Lengkap (ZIP)', 'Full Backup (ZIP)')}
-                      </span>
-                      <span className="text-[10px] text-[#1769E8] dark:text-[#60A5FA] font-medium">
-                        {tr('Disarankan', 'Recommended')}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono-numbers px-1.5 py-0.5 rounded bg-[#1769E8]/15 text-[#1769E8] dark:text-[#60A5FA] border border-[#1769E8]/30">
-                    {tr('Arsip', 'Archive')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed mt-1">
-                  {tr(
-                    'Mencakup manifest.json, trades.json, serta folder screenshots/ dengan berkas gambar asli.',
-                    'Includes manifest.json, trades.json, and the screenshots/ folder with original image files.'
-                  )}
-                </p>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setExportFormat('json');
-                  setExportStatusMsg(null);
-                }}
-                className={`p-3.5 rounded-xl border text-left transition-colors flex flex-col justify-between ${
-                  exportFormat === 'json'
-                    ? 'bg-[#1769E8]/10 dark:bg-[#1769E8]/15 border-[#1769E8]'
-                    : 'bg-[#F5F7FA] dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#252B34] hover:border-[#697586] text-[#697586] dark:text-[#929BA9]'
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9]">
-                      <FileJson className="h-4 w-4 stroke-[1.75]" />
-                    </div>
-                    <div>
-                      <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9] block">
-                        {tr('Cadangan Ringkas (JSON)', 'Compact Backup (JSON)')}
-                      </span>
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9]">
-                        {tr('Format Standar', 'Standard Format')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed mt-1">
-                  {tr(
-                    'Berkas JSON ringan berisi seluruh riwayat transaksi dan pengaturan akun.',
-                    'Lightweight JSON file containing all trade history and account settings.'
-                  )}
-                </p>
-              </button>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 dark:bg-black/75 animate-in fade-in duration-150"
+      onClick={() => {
+        if (!isBackupOrRestoreBusy) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('Cadangan & Pemulihan Data', 'Backup & Restore Data')}
+        className="w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] overflow-hidden text-[#0F172A] dark:text-[#F2F4F7]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-lg bg-[#FAFAFA] dark:bg-[#161A22] border border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-center text-[#526071] dark:text-[#929BA9] shrink-0">
+              <Database className="h-4 w-4 stroke-[1.75]" />
             </div>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                {tr('Cadangan & Pemulihan Data', 'Backup & Restore Data')}
+              </h3>
+              <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-0.5">
+                {tr('Ekspor atau pulihkan jurnal dalam format ZIP, JSON, atau CSV', 'Export or restore journal in ZIP, JSON, or CSV format')}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isBackupOrRestoreBusy) onClose();
+            }}
+            disabled={isBackupOrRestoreBusy}
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors disabled:opacity-50 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+            aria-label={tr('Tutup menu cadangan data', 'Close data backup menu')}
+          >
+            <X className="h-4 w-4 stroke-[1.75]" />
+          </button>
+        </div>
 
-            {exportStatusMsg && (
-              <div
-                className={`p-3 rounded-xl border bg-[#F5F7FA] dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#252B34] text-xs flex items-center gap-2 ${
-                  exportStatusMsg.type === 'success'
-                    ? 'text-emerald-600 dark:text-emerald-400'
-                    : exportStatusMsg.type === 'error'
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : 'text-[#697586] dark:text-[#929BA9]'
-                }`}
-              >
-                {exportStatusMsg.type === 'success' ? (
-                  <CheckCircle2 className="h-4 w-4 shrink-0 stroke-[1.75]" />
-                ) : exportStatusMsg.type === 'error' ? (
-                  <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
-                ) : (
-                  <Info className="h-4 w-4 shrink-0 stroke-[1.75]" />
-                )}
-                <span>{exportStatusMsg.text}</span>
-              </div>
-            )}
+        {/* Body */}
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Segmented Tab Switcher */}
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-[#F4F4F5] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D]">
+            <button
+              type="button"
+              onClick={() => setActiveTab('export')}
+              className={`min-h-[34px] py-1.5 text-xs rounded-full transition-colors flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                activeTab === 'export'
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607] font-semibold'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] font-medium'
+              }`}
+            >
+              <Download className="h-3.5 w-3.5 stroke-[1.75]" />
+              <span>{tr('Ekspor Data', 'Export Data')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('import')}
+              className={`min-h-[34px] py-1.5 text-xs rounded-full transition-colors flex items-center justify-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                activeTab === 'import'
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607] font-semibold'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] font-medium'
+              }`}
+            >
+              <Upload className="h-3.5 w-3.5 stroke-[1.75]" />
+              <span>{tr('Pulihkan Data', 'Restore Data')}</span>
+            </button>
+          </div>
 
-            {/* FORMAT A: FULL ZIP BACKUP (TAHAP 1) */}
-            {exportFormat === 'zip' && (
-              <div className="space-y-3.5">
-                <div className="rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] flex items-center gap-1.5">
-                      <Image className="h-3.5 w-3.5 stroke-[1.75] text-[#697586] dark:text-[#929BA9]" />
-                      <span>{tr('Inventaris Tangkapan Layar & Gambar', 'Screenshot & Image Inventory')}</span>
-                    </span>
-                    <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                      {tr('Total', 'Total')}{' '}
-                      <strong className="text-[#1769E8] dark:text-[#60A5FA]">{screenshotStats.totalScreenshots}</strong>{' '}
-                      {tr('gambar ditemukan', 'images found')}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Total Transaksi', 'Total Trades')}
+          {/* ================================================================= */}
+          {/* TAB 1: EXPORT                                                     */}
+          {/* ================================================================= */}
+          {activeTab === 'export' && (
+            <div className="space-y-4">
+              {/* Format Selector */}
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                {[
+                  {
+                    id: 'zip' as const,
+                    icon: FileArchive,
+                    title: 'ZIP',
+                    desc: tr('Lengkap + gambar', 'Full + images'),
+                  },
+                  {
+                    id: 'json' as const,
+                    icon: FileJson,
+                    title: 'JSON',
+                    desc: tr('Data & pengaturan', 'Data & settings'),
+                  },
+                  {
+                    id: 'csv' as const,
+                    icon: FileSpreadsheet,
+                    title: 'CSV',
+                    desc: tr('Tabel spreadsheet', 'Spreadsheet table'),
+                  },
+                ].map((fmt) => {
+                  const Icon = fmt.icon;
+                  const active = exportFormat === fmt.id;
+                  return (
+                    <button
+                      key={fmt.id}
+                      type="button"
+                      onClick={() => {
+                        setExportFormat(fmt.id);
+                        setExportStatusMsg(null);
+                        if (fmt.id === 'zip' && zipPhase === 'completed') handleResetZipState();
+                      }}
+                      className={`p-3 rounded-xl border text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                        active
+                          ? 'border-[#0F172A] dark:border-white bg-[#FAFAFA] dark:bg-[#161A22]'
+                          : 'border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#0B0E13] hover:bg-[#FAFAFA] dark:hover:bg-[#161A22]/70'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Icon
+                          className={`h-3.5 w-3.5 stroke-[1.75] ${
+                            active
+                              ? 'text-[#0F172A] dark:text-white'
+                              : 'text-[#526071] dark:text-[#929BA9]'
+                          }`}
+                        />
+                        <span
+                          className={`font-bold ${
+                            active
+                              ? 'text-[#0F172A] dark:text-white'
+                              : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                          }`}
+                        >
+                          {fmt.title}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mt-1">
+                        {fmt.desc}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9]">
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Status Feedback */}
+              {exportStatusMsg && (
+                <div
+                  className={`p-3 rounded-xl border bg-[#FAFAFA] dark:bg-[#0B0E13] border-[#E4E4E7] dark:border-[#20252D] text-xs flex items-center gap-2 ${
+                    exportStatusMsg.type === 'success'
+                      ? 'text-[#059669] dark:text-[#00A878]'
+                      : exportStatusMsg.type === 'error'
+                      ? 'text-[#E11D48] dark:text-[#E05260]'
+                      : 'text-[#526071] dark:text-[#929BA9]'
+                  }`}
+                >
+                  {exportStatusMsg.type === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                  ) : exportStatusMsg.type === 'error' ? (
+                    <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                  ) : (
+                    <Info className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                  )}
+                  <span>{exportStatusMsg.text}</span>
+                </div>
+              )}
+
+              {/* FORMAT A: ZIP */}
+              {exportFormat === 'zip' && (
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] divide-y sm:divide-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D]">
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Transaksi', 'Trades')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                         {trades.length}
                       </span>
                     </div>
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Storage Privat', 'Private Storage')}
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Total Gambar', 'Total Images')}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-[#1769E8] dark:text-[#60A5FA]">
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                        {screenshotStats.totalScreenshots}
+                      </span>
+                    </div>
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Cloud Storage', 'Cloud Storage')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                         {screenshotStats.storageCount}
                       </span>
                     </div>
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Base64 Lokal', 'Local Base64')}
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Lokal / Tautan', 'Local / Links')}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-emerald-600 dark:text-emerald-400">
-                        {screenshotStats.base64Count}
-                      </span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Tautan Eksternal', 'External Links')}
-                      </span>
-                      <span className="text-sm font-bold font-mono-numbers text-amber-600 dark:text-amber-400">
-                        {screenshotStats.externalCount}
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#059669] dark:text-[#00A878]">
+                        {screenshotStats.base64Count + screenshotStats.externalCount}
                       </span>
                     </div>
                   </div>
 
                   {screenshotStats.storageCount > 0 && !currentUser?.id && (
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#151D2A] dark:text-[#F2F5F9] flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                      <div>
-                        <strong className="text-amber-600 dark:text-amber-400">
-                          {tr('Perhatian Autentikasi:', 'Authentication Notice:')}
-                        </strong>{' '}
+                    <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-[11px] text-[#D97706] dark:text-[#F59E0B] flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 stroke-[1.75]" />
+                      <span>
                         {tr(
-                          `Terdapat ${screenshotStats.storageCount} gambar tersimpan di Supabase Storage privat. Anda belum masuk akun. Silakan masuk ke akun Supabase terlebih dahulu agar sistem memiliki izin mengunduh berkas gambar tersebut.`,
-                          `There are ${screenshotStats.storageCount} images stored in private Supabase Storage. You are not signed in. Please sign in to your Supabase account first so the system has permission to download those image files.`
+                          `Masuk akun Supabase terlebih dahulu untuk mengunduh ${screenshotStats.storageCount} gambar storage privat.`,
+                          `Sign in to Supabase first to download ${screenshotStats.storageCount} private storage images.`
                         )}
+                      </span>
+                    </div>
+                  )}
+
+                  {zipPhase === 'running' && (
+                    <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[#0F172A] dark:text-white flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin stroke-[1.75]" />
+                          <span>{zipProgress?.message || tr('Membuat arsip...', 'Creating archive...')}</span>
+                        </span>
+                        <span className="font-mono-numbers tabular-nums font-bold text-[#0F172A] dark:text-white">
+                          {zipProgress?.percent || 0}%
+                        </span>
+                      </div>
+                      <div className="w-full h-1.5 rounded-full bg-white dark:bg-[#101318] overflow-hidden border border-[#E4E4E7] dark:border-[#20252D]">
+                        <div
+                          className="h-full bg-[#0F172A] dark:bg-white transition-all duration-200"
+                          style={{ width: `${zipProgress?.percent || 0}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-[#526071] dark:text-[#929BA9]">
+                        <span className="font-mono-numbers tabular-nums">
+                          {zipProgress?.currentStep || 0} / {zipProgress?.totalSteps || 0}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCancelZipBackup}
+                          className="text-[#E11D48] dark:text-[#E05260] hover:underline font-medium cursor-pointer"
+                        >
+                          {tr('Batalkan', 'Cancel')}
+                        </button>
                       </div>
                     </div>
                   )}
 
-                  {screenshotStats.totalScreenshots > 80 && (
-                    <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[10px] text-[#697586] dark:text-[#929BA9]">
-                      {tr(
-                        `Terdapat ${screenshotStats.totalScreenshots} gambar. Pengunduhan dan kompresi akan diproses secara bertahap agar konsumsi memori browser tetap stabil.`,
-                        `There are ${screenshotStats.totalScreenshots} images. Downloading and compression will be processed in batches to keep browser memory usage stable.`
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* State: RUNNING PROGRESS */}
-                {zipPhase === 'running' && (
-                  <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-[#1769E8] dark:text-[#60A5FA] flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-[#1769E8] stroke-[1.75]" />
-                        <span>
-                          {zipProgress?.message ||
-                            tr('Membuat arsip cadangan...', 'Building backup archive...')}
+                  {zipPhase === 'completed' && zipResult && (
+                    <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-[#059669] dark:text-[#00A878] flex items-center gap-1.5">
+                          <CheckCircle2 className="h-4 w-4 stroke-[1.75]" />
+                          <span>{tr('Arsip ZIP Siap', 'ZIP Archive Ready')}</span>
                         </span>
-                      </span>
-                      <span className="font-mono-numbers font-bold text-[#1769E8] dark:text-[#60A5FA]">
-                        {zipProgress?.percent || 0}%
-                      </span>
-                    </div>
-
-                    <div className="w-full h-2 rounded-full bg-white dark:bg-[#11151B] overflow-hidden border border-[#DDE3EA] dark:border-[#252B34]">
-                      <div
-                        className="h-full bg-[#1769E8] transition-all duration-200"
-                        style={{ width: `${zipProgress?.percent || 0}%` }}
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between text-[11px] text-[#697586] dark:text-[#929BA9] pt-1">
-                      <span>
-                        {tr(
-                          `Langkah ${zipProgress?.currentStep || 0} dari ${zipProgress?.totalSteps || 0}`,
-                          `Step ${zipProgress?.currentStep || 0} of ${zipProgress?.totalSteps || 0}`
+                        {zipResult.blob && (
+                          <span className="text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9]">
+                            {(zipResult.blob.size / (1024 * 1024)).toFixed(2)} MB
+                          </span>
                         )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleCancelZipBackup}
-                        className="text-rose-600 dark:text-rose-400 hover:underline font-medium"
-                      >
-                        {tr('Batalkan', 'Cancel')}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* State: COMPLETED SUCCESS */}
-                {zipPhase === 'completed' && zipResult && (
-                  <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                    <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
-                      <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                      <span>{tr('Cadangan Lengkap ZIP Siap!', 'Full ZIP Backup Ready!')}</span>
-                    </div>
-                    <div className="text-[11px] text-[#151D2A] dark:text-[#F2F5F9] space-y-1">
-                      <p>
-                        {tr('Berkas arsip:', 'Archive file:')}{' '}
-                        <strong className="font-mono-numbers text-[#1769E8] dark:text-[#60A5FA]">
-                          {zipResult.fileName}
-                        </strong>
+                      </div>
+                      <p className="text-[11px] text-[#526071] dark:text-[#929BA9] font-mono-numbers truncate">
+                        {zipResult.fileName} · {zipResult.manifest.summary.archivedScreenshots}{' '}
+                        {tr('gambar', 'images')}
                       </p>
-                      <p>
-                        {tr(
-                          `Total ${zipResult.manifest.summary.archivedScreenshots} berkas gambar berhasil dikemas ke dalam folder screenshots/ tanpa kegagalan.`,
-                          `A total of ${zipResult.manifest.summary.archivedScreenshots} image files were packaged into the screenshots/ folder without errors.`
+                      <div className="flex items-center gap-2">
+                        {zipResult.blob && zipResult.fileName && (
+                          <button
+                            type="button"
+                            onClick={handleRedownloadZip}
+                            disabled={isRedownloadingZip}
+                            className="px-3.5 py-1.5 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-50 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                          >
+                            <Download className="h-3.5 w-3.5 stroke-[1.75]" />
+                            <span>{isRedownloadingZip ? tr('Menyimpan...', 'Saving...') : tr('Unduh Ulang', 'Redownload')}</span>
+                          </button>
                         )}
-                      </p>
-                      {zipResult.blob && (
-                        <p className="text-[#697586] dark:text-[#929BA9] text-[10px]">
-                          {tr('Ukuran berkas ZIP:', 'ZIP file size:')}{' '}
-                          {(zipResult.blob.size / (1024 * 1024)).toFixed(2)} MB
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      {zipResult.blob && zipResult.fileName && (
                         <button
                           type="button"
-                          onClick={handleRedownloadZip}
+                          onClick={handleResetZipState}
                           disabled={isRedownloadingZip}
-                          className="py-2 px-3 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+                          className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                         >
-                          <Download className="h-3.5 w-3.5 stroke-[1.75]" />
-                          <span>
-                            {isRedownloadingZip
-                              ? tr('Menyimpan ZIP...', 'Saving ZIP...')
-                              : tr('Unduh Ulang ZIP', 'Redownload ZIP')}
-                          </span>
+                          {tr('Selesai', 'Done')}
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={handleResetZipState}
-                        disabled={isRedownloadingZip}
-                        className="py-2 px-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] disabled:opacity-50 text-[#151D2A] dark:text-[#F2F5F9] text-xs transition-colors"
-                      >
-                        {tr('Selesai', 'Done')}
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* State: FAILED DOWNLOADS */}
-                {zipPhase === 'failed' && (
-                  <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                    <div className="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400 font-bold">
-                      <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 stroke-[1.75]" />
-                      <span>
-                        {tr('Cadangan Lengkap Belum Berhasil Dibuat', 'Full Backup Could Not Be Completed')}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
-                      {tr(
-                        `Terdapat ${zipFailedItems.length} berkas tangkapan layar yang gagal diunduh dari Supabase Storage. Sistem menolak membuang gambar secara diam-diam demi menjaga kelengkapan catatan transaksi Anda.`,
-                        `There were ${zipFailedItems.length} screenshot files that failed to download from Supabase Storage. The system refuses to silently drop images to preserve your trade records.`
-                      )}
-                    </p>
-
-                    <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-[11px]">
-                      {zipFailedItems.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#F5F7FA] dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]"
-                        >
-                          <div className="truncate">
-                            <span className="font-mono-numbers text-[#1769E8] dark:text-[#60A5FA] font-semibold">
-                              {item.tradeId}
+                  {zipPhase === 'failed' && (
+                    <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-3">
+                      <div className="flex items-center gap-2 text-xs text-[#E11D48] dark:text-[#E05260] font-semibold">
+                        <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                        <span>
+                          {tr(
+                            `${zipFailedItems.length} gambar gagal diunduh`,
+                            `${zipFailedItems.length} images failed to download`
+                          )}
+                        </span>
+                      </div>
+                      <div className="max-h-32 overflow-y-auto divide-y divide-[#E4E4E7] dark:divide-[#20252D] border-t border-b border-[#E4E4E7] dark:border-[#20252D] text-[11px]">
+                        {zipFailedItems.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between gap-2 py-2"
+                          >
+                            <span className="font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7] truncate">
+                              {item.tradeId} · {item.pathOrRef}
                             </span>
-                            <span className="text-[#697586] dark:text-[#929BA9] text-[10px] block truncate">
-                              {item.pathOrRef}
+                            <span className="text-[10px] text-[#E11D48] dark:text-[#E05260] shrink-0">
+                              {item.error}
                             </span>
                           </div>
-                          <span className="text-[10px] text-rose-600 dark:text-rose-400 shrink-0 font-medium">
-                            {item.error}
-                          </span>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleStartZipBackup(false)}
+                          className="px-3.5 py-1.5 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5 stroke-[1.75]" />
+                          <span>{tr('Coba Lagi', 'Retry')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleStartZipBackup(true)}
+                          className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[#D97706] dark:text-[#F59E0B] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <AlertCircle className="h-3.5 w-3.5 stroke-[1.75]" />
+                          <span>{tr('Unduh Parsial', 'Partial Backup')}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleResetZipState}
+                          className="px-3.5 py-1.5 rounded-full text-xs text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] cursor-pointer"
+                        >
+                          {tr('Batal', 'Cancel')}
+                        </button>
+                      </div>
                     </div>
+                  )}
 
-                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                  {zipPhase === 'idle' && (
+                    <div className="space-y-3">
+                      <p className="text-[11px] text-[#526071] dark:text-[#929BA9]">
+                        {tr(
+                          'Arsip ZIP berisi data transaksi, pengaturan, serta seluruh screenshot. Token login tidak disertakan.',
+                          'ZIP archive includes trades, settings, and all screenshots. Login tokens are excluded.'
+                        )}
+                      </p>
                       <button
                         type="button"
                         onClick={() => handleStartZipBackup(false)}
-                        className="py-2 px-3.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+                        disabled={screenshotStats.storageCount > 0 && !currentUser?.id}
+                        className="w-full min-h-[42px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 disabled:cursor-not-allowed font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                       >
-                        <RefreshCw className="h-3.5 w-3.5 stroke-[1.75]" />
-                        <span>{tr('Coba Lagi', 'Retry')}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleStartZipBackup(true)}
-                        className="py-2 px-3.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] text-amber-600 dark:text-amber-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                      >
-                        <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                        <span>{tr('Unduh Sebagai Cadangan Parsial', 'Download as Partial Backup')}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleResetZipState}
-                        className="py-2 px-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] text-xs transition-colors"
-                      >
-                        {tr('Batalkan', 'Cancel')}
+                        <FileArchive className="h-4 w-4 stroke-[1.75]" />
+                        <span>{tr('Unduh Arsip ZIP', 'Download ZIP Archive')}</span>
                       </button>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {/* State: IDLE */}
-                {zipPhase === 'idle' && (
-                  <div className="space-y-3">
-                    <div className="p-3 rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#697586] dark:text-[#929BA9] space-y-1">
-                      <p className="flex items-center gap-1.5 text-[#151D2A] dark:text-[#F2F5F9] font-medium">
-                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                        <span>{tr('Prinsip Keamanan Ekspor Cadangan:', 'Backup Export Security Principles:')}</span>
-                      </p>
-                      <p>
-                        •{' '}
-                        {tr(
-                          'Berkas tangkapan layar dari bucket privat diunduh menggunakan sesi login Supabase Anda secara terautentikasi.',
-                          'Screenshot files from private buckets are downloaded securely using your authenticated Supabase session.'
-                        )}
-                      </p>
-                      <p>
-                        •{' '}
-                        {tr(
-                          'Path folder dan ID rahasia internal disanitasi menjadi nama berkas aman di dalam arsip ZIP.',
-                          'Folder paths and internal IDs are sanitized into safe filenames inside the ZIP archive.'
-                        )}
-                      </p>
-                      <p>
-                        •{' '}
-                        {tr(
-                          'Token autentikasi maupun kredensial sensitif tidak pernah disertakan ke dalam berkas arsip.',
-                          'Authentication tokens and sensitive credentials are never included in the archive file.'
-                        )}
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleStartZipBackup(false)}
-                      disabled={screenshotStats.storageCount > 0 && !currentUser?.id}
-                      className="w-full py-3 px-4 rounded-xl bg-[#1769E8] hover:bg-[#1458C4] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs transition-colors flex items-center justify-center gap-2"
-                    >
-                      <FileArchive className="h-4 w-4 stroke-[1.75]" />
-                      <span>
-                        {tr(
-                          `Mulai Buat Cadangan ZIP Lengkap (${trades.length} Transaksi & ${screenshotStats.totalScreenshots} Gambar)`,
-                          `Create Full ZIP Backup (${trades.length} Trades & ${screenshotStats.totalScreenshots} Screenshots)`
-                        )}
+              {/* FORMAT B: JSON */}
+              {exportFormat === 'json' && (
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] divide-y sm:divide-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D]">
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Total', 'Total')}
                       </span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* FORMAT B: STANDARD JSON BACKUP (PRESERVED 100%) */}
-            {exportFormat === 'json' && (
-              <div className="space-y-3">
-                <div className="rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] p-4 space-y-3">
-                  <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] block">
-                    {tr('Ringkasan Data yang Akan Diekspor (JSON):', 'Summary of Data to Export (JSON):')}
-                  </span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Total Transaksi', 'Total Trades')}
-                      </span>
-                      <span className="text-sm font-bold font-mono-numbers text-[#1769E8] dark:text-[#60A5FA]">
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                         {trades.length}
                       </span>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Transaksi Asli', 'Real Trades')}
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Asli', 'Real')}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-emerald-600 dark:text-emerald-400">
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#059669] dark:text-[#00A878]">
                         {trades.filter((t) => !t.isDemo).length}
                       </span>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                        {tr('Transaksi Demo', 'Demo Trades')}
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Demo', 'Demo')}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-amber-600 dark:text-amber-400">
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#D97706] dark:text-[#F59E0B]">
                         {trades.filter((t) => t.isDemo).length}
                       </span>
                     </div>
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                      <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
+                    <div className="px-3 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
                         {tr('Mata Uang', 'Currency')}
                       </span>
-                      <span className="text-sm font-bold font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9]">
-                        {settings.currency} ({settings.currencySymbol})
+                      <span className="text-sm font-bold font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7]">
+                        {settings.currency}
                       </span>
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#697586] dark:text-[#929BA9] space-y-1">
-                    <p>
-                      •{' '}
-                      {tr(
-                        'Berkas JSON mencakup seluruh riwayat transaksi, evaluasi psikologi, catatan eksekusi, tangkapan layar lokal, serta parameter akun.',
-                        'The JSON file includes all trade history, psychology evaluations, execution notes, local screenshots, and account parameters.'
-                      )}
-                    </p>
-                    <p>
-                      •{' '}
-                      {tr(
-                        'Berkas ini dapat disimpan di perangkat, penyimpanan cloud pribadi, atau dipindahkan ke ponsel/laptop lain.',
-                        'This file can be saved on your device, personal cloud storage, or transferred to another phone/laptop.'
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleDownloadBackup}
-                  disabled={isExportingJson}
-                  className="w-full py-3 px-4 rounded-xl bg-[#1769E8] hover:bg-[#1458C4] disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs transition-colors flex items-center justify-center gap-2"
-                >
-                  <Download className="h-4 w-4 stroke-[1.75]" />
-                  <span>
-                    {isExportingJson
-                      ? tr('Menyiapkan Cadangan JSON & Gambar...', 'Preparing JSON Backup & Screenshots...')
-                      : tr(
-                          `Unduh Berkas Cadangan JSON (${trades.length} Transaksi)`,
-                          `Download JSON Backup File (${trades.length} Trades)`
-                        )}
-                  </span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ================================================================= */}
-        {/* TAB 2: IMPORT WITH DUAL-FORMAT (JSON & ZIP - Tahap 2) */}
-        {/* ================================================================= */}
-        {activeTab === 'import' && (
-          <div className="space-y-4">
-            {/* File Picker Box */}
-            <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-dashed border-[#DDE3EA] dark:border-[#252B34] hover:border-[#1769E8] transition-colors text-center space-y-2">
-              <input
-                type="file"
-                id="backup-file-input"
-                accept=".json,.zip,application/json,application/zip,application/x-zip-compressed"
-                onChange={handleFileChange}
-                className="hidden"
-              />
-              <label
-                htmlFor="backup-file-input"
-                className="cursor-pointer flex flex-col items-center justify-center gap-2"
-              >
-                <div className="h-10 w-10 rounded-xl bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] flex items-center justify-center text-[#1769E8] dark:text-[#60A5FA]">
-                  {isAnalyzingFile ? (
-                    <Loader2 className="h-5 w-5 animate-spin stroke-[1.75]" />
-                  ) : (
-                    <Upload className="h-5 w-5 stroke-[1.75]" />
-                  )}
-                </div>
-                <div className="text-xs">
-                  <span className="font-semibold text-[#1769E8] dark:text-[#60A5FA] hover:underline">
-                    {tr('Pilih Berkas Cadangan (.ZIP atau .JSON)', 'Select Backup File (.ZIP or .JSON)')}
-                  </span>{' '}
-                  <span className="text-[#697586] dark:text-[#929BA9]">
-                    {tr('atau tarik berkas ke sini', 'or drag file here')}
-                  </span>
-                </div>
-                <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                  {tr(
-                    'Mendukung arsip lengkap .zip atau berkas ringkas .json',
-                    'Supports full .zip archives or compact .json files'
-                  )}
-                </span>
-              </label>
-            </div>
-
-            {/* Error Message */}
-            {errorMessage && (
-              <div className="p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2 font-medium">
-                <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* In-Progress ZIP Restore UI */}
-            {restoreZipPhase === 'uploading' && (
-              <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-[#1769E8] dark:text-[#60A5FA] flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-[#1769E8] stroke-[1.75]" />
-                    <span>
-                      {restoreZipProgress?.message ||
-                        tr('Memulihkan data dan tangkapan layar...', 'Restoring data and screenshots...')}
-                    </span>
-                  </span>
-                  <span className="font-mono-numbers font-bold text-[#1769E8] dark:text-[#60A5FA]">
-                    {restoreZipProgress?.percent || 0}%
-                  </span>
-                </div>
-
-                <div className="w-full h-2 rounded-full bg-white dark:bg-[#11151B] overflow-hidden border border-[#DDE3EA] dark:border-[#252B34]">
-                  <div
-                    className="h-full bg-[#1769E8] transition-all duration-200"
-                    style={{ width: `${restoreZipProgress?.percent || 0}%` }}
-                  />
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] text-[#697586] dark:text-[#929BA9] pt-1">
-                  <span>
+                  <p className="text-[11px] text-[#526071] dark:text-[#929BA9]">
                     {tr(
-                      `Proses ${restoreZipProgress?.currentStep || 0} dari ${restoreZipProgress?.totalSteps || 0}`,
-                      `Step ${restoreZipProgress?.currentStep || 0} of ${restoreZipProgress?.totalSteps || 0}`
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCancelRestore}
-                    className="text-rose-600 dark:text-rose-400 hover:underline font-medium"
-                  >
-                    {tr('Batalkan Pemulihan', 'Cancel Restore')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Succeeded ZIP Restore Summary */}
-            {restoreZipPhase === 'completed' && restoreZipSuccessSummary && (
-              <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                  <span>{tr('Pemulihan Arsip ZIP Selesai!', 'ZIP Archive Restore Completed!')}</span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
-                  <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                    <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                      {tr('Total Dipulihkan', 'Total Restored')}
-                    </span>
-                    <span className="text-sm font-bold font-mono-numbers text-[#1769E8] dark:text-[#60A5FA]">
-                      {restoreZipSuccessSummary.restoredTrades.length} {tr('Transaksi', 'Trades')}
-                    </span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                    <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                      {tr('Gambar Diunggah', 'Screenshots Uploaded')}
-                    </span>
-                    <span className="text-sm font-bold font-mono-numbers text-emerald-600 dark:text-emerald-400">
-                      {restoreZipSuccessSummary.uploadedScreenshotsCount} {tr('Berkas', 'Files')}
-                    </span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                    <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                      {tr('Baru / Diperbarui', 'New / Updated')}
-                    </span>
-                    <span className="text-sm font-bold font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9]">
-                      +{restoreZipSuccessSummary.newTradesAdded} / ↻{restoreZipSuccessSummary.duplicateTradesUpdated}
-                    </span>
-                  </div>
-                </div>
-
-                {restoreZipSuccessSummary.unchangedTradesKept > 0 && (
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                    •{' '}
-                    {tr(
-                      `${restoreZipSuccessSummary.unchangedTradesKept} transaksi lokal Anda yang tidak ada dalam arsip tetap dipertahankan.`,
-                      `${restoreZipSuccessSummary.unchangedTradesKept} of your local trades not in the archive were kept intact.`
+                      'File JSON ringan mencakup riwayat transaksi, catatan, evaluasi, dan parameter akun.',
+                      'Lightweight JSON includes trade history, notes, evaluations, and account settings.'
                     )}
                   </p>
-                )}
 
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="w-full py-2.5 px-4 rounded-xl bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors"
-                >
-                  {tr('Selesai & Tutup Jendela', 'Done & Close Window')}
-                </button>
-              </div>
-            )}
-
-            {/* Failed Screenshot Uploads in ZIP Restore */}
-            {restoreZipPhase === 'failed' && (
-              <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                <div className="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400 font-bold">
-                  <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0 stroke-[1.75]" />
-                  <span>
-                    {tr(
-                      'Pemulihan Arsip Belum Berhasil Sempurna',
-                      'Archive Restore Could Not Complete Fully'
-                    )}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadBackup}
+                    disabled={isExportingJson}
+                    className="w-full min-h-[42px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                  >
+                    <Download className="h-4 w-4 stroke-[1.75]" />
+                    <span>
+                      {isExportingJson
+                        ? tr('Menyiapkan JSON...', 'Preparing JSON...')
+                        : tr(`Unduh File JSON (${trades.length})`, `Download JSON (${trades.length})`)}
+                    </span>
+                  </button>
                 </div>
+              )}
 
-                <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
-                  {tr(
-                    `Terdapat ${restoreZipFailedItems.length} berkas tangkapan layar yang gagal diunggah ke Supabase Storage. Sistem tidak membuang data transaksi atau membiarkan path rusak tanpa persetujuan Anda.`,
-                    `There were ${restoreZipFailedItems.length} screenshot files that failed to upload to Supabase Storage. The system does not discard trade data or leave broken paths without your confirmation.`
-                  )}
-                </p>
-
-                <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 rounded-lg bg-white dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-[11px]">
-                  {restoreZipFailedItems.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-start justify-between gap-2 p-1.5 rounded bg-[#F5F7FA] dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]"
-                    >
-                      <div className="truncate">
-                        <span className="font-mono-numbers text-[#1769E8] dark:text-[#60A5FA] font-semibold">
-                          {item.tradeId}
-                        </span>
-                        <span className="text-[#697586] dark:text-[#929BA9] text-[10px] block truncate">
-                          {item.archivePath}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-rose-600 dark:text-rose-400 shrink-0 font-medium">
-                        {item.error}
+              {/* FORMAT C: CSV */}
+              {exportFormat === 'csv' && (
+                <div className="space-y-3.5">
+                  <div className="grid grid-cols-2 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] divide-x divide-[#E4E4E7] dark:divide-[#20252D]">
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Baris Transaksi', 'Trade Rows')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                        {trades.length}
                       </span>
                     </div>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteZipRestore(false)}
-                    className="py-2 px-3.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5 stroke-[1.75]" />
-                    <span>{tr('Coba Lagi Gambar yang Gagal', 'Retry Failed Screenshots')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteZipRestore(true)}
-                    className="py-2 px-3.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] text-amber-600 dark:text-amber-400 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                  >
-                    <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                    <span>{tr('Lanjutkan Tanpa Gambar yang Gagal', 'Continue Without Failed Images')}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRestoreZipPhase('idle')}
-                    className="py-2 px-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] text-xs transition-colors"
-                  >
-                    {tr('Batalkan', 'Cancel')}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Validation Report & Preview */}
-            {validationReport && restoreZipPhase === 'idle' && (
-              <div className="space-y-3">
-                <div className="p-4 rounded-xl border bg-[#F5F7FA] dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] flex items-center gap-1.5">
-                      {validationReport.isValid ? (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                          <span className="text-emerald-600 dark:text-emerald-400">
-                            {validationReport.fileFormat === 'zip'
-                              ? tr('Arsip ZIP Valid & Terverifikasi', 'Valid & Verified ZIP Archive')
-                              : tr('Berkas JSON Valid & Terverifikasi', 'Valid & Verified JSON File')}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <AlertTriangle className="h-4 w-4 text-rose-600 dark:text-rose-400 stroke-[1.75]" />
-                          <span className="text-rose-600 dark:text-rose-400">
-                            {tr('Berkas Cadangan Tidak Memenuhi Syarat', 'Backup File Does Not Meet Requirements')}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                    <span className="text-[11px] font-mono-numbers px-2 py-0.5 rounded bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[#151D2A] dark:text-[#F2F5F9] truncate max-w-[180px]">
-                      {validationReport.fileName}
-                    </span>
+                    <div className="px-3.5 py-2.5">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Kompatibilitas', 'Compatibility')}
+                      </span>
+                      <span className="text-sm font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                        Excel / Sheets
+                      </span>
+                    </div>
                   </div>
 
-                  {/* Valid stats preview */}
-                  {validationReport.isValid && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1">
-                      <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                          {tr('Transaksi Valid', 'Valid Trades')}
-                        </span>
-                        <span className="text-sm font-bold font-mono-numbers text-[#1769E8] dark:text-[#60A5FA]">
-                          {validationReport.validTradesCount} {tr('Transaksi', 'Trades')}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                          {tr('Total P/L', 'Total P/L')}
-                        </span>
-                        <span
-                          className={`text-sm font-bold font-mono-numbers ${
-                            (validationReport.backupTotalProfit || 0) >= 0
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-rose-600 dark:text-rose-400'
-                          }`}
-                        >
-                          {formatCurrency(validationReport.backupTotalProfit || 0, settings)}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                          {tr('Pengaturan', 'Settings')}
-                        </span>
-                        <span className="text-sm font-bold text-[#151D2A] dark:text-[#F2F5F9]">
-                          {validationReport.hasSettings
-                            ? tr('Tersedia', 'Included')
-                            : tr('Pakai Saat Ini', 'Keep Current')}
-                        </span>
-                      </div>
-                      <div className="p-2 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34]">
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] block">
-                          {validationReport.fileFormat === 'zip'
-                            ? tr('Gambar ZIP', 'ZIP Images')
-                            : tr('Format', 'Format')}
-                        </span>
-                        <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400 font-mono-numbers">
-                          {validationReport.fileFormat === 'zip'
-                            ? `${validationReport.archivedImagesCount || 0} ${tr('Berkas', 'Files')}`
-                            : tr('JSON Teks', 'Text JSON')}
-                        </span>
-                      </div>
-                    </div>
-                  )}
+                  <p className="text-[11px] text-[#526071] dark:text-[#929BA9]">
+                    {tr(
+                      'Mengekspor daftar transaksi ke format tabel CSV standar tanpa gambar screenshot.',
+                      'Exports trade list to standard CSV spreadsheet format without screenshots.'
+                    )}
+                  </p>
 
-                  {/* Warnings if any */}
-                  {validationReport.warnings && validationReport.warnings.length > 0 && (
-                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#151D2A] dark:text-[#F2F5F9] space-y-1">
-                      <span className="font-semibold block flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                        <Info className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 stroke-[1.75]" />
-                        <span>{tr('Catatan Arsip:', 'Archive Notes:')}</span>
-                      </span>
-                      {validationReport.warnings.map((warn, idx) => (
-                        <p key={idx} className="text-[10px] text-[#697586] dark:text-[#929BA9]">
-                          • {warn}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Errors listing if any */}
-                  {validationReport.errors.length > 0 && (
-                    <div className="p-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-rose-600 dark:text-rose-400 space-y-1">
-                      <span className="font-semibold block">
-                        {tr('Catatan Validasi:', 'Validation Notes:')}
-                      </span>
-                      {validationReport.errors.map((err, idx) => (
-                        <p key={idx} className="text-[11px]">
-                          • {err}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Import Mode Selection */}
-                {validationReport.isValid && (
-                  <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                    <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] block">
-                      {tr('Pilih Metode Pemulihan:', 'Select Restore Method:')}
+                  <button
+                    type="button"
+                    onClick={handleDownloadCsv}
+                    disabled={isExportingCsv || trades.length === 0}
+                    className="w-full min-h-[42px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                  >
+                    <FileSpreadsheet className="h-4 w-4 stroke-[1.75]" />
+                    <span>
+                      {isExportingCsv
+                        ? tr('Menyiapkan CSV...', 'Preparing CSV...')
+                        : tr(`Unduh File CSV (${trades.length})`, `Download CSV (${trades.length})`)}
                     </span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      {/* MERGE OPTION */}
-                      <label
-                        className={`p-3 rounded-xl border cursor-pointer transition-colors flex flex-col justify-between ${
-                          importMode === 'merge'
-                            ? 'bg-[#1769E8]/10 dark:bg-[#1769E8]/15 border-[#1769E8] text-[#151D2A] dark:text-[#F2F5F9]'
-                            : 'bg-white dark:bg-[#11151B] border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <input
-                            type="radio"
-                            name="importMode"
-                            checked={importMode === 'merge'}
-                            onChange={() => setImportMode('merge')}
-                            className="text-[#1769E8]"
-                          />
-                          <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9]">
-                            {tr('Gabungkan Data', 'Merge Data')}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] leading-tight">
-                          {tr(
-                            'Menambahkan transaksi dari cadangan tanpa menghapus data yang ada. Jika ada ID yang sama, data diperbarui.',
-                            'Adds trades from backup without deleting existing records. Matching IDs will be updated.'
-                          )}
-                        </span>
-                      </label>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-                      {/* REPLACE OPTION */}
-                      <label
-                        className={`p-3 rounded-xl border cursor-pointer transition-colors flex flex-col justify-between ${
-                          importMode === 'replace'
-                            ? 'bg-white dark:bg-[#171D26] border-[#1769E8] text-[#151D2A] dark:text-[#F2F5F9]'
-                            : 'bg-white dark:bg-[#11151B] border-[#DDE3EA] dark:border-[#252B34] text-[#697586] dark:text-[#929BA9]'
+          {/* ================================================================= */}
+          {/* TAB 2: IMPORT                                                     */}
+          {/* ================================================================= */}
+          {activeTab === 'import' && (
+            <div className="space-y-4">
+              {/* File Picker */}
+              <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-dashed border-[#E4E4E7] dark:border-[#20252D] hover:border-[#0F172A] dark:hover:border-white transition-colors text-center">
+                <input
+                  type="file"
+                  id="backup-file-input"
+                  accept=".json,.zip,application/json,application/zip,application/x-zip-compressed"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="backup-file-input"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-1.5"
+                >
+                  {isAnalyzingFile ? (
+                    <Loader2 className="h-5 w-5 animate-spin text-[#0F172A] dark:text-white stroke-[1.75]" />
+                  ) : (
+                    <Upload className="h-5 w-5 text-[#0F172A] dark:text-white stroke-[1.75]" />
+                  )}
+                  <span className="text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                    {selectedFile
+                      ? selectedFile.name
+                      : tr('Pilih File Cadangan (.ZIP atau .JSON)', 'Select Backup File (.ZIP or .JSON)')}
+                  </span>
+                  <span className="text-[11px] text-[#526071] dark:text-[#929BA9]">
+                    {tr('Klik untuk memilih arsip dari perangkat', 'Click to browse archive from device')}
+                  </span>
+                </label>
+              </div>
+
+              {errorMessage && (
+                <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-xs text-[#E11D48] dark:text-[#E05260] flex items-center gap-2 font-medium">
+                  <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              {/* Restore ZIP Progress */}
+              {restoreZipPhase === 'uploading' && (
+                <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-[#0F172A] dark:text-white flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin stroke-[1.75]" />
+                      <span>{restoreZipProgress?.message || tr('Memulihkan...', 'Restoring...')}</span>
+                    </span>
+                    <span className="font-mono-numbers tabular-nums font-bold text-[#0F172A] dark:text-white">
+                      {restoreZipProgress?.percent || 0}%
+                    </span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-white dark:bg-[#101318] overflow-hidden border border-[#E4E4E7] dark:border-[#20252D]">
+                    <div
+                      className="h-full bg-[#0F172A] dark:bg-white transition-all duration-200"
+                      style={{ width: `${restoreZipProgress?.percent || 0}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#526071] dark:text-[#929BA9]">
+                    <span className="font-mono-numbers tabular-nums">
+                      {restoreZipProgress?.currentStep || 0} / {restoreZipProgress?.totalSteps || 0}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCancelRestore}
+                      className="text-[#E11D48] dark:text-[#E05260] hover:underline font-medium cursor-pointer"
+                    >
+                      {tr('Batalkan', 'Cancel')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Restore ZIP Completed */}
+              {restoreZipPhase === 'completed' && restoreZipSuccessSummary && (
+                <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-[#059669] dark:text-[#00A878] font-semibold">
+                    <CheckCircle2 className="h-4 w-4 stroke-[1.75]" />
+                    <span>{tr('Pemulihan Arsip Selesai', 'Archive Restore Complete')}</span>
+                  </div>
+
+                  <div className="grid grid-cols-3 border-t border-b border-[#E4E4E7] dark:border-[#20252D] divide-x divide-[#E4E4E7] dark:divide-[#20252D] text-xs">
+                    <div className="py-2.5 pr-3">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Dipulihkan', 'Restored')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                        {restoreZipSuccessSummary.restoredTrades.length}
+                      </span>
+                    </div>
+                    <div className="py-2.5 px-3">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Gambar', 'Images')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#059669] dark:text-[#00A878]">
+                        {restoreZipSuccessSummary.uploadedScreenshotsCount}
+                      </span>
+                    </div>
+                    <div className="py-2.5 pl-3">
+                      <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                        {tr('Baru / Update', 'New / Updated')}
+                      </span>
+                      <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                        +{restoreZipSuccessSummary.newTradesAdded} / {restoreZipSuccessSummary.duplicateTradesUpdated}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="w-full min-h-[42px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                  >
+                    {tr('Selesai', 'Done')}
+                  </button>
+                </div>
+              )}
+
+              {/* Restore ZIP Failed */}
+              {restoreZipPhase === 'failed' && (
+                <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-3">
+                  <div className="flex items-center gap-2 text-xs text-[#E11D48] dark:text-[#E05260] font-semibold">
+                    <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
+                    <span>
+                      {tr(
+                        `${restoreZipFailedItems.length} gambar gagal diunggah`,
+                        `${restoreZipFailedItems.length} images failed to upload`
+                      )}
+                    </span>
+                  </div>
+                  <div className="max-h-32 overflow-y-auto divide-y divide-[#E4E4E7] dark:divide-[#20252D] border-t border-b border-[#E4E4E7] dark:border-[#20252D] text-[11px]">
+                    {restoreZipFailedItems.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between gap-2 py-2"
+                      >
+                        <span className="font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7] truncate">
+                          {item.tradeId} · {item.archivePath}
+                        </span>
+                        <span className="text-[10px] text-[#E11D48] dark:text-[#E05260] shrink-0">
+                          {item.error}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteZipRestore(false)}
+                      className="px-3.5 py-1.5 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5 stroke-[1.75]" />
+                      <span>{tr('Coba Lagi', 'Retry')}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExecuteZipRestore(true)}
+                      className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[#D97706] dark:text-[#F59E0B] text-xs font-semibold cursor-pointer"
+                    >
+                      {tr('Lanjut Tanpa Gambar Gagal', 'Continue Without Failed Images')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRestoreZipPhase('idle')}
+                      className="px-3.5 py-1.5 rounded-full text-xs text-[#526071] dark:text-[#929BA9] cursor-pointer"
+                    >
+                      {tr('Batal', 'Cancel')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Report */}
+              {validationReport && restoreZipPhase === 'idle' && (
+                <div className="space-y-3.5">
+                  <div className="p-3.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-3">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span
+                        className={`font-semibold flex items-center gap-1.5 ${
+                          validationReport.isValid
+                            ? 'text-[#059669] dark:text-[#00A878]'
+                            : 'text-[#E11D48] dark:text-[#E05260]'
                         }`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <input
-                            type="radio"
-                            name="importMode"
-                            checked={importMode === 'replace'}
-                            onChange={() => setImportMode('replace')}
-                            className="text-[#1769E8]"
-                          />
-                          <span className="font-bold text-rose-600 dark:text-rose-400">
-                            {tr('Ganti Seluruh Data', 'Replace All Data')}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-[#697586] dark:text-[#929BA9] leading-tight">
-                          {tr(
-                            'Mengganti seluruh transaksi di browser lokal dengan data cadangan ini.',
-                            'Replaces all trades in your local browser with this backup dataset.'
-                          )}
-                        </span>
-                      </label>
+                        {validationReport.isValid ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4 stroke-[1.75]" />
+                            <span>{tr('File Terverifikasi', 'File Verified')}</span>
+                          </>
+                        ) : (
+                          <>
+                            <AlertTriangle className="h-4 w-4 stroke-[1.75]" />
+                            <span>{tr('File Tidak Valid', 'Invalid File')}</span>
+                          </>
+                        )}
+                      </span>
+                      <span className="text-[11px] font-mono-numbers text-[#526071] dark:text-[#929BA9] truncate max-w-[180px]">
+                        {validationReport.fileName}
+                      </span>
                     </div>
 
-                    {/* Conflict Explanation Details for Merge */}
-                    {importMode === 'merge' && mergeStats && (
-                      <div className="p-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#697586] dark:text-[#929BA9] space-y-1">
-                        <span className="font-semibold block text-[#151D2A] dark:text-[#F2F5F9]">
-                          {tr('Rincian Penggabungan Data:', 'Merge Breakdown:')}
-                        </span>
-                        <p>
-                          •{' '}
-                          <strong className="text-[#151D2A] dark:text-[#F2F5F9]">{mergeStats.newItems}</strong>{' '}
-                          {tr(
-                            'transaksi baru akan ditambahkan ke riwayat Anda.',
-                            'new trades will be added to your history.'
-                          )}
-                        </p>
-                        {mergeStats.duplicates > 0 && (
-                          <p>
-                            •{' '}
-                            <strong className="text-[#151D2A] dark:text-[#F2F5F9]">{mergeStats.duplicates}</strong>{' '}
-                            {tr(
-                              'transaksi yang sudah ada (ID cocok) akan diperbarui nilainya dari cadangan.',
-                              'existing trades (matching IDs) will be updated from the backup.'
-                            )}
-                          </p>
-                        )}
-                        <p>
-                          •{' '}
-                          <strong className="text-[#151D2A] dark:text-[#F2F5F9]">{mergeStats.unchanged}</strong>{' '}
-                          {tr(
-                            'transaksi lama di browser Anda yang tidak ada dalam cadangan tetap aman dan utuh.',
-                            'existing trades in your browser not in the backup will remain safe and intact.'
-                          )}
-                        </p>
+                    {validationReport.isValid && (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 border-t border-[#E4E4E7] dark:border-[#20252D] pt-2.5 gap-y-2 sm:gap-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D]">
+                        <div className="sm:pr-3">
+                          <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                            {tr('Transaksi', 'Trades')}
+                          </span>
+                          <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                            {validationReport.validTradesCount}
+                          </span>
+                        </div>
+                        <div className="sm:px-3">
+                          <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                            Total P/L
+                          </span>
+                          <span
+                            className={`text-sm font-bold font-mono-numbers tabular-nums ${
+                              (validationReport.backupTotalProfit || 0) >= 0
+                                ? 'text-[#059669] dark:text-[#00A878]'
+                                : 'text-[#E11D48] dark:text-[#E05260]'
+                            }`}
+                          >
+                            {formatCurrency(validationReport.backupTotalProfit || 0, settings)}
+                          </span>
+                        </div>
+                        <div className="sm:px-3">
+                          <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                            {tr('Pengaturan', 'Settings')}
+                          </span>
+                          <span className="text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] block mt-0.5">
+                            {validationReport.hasSettings ? tr('Tersedia', 'Included') : tr('Lokal', 'Keep')}
+                          </span>
+                        </div>
+                        <div className="sm:pl-3">
+                          <span className="text-[10px] text-[#526071] dark:text-[#929BA9] block">
+                            {validationReport.fileFormat === 'zip' ? tr('Gambar', 'Images') : tr('Format', 'Format')}
+                          </span>
+                          <span className="text-sm font-bold font-mono-numbers tabular-nums text-[#059669] dark:text-[#00A878]">
+                            {validationReport.fileFormat === 'zip'
+                              ? validationReport.archivedImagesCount || 0
+                              : 'JSON'}
+                          </span>
+                        </div>
                       </div>
                     )}
 
-                    {/* Explicit Confirmation Checkbox for Overwrite */}
-                    {importMode === 'replace' && (
-                      <div className="p-3 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] space-y-2">
-                        <label className="flex items-start gap-2.5 cursor-pointer text-xs text-[#151D2A] dark:text-[#F2F5F9]">
+                    {validationReport.warnings && validationReport.warnings.length > 0 && (
+                      <div className="text-[11px] text-[#D97706] dark:text-[#F59E0B] space-y-0.5">
+                        {validationReport.warnings.map((warn, idx) => (
+                          <p key={idx}>• {warn}</p>
+                        ))}
+                      </div>
+                    )}
+
+                    {validationReport.errors.length > 0 && (
+                      <div className="text-[11px] text-[#E11D48] dark:text-[#E05260] space-y-0.5">
+                        {validationReport.errors.map((err, idx) => (
+                          <p key={idx}>• {err}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Restore Method */}
+                  {validationReport.isValid && (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2.5 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setImportMode('merge')}
+                          className={`p-3 rounded-xl border text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                            importMode === 'merge'
+                              ? 'border-[#0F172A] dark:border-white bg-[#F4F4F5] dark:bg-[#161A22]'
+                              : 'border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#0B0E13]'
+                          }`}
+                        >
+                          <span
+                            className={`font-bold block ${
+                              importMode === 'merge'
+                                ? 'text-[#0F172A] dark:text-white'
+                                : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                            }`}
+                          >
+                            {tr('Gabungkan Data', 'Merge Data')}
+                          </span>
+                          <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                            {tr('Tambah baru & perbarui ID sama', 'Add new & update matching IDs')}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setImportMode('replace')}
+                          className={`p-3 rounded-xl border text-left transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E11D48]/50 ${
+                            importMode === 'replace'
+                              ? 'border-[#E11D48] dark:border-[#E05260] bg-[#F4F4F5] dark:bg-[#161A22]'
+                              : 'border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#0B0E13]'
+                          }`}
+                        >
+                          <span className="font-bold text-[#E11D48] dark:text-[#E05260] block">
+                            {tr('Ganti Semua', 'Replace All')}
+                          </span>
+                          <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                            {tr('Timpa seluruh data saat ini', 'Overwrite all current trades')}
+                          </span>
+                        </button>
+                      </div>
+
+                      {importMode === 'merge' && mergeStats && (
+                        <div className="px-3.5 py-2.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] flex flex-wrap gap-3">
+                          <span>
+                            <strong className="text-[#059669] dark:text-[#00A878]">+{mergeStats.newItems}</strong>{' '}
+                            {tr('baru', 'new')}
+                          </span>
+                          <span>
+                            <strong className="text-[#0F172A] dark:text-white">{mergeStats.duplicates}</strong>{' '}
+                            {tr('diperbarui', 'updated')}
+                          </span>
+                          <span>
+                            <strong className="text-[#0F172A] dark:text-[#F2F4F7]">{mergeStats.unchanged}</strong>{' '}
+                            {tr('tetap aman', 'kept')}
+                          </span>
+                        </div>
+                      )}
+
+                      {importMode === 'replace' && (
+                        <label className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] cursor-pointer text-[11px] text-[#0F172A] dark:text-[#F2F4F7]">
                           <input
                             type="checkbox"
                             checked={confirmOverwrite}
                             onChange={(e) => setConfirmOverwrite(e.target.checked)}
-                            className="mt-0.5 rounded border-[#DDE3EA] dark:border-[#252B34] text-[#1769E8] focus:ring-0"
+                            className="mt-0.5 rounded border-[#E4E4E7] dark:border-[#20252D] accent-[#0F172A] dark:accent-white focus:ring-0"
                           />
-                          <span className="text-[11px] leading-relaxed">
-                            <strong className="text-amber-600 dark:text-amber-400">
-                              {tr('Konfirmasi Penggantian:', 'Replacement Confirmation:')}
-                            </strong>{' '}
+                          <span>
                             {tr(
-                              `Saya memahami bahwa ${trades.length} transaksi yang ada saat ini di browser akan digantikan seluruhnya oleh ${validationReport.validTradesCount} transaksi dari berkas cadangan ini.`,
-                              `I understand that all ${trades.length} existing trades in the browser will be completely replaced by ${validationReport.validTradesCount} trades from this backup file.`
+                              `Konfirmasi mengganti ${trades.length} transaksi saat ini dengan ${validationReport.validTradesCount} transaksi dari cadangan.`,
+                              `Confirm replacing ${trades.length} current trades with ${validationReport.validTradesCount} backup trades.`
                             )}
                           </span>
                         </label>
-                        <p className="text-[10px] text-[#697586] dark:text-[#929BA9] pl-6 leading-tight">
-                          {tr(
-                            'Pemberitahuan Cloud: Penggantian ini hanya berlaku untuk tampilan dan cache browser lokal Anda kecuali sinkronisasi cloud diaktifkan.',
-                            'Cloud Notice: This replacement applies to your local browser cache unless cloud sync is enabled.'
-                          )}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
 
-                {/* Cloud Sync Option when authenticated */}
-                {validationReport.isValid && currentUser && (
-                  <div className="p-3.5 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] flex items-center gap-1.5">
-                        <Cloud className="h-3.5 w-3.5 text-[#1769E8] dark:text-[#60A5FA] stroke-[1.75]" />
-                        <span>{tr('Sinkronisasi Cloud Supabase', 'Supabase Cloud Sync')}</span>
-                      </span>
-                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium px-2 py-0.5 rounded bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] truncate max-w-[200px]">
-                        {currentUser.email || tr('Akun Terhubung', 'Connected Account')}
-                      </span>
-                    </div>
-                    <label className="flex items-start gap-2.5 cursor-pointer text-xs text-[#151D2A] dark:text-[#F2F5F9]">
-                      <input
-                        type="checkbox"
-                        checked={syncToCloud}
-                        onChange={(e) => setSyncToCloud(e.target.checked)}
-                        className="mt-0.5 rounded border-[#DDE3EA] dark:border-[#252B34] text-[#1769E8] focus:ring-0"
-                      />
-                      <div className="text-[11px] leading-relaxed">
-                        <span className="font-semibold text-[#151D2A] dark:text-[#F2F5F9]">
-                          {tr(
-                            'Unggah & sinkronkan langsung ke database Supabase setelah pemulihan',
-                            'Upload & sync directly to Supabase database after restore'
-                          )}
+                      {currentUser && (
+                        <label className="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] cursor-pointer text-xs">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Cloud className="h-4 w-4 text-[#0F172A] dark:text-white shrink-0 stroke-[1.75]" />
+                            <div className="min-w-0">
+                              <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block">
+                                {tr('Sinkronkan ke Cloud Supabase', 'Sync to Supabase Cloud')}
+                              </span>
+                              <span className="text-[11px] text-[#526071] dark:text-[#929BA9] truncate block">
+                                {currentUser.email || tr('Akun terhubung', 'Connected')}
+                              </span>
+                            </div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={syncToCloud}
+                            onChange={(e) => setSyncToCloud(e.target.checked)}
+                            className="rounded border-[#E4E4E7] dark:border-[#20252D] accent-[#0F172A] dark:accent-white focus:ring-0 shrink-0"
+                          />
+                        </label>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleExecuteRestore}
+                        disabled={(importMode === 'replace' && !confirmOverwrite) || isRestoringJson}
+                        className="w-full min-h-[42px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 disabled:cursor-not-allowed font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                      >
+                        <CheckCircle2 className="h-4 w-4 stroke-[1.75]" />
+                        <span>
+                          {isRestoringJson
+                            ? tr('Memulihkan Data...', 'Restoring Data...')
+                            : importMode === 'replace'
+                            ? tr(`Ganti Semua (${validationReport.validTradesCount})`, `Replace All (${validationReport.validTradesCount})`)
+                            : tr(`Gabungkan (${validationReport.validTradesCount})`, `Merge (${validationReport.validTradesCount})`)}
                         </span>
-                        <p className="text-[10px] text-[#697586] dark:text-[#929BA9] mt-0.5">
-                          {syncToCloud
-                            ? validationReport.fileFormat === 'zip'
-                              ? tr(
-                                  'Transaksi baru disimpan, tangkapan layar diunggah ke folder Storage Anda, dan transaksi yang ada diperbarui secara aman.',
-                                  'New trades are saved, screenshots are uploaded to your Storage folder, and existing trades are safely updated.'
-                                )
-                              : tr(
-                                  'Transaksi baru akan disimpan dan transaksi yang sudah ada diperbarui secara aman tanpa duplikasi.',
-                                  'New trades will be saved and existing trades safely updated without duplication.'
-                                )
-                            : tr(
-                                'Peringatan: Jika tidak dicentang, data hanya dimuat ke browser dan BELUM tersimpan di server cloud Supabase.',
-                                'Warning: If unchecked, data is only loaded into the browser and NOT YET saved to the Supabase cloud server.'
-                              )}
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-                )}
-
-                {/* Confirm Action Button */}
-                {validationReport.isValid && (
-                  <button
-                    type="button"
-                    onClick={handleExecuteRestore}
-                    disabled={(importMode === 'replace' && !confirmOverwrite) || isRestoringJson}
-                    className="w-full py-3 px-4 rounded-xl bg-[#1769E8] hover:bg-[#1458C4] disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs transition-colors flex items-center justify-center gap-2"
-                  >
-                    <CheckCircle2 className="h-4 w-4 stroke-[1.75]" />
-                    <span>
-                      {isRestoringJson
-                        ? tr(
-                            'Memulihkan & Menyinkronkan Gambar ke Cloud...',
-                            'Restoring & Syncing Screenshots to Cloud...'
-                          )
-                        : importMode === 'replace'
-                        ? tr(
-                            `Ganti Seluruh Data (${validationReport.validTradesCount} Transaksi)${
-                              currentUser && syncToCloud ? ' & Simpan ke Cloud' : ''
-                            }`,
-                            `Replace All Data (${validationReport.validTradesCount} Trades)${
-                              currentUser && syncToCloud ? ' & Save to Cloud' : ''
-                            }`
-                          )
-                        : tr(
-                            `Gabungkan ${validationReport.validTradesCount} Transaksi${
-                              currentUser && syncToCloud ? ' & Simpan ke Cloud' : ''
-                            }`,
-                            `Merge ${validationReport.validTradesCount} Trades${
-                              currentUser && syncToCloud ? ' & Save to Cloud' : ''
-                            }`
-                          )}
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

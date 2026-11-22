@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.tradevault.journal.next',
-  appName: 'TradeVault Next',
+  appName: 'Vlo Journal',
   webDir: 'dist',
   backgroundColor: '#050607',
   server: {

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="BD-2. Twin-Wing Bright VLO">
+  <rect width="256" height="256" rx="56" fill="#1769E8"/>
+  <g fill="#FFFFFF"><path fill-rule="evenodd" d="M 96 56 A 17 17 0 0 1 130 56 V 89.93 A 60 60 0 1 1 96 144 Z M 156 118 A 26 26 0 1 0 156.1 118 Z"/></g>
+  <g fill="#0B0E14"><path fill-rule="evenodd" d="M 35 69 A 17 17 0 0 1 68 60 L 88 158 A 17 17 0 0 1 55 167 Z"/></g>
+  <g fill="#10B981"><path d="M 156 130 A 14 14 0 1 1 155.9 130 Z"/></g>
+</svg>

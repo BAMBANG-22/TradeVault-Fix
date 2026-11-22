@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">TradeVault Next</string>
-    <string name="title_activity_main">TradeVault Next</string>
+    <string name="app_name">Vlo Journal</string>
+    <string name="title_activity_main">Vlo Journal</string>
     <string name="package_name">com.tradevault.journal.next</string>
     <string name="custom_url_scheme">com.tradevault.journal.next</string>
 </resources>

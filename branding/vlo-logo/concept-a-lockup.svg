@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 588 256" width="588" height="256" role="img" aria-labelledby="lockup-title">
+  <title id="lockup-title">VLO — Concept A Lockup</title>
+  <g id="symbol">
+    <path fill="#172033" fill-rule="evenodd" d="M 50 43 A 23 23 0 1 1 49.9 43 Z M 33 122 C 33 178, 58 213, 88 213 C 113 213, 128 186, 133 144 A 16 16 0 0 0 101 138 C 97 166, 93 179, 86 179 C 74 179, 67 158, 67 122 A 17 17 0 0 0 33 122 Z M 193 102 A 42 42 0 1 1 192.9 102 Z M 193 128 A 16 16 0 1 0 193.1 128 Z"/>
+  </g>
+  <g id="wordmark">
+    <path fill="#172033" fill-rule="evenodd" d="M 280 80 H 301.4 L 318 142 L 334.6 80 H 356 L 330.28 176 H 305.72 Z M 378 80 H 398 V 150 A 6 6 0 0 0 404 156 H 442 V 176 H 400 A 22 22 0 0 1 378 154 Z M 510 78 A 50 50 0 1 1 509.9 78 Z M 510 98 A 30 30 0 1 0 510.1 98 Z"/>
+  </g>
+</svg>

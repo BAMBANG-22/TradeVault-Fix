@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Trade } from '../../types/trade';
 import { parseCsvToTrades, CsvImportResult } from '../../utils/csv';
 import { useLanguage } from '../../utils/language';
-import { X, Upload, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, Upload, AlertCircle, CheckCircle2, FileSpreadsheet } from 'lucide-react';
 
 interface CsvImportModalProps {
   isOpen: boolean;
@@ -112,145 +112,160 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
     }
   };
 
+  const canCommit =
+    Boolean(importResult) &&
+    (importResult?.validTrades.length ?? 0) > 0 &&
+    (importMode !== 'replace' || confirmReplace);
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 dark:bg-black/75 p-4 animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#DDE3EA] dark:border-[#252B34] bg-white dark:bg-[#11151B] p-6 shadow-2xl text-[#151D2A] dark:text-[#F2F5F9]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('Impor Spreadsheet (CSV)', 'Import Spreadsheet (CSV)')}
+        className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] overflow-hidden text-[#0F172A] dark:text-[#F2F4F7]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between pb-4 border-b border-[#DDE3EA] dark:border-[#252B34]">
-          <div>
-            <h3 className="text-base font-bold text-[#151D2A] dark:text-[#F2F5F9] flex items-center gap-2">
-              <Upload className="h-5 w-5 stroke-[1.75] text-[#697586] dark:text-[#929BA9]" />
-              {tr('Import Data Trade dari CSV', 'Import Trade Data from CSV')}
-            </h3>
-            <p className="text-xs text-[#697586] dark:text-[#929BA9]">
-              {tr(
-                'Validasi otomatis kolom dan pratinjau data sebelum disimpan ke jurnal',
-                'Automatically validate columns and preview data before saving to your journal'
-              )}
-            </p>
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-lg bg-[#FAFAFA] dark:bg-[#161A22] border border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-center text-[#526071] dark:text-[#929BA9] shrink-0">
+              <FileSpreadsheet className="h-4 w-4 stroke-[1.75]" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                {tr('Impor Spreadsheet (CSV)', 'Import Spreadsheet (CSV)')}
+              </h3>
+              <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-0.5">
+                {tr('Unggah file .csv atau tempel data transaksi', 'Upload a .csv file or paste trade rows')}
+              </p>
+            </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-[#697586] dark:text-[#929BA9] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] hover:text-[#151D2A] dark:hover:text-[#F2F5F9]"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             aria-label={tr('Tutup modal impor CSV', 'Close CSV import modal')}
           >
-            <X className="h-5 w-5 stroke-[1.75]" />
+            <X className="h-4 w-4 stroke-[1.75]" />
           </button>
         </div>
 
-        {/* Upload or Paste */}
-        <div className="mt-4 space-y-4">
-          <div className="flex flex-col sm:flex-row items-center gap-3">
-            <label className="flex-1 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-dashed border-[#DDE3EA] dark:border-[#252B34] bg-[#F5F7FA] dark:bg-[#080A0E] hover:border-[#1769E8] hover:bg-[#EEF2F6] dark:hover:bg-[#171D26] cursor-pointer transition-colors text-xs text-[#151D2A] dark:text-[#F2F5F9]">
-              <Upload className="h-4 w-4 stroke-[1.75] text-[#1769E8] dark:text-[#60A5FA]" />
-              <span>{tr('Pilih File .CSV dari Komputer / HP', 'Select .CSV File from Device')}</span>
-              <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
-            </label>
-            <span className="text-xs text-[#697586] dark:text-[#929BA9]">
-              {tr('atau tempel teks CSV di bawah:', 'or paste CSV text below:')}
+        {/* Body */}
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Upload Zone */}
+          <label className="w-full min-h-[44px] flex items-center justify-center gap-2.5 px-4 py-3.5 rounded-xl border border-dashed border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] hover:border-[#0F172A] dark:hover:border-white cursor-pointer transition-colors text-xs focus-within:ring-2 focus-within:ring-[#0F172A]/30 dark:focus-within:ring-white/30">
+            <Upload className="h-4 w-4 stroke-[1.75] text-[#0F172A] dark:text-white" />
+            <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+              {tr('Pilih file .CSV dari perangkat', 'Select .CSV file from device')}
             </span>
-          </div>
+            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" />
+          </label>
 
-          <textarea
-            rows={4}
-            value={csvText}
-            onChange={handleTextChange}
-            placeholder={`ID,Tanggal,Instrumen,Posisi,Setup,Entry,SL,TP,Lot,Risk,Hasil,Net Profit,Catatan\nTRD-01,2026-10-25T14:00,XAUUSD,BUY,Liquidity Sweep,2720.00,2715.00,2735.00,0.50,250,WIN,750,Target hit`}
-            className="w-full rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] p-3 text-xs font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
-          />
+          {/* Paste Area */}
+          <div>
+            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9] block mb-1.5">
+              {tr('Atau tempel teks CSV', 'Or paste CSV text')}
+            </span>
+            <textarea
+              rows={4}
+              value={csvText}
+              onChange={handleTextChange}
+              placeholder={`ID,Tanggal,Instrumen,Posisi,Setup,Entry,SL,TP,Lot,Risk,Hasil,Net Profit,Catatan\nTRD-01,2026-10-25T14:00,XAUUSD,BUY,Liquidity Sweep,2720,2715,2735,0.50,250,WIN,750,Target hit`}
+              className="w-full rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] p-3 text-xs font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
+            />
+          </div>
 
           {/* Validation & Preview Output */}
           {importResult && (
-            <div className="space-y-3 pt-2">
-              {/* Summary Stats */}
-              <div className="flex flex-wrap items-center justify-between p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs gap-2">
-                <div className="flex items-center gap-3">
+            <div className="space-y-3">
+              {/* Summary + Mode Switcher */}
+              <div className="p-3.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-1.5">
-                    <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                    <span>
-                      {tr('Diterima:', 'Accepted:')}{' '}
-                      <strong className="text-emerald-600 dark:text-emerald-400 font-mono-numbers">
-                        {importResult.acceptedRowsCount ?? importResult.validTrades.length}
-                      </strong>{' '}
-                      {tr('dari', 'of')} <span className="font-mono-numbers">{importResult.totalRows}</span>{' '}
-                      {tr('baris', 'rows')}
+                    <CheckCircle2 className="h-4 w-4 text-[#059669] dark:text-[#00A878] stroke-[1.75]" />
+                    <span className="text-[#526071] dark:text-[#929BA9]">
+                      {tr('Valid:', 'Valid:')}{' '}
+                      <strong className="text-[#059669] dark:text-[#00A878] font-mono-numbers tabular-nums">
+                        {importResult.acceptedRowsCount ?? importResult.validTrades.length}/{importResult.totalRows}
+                      </strong>
                     </span>
                   </div>
                   {(importResult.rejectedRowsCount > 0 || importResult.errors.length > 0) && (
-                    <div className="flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+                    <div className="flex items-center gap-1.5 text-[#E11D48] dark:text-[#E05260]">
                       <AlertCircle className="h-4 w-4 stroke-[1.75]" />
-                      <span>
-                        {tr('Ditolak:', 'Rejected:')}{' '}
-                        <strong className="font-mono-numbers">
-                          {importResult.rejectedRowsCount || importResult.errors.length}
-                        </strong>{' '}
-                        {tr('baris tidak valid', 'invalid rows')}
+                      <span className="font-mono-numbers tabular-nums font-semibold">
+                        {importResult.rejectedRowsCount || importResult.errors.length} {tr('ditolak', 'rejected')}
                       </span>
                     </div>
                   )}
                 </div>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                  <span className="text-[#697586] dark:text-[#929BA9]">{tr('Mode Simpan:', 'Save Mode:')}</span>
-                  <select
-                    value={importMode}
-                    onChange={(e) => setImportMode(e.target.value as any)}
-                    className="rounded bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] px-2 py-1 text-[#151D2A] dark:text-[#F2F5F9] text-xs"
+
+                {/* Segmented Save Mode */}
+                <div className="inline-flex items-center rounded-full bg-white dark:bg-[#101318] p-1 border border-[#E4E4E7] dark:border-[#20252D] shrink-0 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportMode('merge');
+                      setConfirmReplace(false);
+                    }}
+                    className={`px-3 py-1 text-[11px] rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                      importMode === 'merge'
+                        ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] font-semibold'
+                        : 'text-[#526071] dark:text-[#929BA9] font-medium'
+                    }`}
                   >
-                    <option value="merge">
-                      {tr('Gabungkan dengan data yang ada', 'Merge with existing data')}
-                    </option>
-                    <option value="replace">
-                      {tr('Gantikan seluruh data jurnal', 'Replace all journal data')}
-                    </option>
-                  </select>
+                    {tr('Gabungkan', 'Merge')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportMode('replace')}
+                    className={`px-3 py-1 text-[11px] rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                      importMode === 'replace'
+                        ? 'bg-[#E11D48] text-white dark:bg-[#E05260] dark:text-white font-semibold'
+                        : 'text-[#526071] dark:text-[#929BA9] font-medium'
+                    }`}
+                  >
+                    {tr('Ganti Semua', 'Replace All')}
+                  </button>
                 </div>
               </div>
 
-              {/* Replace Mode Safety Warning */}
+              {/* Replace Warning */}
               {importMode === 'replace' && (
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-700 dark:text-amber-400 space-y-2">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>{tr('Perhatian:', 'Warning:')}</strong>{' '}
+                <div className="p-3.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-2 text-xs">
+                  <div className="flex items-start gap-2 text-[#D97706] dark:text-[#F59E0B]">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 stroke-[1.75]" />
+                    <span className="text-[11px] leading-relaxed">
                       {tr(
-                        'Mode Gantikan Seluruh Data akan menghapus transaksi yang tidak ada di dalam file CSV ini dari jurnal (dan dari database Supabase jika login).',
-                        'Replace All Data mode will delete any trades not included in this CSV file from your journal (and from Supabase if signed in).'
+                        'Mode Ganti Semua menghapus transaksi lama yang tidak ada di file CSV ini.',
+                        'Replace All removes existing trades not present in this CSV file.'
                       )}
                     </span>
                   </div>
-                  <label className="flex items-center gap-2 font-semibold cursor-pointer pt-1">
+                  <label className="flex items-center gap-2 text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] cursor-pointer">
                     <input
                       type="checkbox"
                       checked={confirmReplace}
                       onChange={(e) => setConfirmReplace(e.target.checked)}
-                      className="rounded border-[#DDE3EA] dark:border-[#252B34] text-[#1769E8] focus:ring-[#1769E8]"
+                      className="rounded border-[#E4E4E7] dark:border-[#20252D] accent-[#0F172A] dark:accent-white focus:ring-0"
                     />
-                    <span>
-                      {tr(
-                        'Saya memahami risiko dan mengonfirmasi penggantian seluruh data',
-                        'I understand the risk and confirm replacing all data'
-                      )}
-                    </span>
+                    <span>{tr('Konfirmasi penggantian seluruh data', 'Confirm replacing all data')}</span>
                   </label>
                 </div>
               )}
 
-              {/* Errors List if any */}
+              {/* Row Errors */}
               {(importResult.rowErrors?.length > 0 || importResult.errors.length > 0) && (
-                <div className="p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-rose-600 dark:text-rose-400 space-y-1 max-h-28 overflow-y-auto">
+                <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-[11px] text-[#E11D48] dark:text-[#E05260] space-y-1 max-h-28 overflow-y-auto font-mono-numbers">
                   {importResult.rowErrors && importResult.rowErrors.length > 0
                     ? importResult.rowErrors.map((rowErr, i) => (
-                        <div key={i} className="font-mono-numbers">
+                        <div key={i}>
                           • {tr('Baris', 'Row')} {rowErr.rowNumber}
-                          {rowErr.tradeId ? ` [${rowErr.tradeId}]` : ''} — Field{' '}
-                          <strong>{rowErr.field}</strong>: {rowErr.reason} ({tr('nilai', 'value')}:{' '}
-                          <code>{rowErr.rawValue || tr('kosong', 'empty')}</code>)
+                          {rowErr.tradeId ? ` [${rowErr.tradeId}]` : ''} · {rowErr.field}: {rowErr.reason}
                         </div>
                       ))
                     : importResult.errors.map((err, i) => <div key={i}>• {err}</div>)}
@@ -259,39 +274,41 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
 
               {/* Preview Table */}
               {importResult.validTrades.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] block">
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9] block">
                     {tr(
-                      `Pratinjau ${Math.min(5, importResult.validTrades.length)} Trade Pertama:`,
-                      `Preview of First ${Math.min(5, importResult.validTrades.length)} Trades:`
+                      `Pratinjau (${Math.min(5, importResult.validTrades.length)} Pertama)`,
+                      `Preview (First ${Math.min(5, importResult.validTrades.length)})`
                     )}
                   </span>
-                  <div className="max-h-48 overflow-auto rounded-xl border border-[#DDE3EA] dark:border-[#252B34] bg-[#F5F7FA] dark:bg-[#080A0E]">
-                    <table className="w-full text-left text-[11px] font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9]">
-                      <thead className="bg-white dark:bg-[#11151B] text-[#697586] dark:text-[#929BA9] border-b border-[#DDE3EA] dark:border-[#252B34]">
+                  <div className="max-h-44 overflow-auto rounded-xl border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13]">
+                    <table className="w-full text-left text-[11px] font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
+                      <thead className="bg-white dark:bg-[#101318] text-[#526071] dark:text-[#929BA9] border-b border-[#E4E4E7] dark:border-[#20252D]">
                         <tr>
-                          <th className="p-2">ID</th>
-                          <th className="p-2">{tr('Tanggal', 'Date')}</th>
-                          <th className="p-2">{tr('Posisi', 'Position')}</th>
-                          <th className="p-2">Entry</th>
-                          <th className="p-2">SL</th>
-                          <th className="p-2">Lot</th>
-                          <th className="p-2">{tr('Hasil', 'Outcome')}</th>
-                          <th className="p-2 text-right">{tr('Profit Bersih', 'Net Profit')}</th>
+                          <th className="px-3 py-2 font-semibold">ID</th>
+                          <th className="px-3 py-2 font-semibold">{tr('Tanggal', 'Date')}</th>
+                          <th className="px-3 py-2 font-semibold">{tr('Posisi', 'Side')}</th>
+                          <th className="px-3 py-2 font-semibold">Lot</th>
+                          <th className="px-3 py-2 font-semibold">{tr('Hasil', 'Outcome')}</th>
+                          <th className="px-3 py-2 font-semibold text-right">Net P/L</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-[#DDE3EA] dark:divide-[#252B34]">
+                      <tbody className="divide-y divide-[#E4E4E7] dark:divide-[#20252D]">
                         {importResult.validTrades.slice(0, 5).map((t, i) => (
                           <tr key={i}>
-                            <td className="p-2 font-semibold text-[#151D2A] dark:text-[#F2F5F9]">{t.id}</td>
-                            <td className="p-2 text-[#697586] dark:text-[#929BA9]">{t.dateTime.slice(0, 10)}</td>
-                            <td className="p-2">{t.position} {t.instrument}</td>
-                            <td className="p-2">{t.entryPrice}</td>
-                            <td className="p-2">{t.stopLoss}</td>
-                            <td className="p-2 text-[#1769E8] dark:text-[#60A5FA] font-bold">{t.lotSize}</td>
-                            <td className="p-2">{t.outcome}</td>
-                            <td className={`p-2 text-right font-bold ${t.netProfit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                              ${t.netProfit}
+                            <td className="px-3 py-2 font-semibold">{t.id}</td>
+                            <td className="px-3 py-2 text-[#526071] dark:text-[#929BA9]">{t.dateTime.slice(0, 10)}</td>
+                            <td className="px-3 py-2">{t.position} {t.instrument}</td>
+                            <td className="px-3 py-2">{t.lotSize}</td>
+                            <td className="px-3 py-2">{t.outcome}</td>
+                            <td
+                              className={`px-3 py-2 text-right font-bold ${
+                                t.netProfit >= 0
+                                  ? 'text-[#059669] dark:text-[#00A878]'
+                                  : 'text-[#E11D48] dark:text-[#E05260]'
+                              }`}
+                            >
+                              {t.netProfit >= 0 ? `+$${t.netProfit}` : `-$${Math.abs(t.netProfit)}`}
                             </td>
                           </tr>
                         ))}
@@ -304,30 +321,23 @@ export const CsvImportModal: React.FC<CsvImportModalProps> = ({
           )}
         </div>
 
-        <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-[#DDE3EA] dark:border-[#252B34]">
+        {/* Footer */}
+        <div className="px-5 py-3.5 border-t border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13]/60 flex items-center justify-end gap-2 shrink-0">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-[#EEF2F6] dark:bg-[#171D26] border border-[#DDE3EA] dark:border-[#252B34] text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] hover:bg-[#DDE3EA] dark:hover:bg-[#252B34]"
+            className="min-h-[38px] px-4 py-2 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] hover:bg-[#F4F4F5] dark:bg-[#161A22] dark:hover:bg-[#1E2430] text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
           >
             {tr('Batal', 'Cancel')}
           </button>
           <button
+            type="button"
             onClick={handleCommit}
-            disabled={
-              !importResult ||
-              importResult.validTrades.length === 0 ||
-              (importMode === 'replace' && !confirmReplace)
-            }
-            className={`flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-xs font-bold transition-colors ${
-              importResult &&
-              importResult.validTrades.length > 0 &&
-              (importMode !== 'replace' || confirmReplace)
-                ? 'bg-[#1769E8] hover:bg-[#1458C4] text-white cursor-pointer'
-                : 'bg-[#EEF2F6] dark:bg-[#171D26] text-[#697586] dark:text-[#929BA9] cursor-not-allowed'
-            }`}
+            disabled={!canCommit}
+            className="min-h-[38px] inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
           >
-            <CheckCircle className="h-4 w-4 stroke-[1.75]" />
-            <span>{tr('Konfirmasi & Simpan ke Jurnal', 'Confirm & Save to Journal')}</span>
+            <CheckCircle2 className="h-3.5 w-3.5 stroke-[1.75]" />
+            <span>{tr('Simpan ke Jurnal', 'Save to Journal')}</span>
           </button>
         </div>
       </div>

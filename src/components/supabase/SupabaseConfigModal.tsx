@@ -9,16 +9,13 @@ import {
 import { SUPABASE_SCHEMA_SQL } from '../../utils/supabaseSchemaSql';
 import {
   X,
-  Database,
-  Key,
-  Globe,
+  Cloud,
   Copy,
   Check,
   CheckCircle2,
   AlertTriangle,
   ExternalLink,
   ShieldAlert,
-  Terminal,
 } from 'lucide-react';
 import { useLanguage } from '../../utils/language';
 
@@ -82,7 +79,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
       setTestResult({
         success: false,
         message: tr(
-          'Harap masukkan Project URL dan Anon Key terlebih dahulu.',
+          'Masukkan Project URL dan Anon Key terlebih dahulu.',
           'Please enter Project URL and Anon Key first.'
         ),
       });
@@ -116,8 +113,8 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
       setTestResult({
         success: false,
         message: tr(
-          'Project URL dan Anon Key tidak boleh kosong.',
-          'Project URL and Anon Key cannot be empty.'
+          'Project URL dan Anon Key wajib diisi.',
+          'Project URL and Anon Key are required.'
         ),
       });
       return;
@@ -164,10 +161,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
       } catch {
         setTestResult({
           success: false,
-          message: tr(
-            'Gagal menyalin skrip SQL ke clipboard perangkat.',
-            'Failed to copy SQL script to device clipboard.'
-          ),
+          message: tr('Gagal menyalin skrip SQL.', 'Failed to copy SQL script.'),
         });
       }
     }
@@ -175,212 +169,199 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 dark:bg-black/75 p-4 animate-in fade-in duration-150"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#DDE3EA] dark:border-[#252B34] bg-white dark:bg-[#11151B] p-5 sm:p-6 shadow-2xl text-[#151D2A] dark:text-[#F2F5F9]"
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('Konfigurasi Cloud Supabase', 'Supabase Cloud Configuration')}
+        className="w-full max-w-xl max-h-[90vh] flex flex-col rounded-2xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] overflow-hidden text-[#0F172A] dark:text-[#F2F4F7]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#DDE3EA] dark:border-[#252B34]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#EEF2F6] dark:bg-[#171D26] text-[#697586] dark:text-[#929BA9] border border-[#DDE3EA] dark:border-[#252B34]">
-              <Database className="h-5 w-5 stroke-[1.75]" />
+        <div className="px-5 py-4 border-b border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 rounded-lg bg-[#FAFAFA] dark:bg-[#161A22] border border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-center text-[#526071] dark:text-[#929BA9] shrink-0">
+              <Cloud className="h-4 w-4 stroke-[1.75]" />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-[#151D2A] dark:text-[#F2F5F9]">
-                {tr('Pengaturan Database Supabase', 'Supabase Database Settings')}
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                {tr('Konfigurasi Cloud Supabase', 'Supabase Cloud Configuration')}
               </h3>
-              <p className="text-xs text-[#697586] dark:text-[#929BA9]">
+              <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-0.5">
                 {tr(
-                  'Hubungkan jurnal ke database cloud PostgreSQL dengan autentikasi & Keamanan Baris (RLS)',
-                  'Connect journal to PostgreSQL cloud database with authentication & Row Level Security'
+                  'Hubungkan database cloud pribadi dengan keamanan RLS',
+                  'Connect your personal cloud database with RLS protection'
                 )}
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-[#EEF2F6] hover:bg-[#DDE3EA] text-[#697586] hover:text-[#151D2A] dark:bg-[#171D26] dark:text-[#929BA9] dark:hover:text-[#F2F5F9]"
-            aria-label={tr('Tutup pengaturan database Supabase', 'Close Supabase database settings')}
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+            aria-label={tr('Tutup konfigurasi Supabase', 'Close Supabase configuration')}
           >
-            <X className="h-5 w-5 stroke-[1.75]" />
+            <X className="h-4 w-4 stroke-[1.75]" />
           </button>
         </div>
 
-        {/* Step Guide Tabs */}
-        <div className="my-4 p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-[#151D2A] dark:text-[#F2F5F9] flex items-center gap-1.5">
-              <Terminal className="h-4 w-4 stroke-[1.75] text-[#697586] dark:text-[#929BA9]" />
-              {tr('Panduan Langkah di Dashboard Supabase', 'Step-by-Step Guide in Supabase Dashboard')}
-            </span>
-            <a
-              href="https://supabase.com/dashboard"
-              target="_blank"
-              rel="noreferrer"
-              className="text-[11px] text-[#1769E8] dark:text-[#60A5FA] hover:underline flex items-center gap-1 font-medium"
-            >
-              <span>{tr('Buka Supabase', 'Open Supabase')}</span>
-              <ExternalLink className="h-3 w-3 stroke-[1.75]" />
-            </a>
+        {/* Body */}
+        <div className="p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Quick Setup Strip — Flat Divided Columns */}
+          <div className="rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] divide-y divide-[#E4E4E7] dark:divide-[#20252D]">
+            <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                {tr('Langkah Setup Cepat', 'Quick Setup Steps')}
+              </span>
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0F172A] dark:text-white hover:underline rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+              >
+                <span>{tr('Buka Dashboard', 'Open Dashboard')}</span>
+                <ExternalLink className="h-3 w-3 stroke-[1.75]" />
+              </a>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D] text-[11px]">
+              <div className="px-3.5 py-2.5">
+                <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {tr('1. Buat Proyek', '1. Create Project')}
+                </span>
+                <span className="text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                  {tr('Proyek baru di Supabase', 'New project in Supabase')}
+                </span>
+              </div>
+
+              <div className="px-3.5 py-2.5">
+                <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {tr('2. Jalankan SQL', '2. Run SQL')}
+                </span>
+                <span className="text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                  {tr('Tempel & Run di SQL Editor', 'Paste & Run in SQL Editor')}
+                </span>
+              </div>
+
+              <div className="px-3.5 py-2.5">
+                <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {tr('3. Salin API Key', '3. Copy API Key')}
+                </span>
+                <span className="text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                  {tr('Project Settings → API', 'Project Settings → API')}
+                </span>
+              </div>
+            </div>
+
+            <div className="px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-[#526071] dark:text-[#929BA9]">
+                {tr('Tabel trades, user_settings, storage & RLS', 'Tables, storage bucket & RLS policies')}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopySql}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+              >
+                {copiedSql ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-[#059669] dark:text-[#00A878] stroke-[1.75]" />
+                    <span className="text-[#059669] dark:text-[#00A878]">{tr('Tersalin', 'Copied')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 text-[#0F172A] dark:text-white stroke-[1.75]" />
+                    <span>{tr('Salin Skrip SQL', 'Copy SQL Script')}</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-            <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] space-y-1">
-              <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9] block">
-                {tr('1. Buat Proyek', '1. Create Project')}
-              </span>
-              <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
+          {/* Credentials Form */}
+          <div className="space-y-3 text-xs">
+            <div>
+              <label className="block font-semibold text-[#0F172A] dark:text-[#F2F4F7] mb-1.5">
+                Project URL
+              </label>
+              <input
+                type="text"
+                placeholder="https://xxxx.supabase.co"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onBlur={() => {
+                  if (url.trim()) {
+                    setUrl(sanitizeSupabaseUrl(url));
+                  }
+                }}
+                className="w-full min-h-[40px] rounded-lg bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] px-3 py-2 font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
+              />
+              <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1">
                 {tr(
-                  'Daftar/masuk di Supabase, klik Proyek Baru, beri nama tradevault.',
-                  'Sign up/sign in to Supabase, click New Project, and name it tradevault.'
+                  'Domain dasar proyek tanpa /auth/v1 atau path tambahan.',
+                  'Base project domain without /auth/v1 or extra paths.'
                 )}
               </p>
             </div>
 
-            <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] space-y-1">
-              <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9] block">
-                {tr('2. Jalankan SQL', '2. Run SQL')}
-              </span>
-              <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                {tr(
-                  'Buka tab SQL Editor, tempel skrip SQL kami, lalu klik Jalankan (Run).',
-                  'Open the SQL Editor tab, paste our SQL script, and click Run.'
-                )}
-              </p>
-            </div>
-
-            <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] space-y-1">
-              <span className="font-bold text-[#151D2A] dark:text-[#F2F5F9] block">
-                {tr('3. Salin Kunci API', '3. Copy API Keys')}
-              </span>
-              <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
-                {tr(
-                  'Buka Pengaturan Proyek > API, salin Project URL & kunci publik anon.',
-                  'Open Project Settings > API, copy the Project URL & anon public key.'
-                )}
-              </p>
+            <div>
+              <label className="block font-semibold text-[#0F172A] dark:text-[#F2F4F7] mb-1.5">
+                {tr('Anon Public Key', 'Anon Public Key')}
+              </label>
+              <textarea
+                rows={2}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                value={anonKey}
+                onChange={(e) => setAnonKey(e.target.value)}
+                className="w-full rounded-lg bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] px-3 py-2 font-mono-numbers text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
+              />
             </div>
           </div>
 
-          {/* SQL Copy Button */}
-          <div className="pt-2 flex items-center justify-between">
-            <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
+          {/* Security Note */}
+          <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] flex items-start gap-2.5 text-[11px] text-[#526071] dark:text-[#929BA9]">
+            <ShieldAlert className="h-4 w-4 text-[#D97706] dark:text-[#F59E0B] shrink-0 mt-0.5 stroke-[1.75]" />
+            <span>
               {tr(
-                'Skrip SQL mencakup tabel trades, user_settings, bucket storage, & kebijakan RLS.',
-                'SQL script includes trades table, user_settings, storage bucket, & RLS policies.'
+                'Hanya gunakan Public Anon Key. Jangan masukkan kunci service_role di browser.',
+                'Use the Public Anon Key only. Never enter service_role keys in the browser.'
               )}
             </span>
-            <button
-              onClick={handleCopySql}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#EEF2F6] hover:bg-[#DDE3EA] border border-[#DDE3EA] dark:bg-[#171D26] dark:hover:bg-[#252B34] dark:border-[#252B34] text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] transition-colors shrink-0"
-            >
-              {copiedSql ? (
-                <>
-                  <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
-                  <span className="text-emerald-600 dark:text-emerald-400">
-                    {tr('Tersalin!', 'Copied!')}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5 text-[#1769E8] dark:text-[#60A5FA] stroke-[1.75]" />
-                  <span>{tr('Salin Skrip SQL', 'Copy SQL Script')}</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Security Warning Notice */}
-        <div className="mb-4 p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-[#697586] dark:text-[#929BA9] flex items-start gap-2.5">
-          <ShieldAlert className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 stroke-[1.75]" />
-          <div className="leading-relaxed">
-            <strong className="text-amber-600 dark:text-amber-400">
-              {tr('Keamanan Kredensial:', 'Credential Security:')}
-            </strong>{' '}
-            {tr(
-              'Hanya gunakan Project URL dan Kunci Publik Anon. Jangan pernah memasukkan kunci rahasia service_role di browser!',
-              'Only use the Project URL and Anon Public Key. Never enter the service_role secret key in the browser!'
-            )}
-          </div>
-        </div>
-
-        {/* Form Inputs */}
-        <div className="space-y-4 text-xs">
-          <div>
-            <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1 flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
-              <span>Project URL</span>
-            </label>
-            <input
-              type="text"
-              placeholder="https://xyzcompany.supabase.co"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onBlur={() => {
-                if (url.trim()) {
-                  setUrl(sanitizeSupabaseUrl(url));
-                }
-              }}
-              className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] px-3 py-2 font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
-            />
-            <p className="text-[11px] text-[#697586] dark:text-[#929BA9] mt-1">
-              {tr(
-                'Gunakan domain dasar proyek (misal https://xxxx.supabase.co). Jangan menambahkan /auth/v1 atau path lain.',
-                'Use the base project domain (e.g. https://xxxx.supabase.co). Do not append /auth/v1 or other paths.'
-              )}
-            </p>
           </div>
 
-          <div>
-            <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1 flex items-center gap-1.5">
-              <Key className="h-3.5 w-3.5 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
-              <span>{tr('Kunci API Publik Anon', 'Anon Public API Key')}</span>
-            </label>
-            <textarea
-              rows={2}
-              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-              value={anonKey}
-              onChange={(e) => setAnonKey(e.target.value)}
-              className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] px-3 py-2 font-mono-numbers text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
-            />
-          </div>
-
-          {/* Test Status Feedback */}
+          {/* Test Status */}
           {testResult && (
             <div
-              className={`p-3 rounded-xl border bg-[#F5F7FA] dark:bg-[#080A0E] border-[#DDE3EA] dark:border-[#252B34] text-xs flex items-center gap-2 ${
+              className={`p-3 rounded-xl border bg-[#FAFAFA] dark:bg-[#0B0E13] border-[#E4E4E7] dark:border-[#20252D] text-xs flex items-center gap-2 ${
                 testResult.success
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-rose-600 dark:text-rose-400'
+                  ? 'text-[#059669] dark:text-[#00A878]'
+                  : 'text-[#E11D48] dark:text-[#E05260]'
               }`}
             >
               {testResult.success ? (
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+                <CheckCircle2 className="h-4 w-4 shrink-0 stroke-[1.75]" />
               ) : (
-                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400 stroke-[1.75]" />
+                <AlertTriangle className="h-4 w-4 shrink-0 stroke-[1.75]" />
               )}
               <span>{testResult.message}</span>
             </div>
           )}
 
-          {/* Inline Confirmation Banner */}
+          {/* Inline Confirmation */}
           {pendingConfirm && (
-            <div className="p-3.5 rounded-xl border border-[#DDE3EA] dark:border-[#252B34] bg-[#F5F7FA] dark:bg-[#080A0E] text-xs text-[#151D2A] dark:text-[#F2F5F9] space-y-2.5 animate-in fade-in duration-150">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 stroke-[1.75]" />
-                <span>
+            <div className="p-3.5 rounded-xl border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] text-xs space-y-2.5 animate-in fade-in duration-150">
+              <div className="flex items-start gap-2 text-[#0F172A] dark:text-[#F2F4F7]">
+                <AlertTriangle className="h-4 w-4 text-[#D97706] dark:text-[#F59E0B] shrink-0 mt-0.5 stroke-[1.75]" />
+                <span className="text-[11px] leading-relaxed">
                   {pendingConfirm === 'save_unusual_url'
                     ? tr(
-                        'Format URL biasanya seperti https://xxxx.supabase.co. Apakah Anda yakin ingin tetap menyimpan konfigurasi ini?',
-                        'URL format is usually like https://xxxx.supabase.co. Are you sure you want to save this configuration anyway?'
+                        'Format URL berbeda dari standar https://xxxx.supabase.co. Tetap simpan?',
+                        'URL format differs from https://xxxx.supabase.co. Save anyway?'
                       )
                     : tr(
-                        'Hapus konfigurasi Supabase dan kembali ke penyimpanan lokal browser?',
-                        'Clear Supabase configuration and revert to local browser storage?'
+                        'Hapus kredensial cloud dan kembali ke penyimpanan lokal?',
+                        'Clear cloud credentials and revert to local storage?'
                       )}
                 </span>
               </div>
@@ -388,7 +369,7 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPendingConfirm(null)}
-                  className="px-3 py-1.5 rounded-lg bg-[#EEF2F6] hover:bg-[#DDE3EA] dark:bg-[#171D26] border border-[#DDE3EA] dark:border-[#252B34] text-[#151D2A] dark:text-[#F2F5F9] font-semibold transition-colors"
+                  className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                 >
                   {tr('Batal', 'Cancel')}
                 </button>
@@ -401,29 +382,29 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
                       confirmClearCredentials();
                     }
                   }}
-                  className={`px-3 py-1.5 rounded-lg font-bold transition-colors ${
+                  className={`px-3.5 py-1.5 rounded-full text-[11px] font-semibold cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
                     pendingConfirm === 'clear_credentials'
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white'
-                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                      ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white dark:bg-[#E05260] dark:hover:bg-[#E11D48]'
+                      : 'bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A]'
                   }`}
                 >
                   {pendingConfirm === 'save_unusual_url'
                     ? tr('Tetap Simpan', 'Save Anyway')
-                    : tr('Ya, Hapus Kredensial', 'Yes, Clear Credentials')}
+                    : tr('Ya, Hapus', 'Yes, Clear')}
                 </button>
               </div>
             </div>
           )}
         </div>
 
-        {/* Actions */}
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-[#DDE3EA] dark:border-[#252B34]">
+        {/* Footer */}
+        <div className="px-5 py-3.5 border-t border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13]/60 flex flex-wrap items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             onClick={handleClear}
-            className="text-xs text-rose-600 dark:text-rose-400 hover:underline"
+            className="text-xs font-medium text-[#E11D48] dark:text-[#E05260] hover:underline cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E11D48]/40"
           >
-            {tr('Hapus Kredensial Cloud', 'Clear Cloud Credentials')}
+            {tr('Hapus Kredensial', 'Clear Credentials')}
           </button>
 
           <div className="flex items-center gap-2">
@@ -431,15 +412,14 @@ export const SupabaseConfigModal: React.FC<SupabaseConfigModalProps> = ({
               type="button"
               disabled={isTesting}
               onClick={handleTestConnection}
-              className="px-3.5 py-2 rounded-lg bg-[#EEF2F6] hover:bg-[#DDE3EA] dark:bg-[#171D26] border border-[#DDE3EA] dark:border-[#252B34] text-xs font-semibold text-[#151D2A] dark:text-[#F2F5F9] transition-colors"
+              className="min-h-[38px] px-4 py-2 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] hover:bg-[#F4F4F5] dark:bg-[#161A22] dark:hover:bg-[#1E2430] text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] transition-colors disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             >
               {isTesting ? tr('Menguji...', 'Testing...') : tr('Uji Koneksi', 'Test Connection')}
             </button>
-
             <button
               type="button"
               onClick={handleSave}
-              className="px-5 py-2 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white text-xs font-bold transition-colors"
+              className="min-h-[38px] px-4 py-2 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             >
               {tr('Simpan & Aktifkan', 'Save & Activate')}
             </button>

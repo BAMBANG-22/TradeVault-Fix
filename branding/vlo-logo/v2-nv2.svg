@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="NV-2. Chamber V-L Vault">
+  <rect width="256" height="256" rx="56" fill="#1769E8"/>
+  <g fill="#FFFFFF"><path fill-rule="evenodd" d="M 40 74 A 34 34 0 0 1 74 40 H 90 L 122 156 H 138 A 12 12 0 0 1 150 168 V 204 A 12 12 0 0 1 138 216 H 74 A 34 34 0 0 1 40 182 Z"/></g>
+  <g fill="#0B0E14"><path fill-rule="evenodd" d="M 114 40 H 182 A 34 34 0 0 1 216 74 V 182 A 34 34 0 0 1 182 216 H 176 V 96 A 20 20 0 0 0 156 76 H 114 Z"/></g>
+  <g fill="#10B981"><path d="M 144 82 A 19 19 0 1 1 143.9 82 Z"/></g>
+</svg>

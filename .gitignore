@@ -18,6 +18,7 @@ key.properties
 
 # AI Studio Workspace & Rollback
 .aistudio/
+.agents/
 .backup_*/
 tradevault-systembars-sync.zip
 public/tradevault-systembars-sync.zip

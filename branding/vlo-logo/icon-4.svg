@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Kinetic V-Vault">
+  <rect width="256" height="256" rx="56" fill="#0E1219"/>
+  <g fill="#F2F5F9"><path fill-rule="evenodd" d="M 38 66 A 17 17 0 0 1 70 56 L 98 148 C 104 166, 118 172, 144 172 H 194 A 17 17 0 0 1 194 206 H 136 C 96 206, 74 188, 62 150 Z"/></g>
+  <g fill="#1769E8"><path d="M 118 118 L 142 54 A 17 17 0 0 1 174 66 L 150 130 A 17 17 0 0 1 118 118 Z"/></g>
+  <g fill="#10B981"><path d="M 190 72 A 24 24 0 1 1 189.9 72 Z"/></g>
+</svg>

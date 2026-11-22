@@ -18,16 +18,37 @@ import {
   loadCachedCandles,
   type OhlcCandle,
 } from '../components/chart/MarketChartView';
-import { fetchWithCorsProxy } from '../utils/macroFeedFetcher';
+import {
+  fetchWithCorsProxy,
+  fetchLiveIntermarketPulseBundle,
+} from '../utils/macroFeedFetcher';
 import { isMarketDay } from '../utils/date';
 import {
   getApiEndpointCandidates,
   isNativeAndroidOrIos,
+  isNewsCycleOfflineMode,
   nativeHttpGetText,
+  NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT,
+  NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY,
 } from '../utils/apiConfig';
+import {
+  computeMacroThreeSystemState,
+  ensureHistoricalActualsArchiveSeeded,
+  loadLocalCachedMacroSnapshotSync,
+  loadMonthlyNewsSpeechArchive,
+  MACRO_ACTUALS_ARCHIVE_STORAGE_KEY,
+  MACRO_LOCAL_SYNC_EVENT,
+  MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY,
+  MACRO_POST_NEWS_ARCHIVE_KEY,
+  MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY,
+  MACRO_SNAPSHOT_LOCAL_STORAGE_KEY,
+  mergeBreakingHeadlinesForPulse,
+  type MacroThreeSystemState,
+} from '../utils/macroNewsEngine';
 import type {
   ConfluenceCandle,
   MacroBiasDirection,
+  RawMacroConfluenceContext,
   TradingConfluenceMode,
 } from '../utils/confluenceEngine';
 
@@ -47,7 +68,7 @@ export type ConfluenceCandleSource =
 
 const MODE_TIMEFRAMES: Record<TradingConfluenceMode, TwelveDataConfluenceInterval[]> = {
   SWING: ['1day', '4h', '1h', '15min'],
-  SCALP: ['1h', '15min', '5min'],
+  SCALP: ['4h', '1h', '15min', '5min'],
 };
 
 const ALL_CONFLUENCE_INTERVALS: TwelveDataConfluenceInterval[] = [
@@ -79,11 +100,14 @@ const INTERVAL_CACHE_TTL_MS: Record<TwelveDataConfluenceInterval, number> = {
 
 const REFRESH_COOLDOWN_MS = 12 * 1000;
 const LOCAL_CANDLE_CACHE_KEY = 'tradevault_cycle_confluence_td_v1';
+const XAU_GCF_BASIS_STORAGE_KEY = 'tradevault_xau_gcf_basis_v1';
+const XAU_GCF_BASIS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 interface CachedTfEntry {
   candles: ConfluenceCandle[];
   fetchedAt: number;
   source?: ConfluenceCandleSource;
+  origin?: 'spot' | 'futures_calibrated' | 'futures_raw';
 }
 
 // Module-level in-memory cache shared across mode toggles without refetching unchanged intervals
@@ -435,7 +459,7 @@ async function fetchTwelveDataTimeSeries(
   const twelveInterval = getTwelveDataInterval(tfMeta.value);
   const url = `https://api.twelvedata.com/time_series?symbol=${encodeURIComponent(
     TWELVE_DATA_SYMBOL
-  )}&interval=${twelveInterval}&outputsize=80&timezone=UTC&apikey=${encodeURIComponent(
+  )}&interval=${twelveInterval}&outputsize=150&timezone=UTC&apikey=${encodeURIComponent(
     apiKey.trim()
   )}`;
 
@@ -610,10 +634,10 @@ async function fetchWeekdayYahooGoldCandles(
             existing.volume = (existing.volume || 0) + (bar.volume || 0);
           }
         }
-        return applyPairFiltersAndMarketHours(Array.from(buckets.values())).slice(-80);
+        return applyPairFiltersAndMarketHours(Array.from(buckets.values())).slice(-150);
       }
 
-      return weekdayHourlyOrBase.slice(-80);
+      return weekdayHourlyOrBase.slice(-150);
     } catch {
       return [];
     } finally {
@@ -625,11 +649,258 @@ async function fetchWeekdayYahooGoldCandles(
   return requestPromise;
 }
 
+function getMacroSourceLabels(
+  sourceSystem?: MacroThreeSystemState['effectiveSourceSystem']
+): { id: string; en: string } {
+  if (sourceSystem === 'SYSTEM_2_POST_NEWS') {
+    return { id: 'Post-News (2J)', en: 'Post-News (2H)' };
+  }
+  if (sourceSystem === 'SYSTEM_1_PRE_NEWS') {
+    return { id: 'Pre-News Lock (T-5M)', en: 'Pre-News Lock (T-5M)' };
+  }
+  return { id: 'Berita & Speech (Live)', en: 'Live News & Speech' };
+}
+
+function buildRawMacroConfluenceContext(
+  fundamentalBias: MacroBiasDirection,
+  intermarketBundle: Awaited<ReturnType<typeof fetchLiveIntermarketPulseBundle>> | null,
+  options?: {
+    sourceSystem?: MacroThreeSystemState['effectiveSourceSystem'];
+    speechHeadline?: string | null;
+    localMacro?: ReturnType<typeof loadLocalCachedMacroSnapshotSync>;
+  }
+): RawMacroConfluenceContext {
+  const localMacro = options?.localMacro ?? loadLocalCachedMacroSnapshotSync();
+  const speechHeadlineFromBreaking = localMacro?.breakingNews?.find(
+    (b) => b.channelType === 'FED_SPEECH'
+  )?.title;
+  const fundamentalSpeechHeadline =
+    options?.speechHeadline ||
+    speechHeadlineFromBreaking ||
+    localMacro?.topBreakingAlert?.title ||
+    localMacro?.scenarioMatrix?.fedSpeechAlertNoteId ||
+    localMacro?.scenarioMatrix?.primaryEvent?.title ||
+    (fundamentalBias === 'BUY'
+      ? 'Fundamental USD Dovish / Bullish Gold'
+      : fundamentalBias === 'SELL'
+      ? 'Fundamental USD Hawkish / Bearish Gold'
+      : 'Fundamental & Speech Netral / Menunggu Rilis');
+
+  const sourceInter = intermarketBundle || localMacro?.intermarketPulse;
+  const dxyRow = sourceInter?.dxy
+    ? {
+        key: 'DXY',
+        lastPrice: sourceInter.dxy.price,
+        changePct: sourceInter.dxy.changePercent,
+        goldCorrelationEffect: sourceInter.dxy.goldCorrelationEffect,
+      }
+    : undefined;
+  const oilRow = sourceInter?.usoil
+    ? {
+        key: 'USOIL',
+        lastPrice: sourceInter.usoil.price,
+        changePct: sourceInter.usoil.changePercent,
+        goldCorrelationEffect: sourceInter.usoil.goldCorrelationEffect,
+      }
+    : undefined;
+  const us10yRow = sourceInter?.us10y
+    ? {
+        key: 'US10Y',
+        lastPrice: sourceInter.us10y.price,
+        changePct: sourceInter.us10y.changePercent,
+        goldCorrelationEffect: sourceInter.us10y.goldCorrelationEffect,
+      }
+    : undefined;
+  const us02yRow = sourceInter?.us02y
+    ? {
+        key: 'US02Y',
+        lastPrice: sourceInter.us02y.price,
+        changePct: sourceInter.us02y.changePercent,
+        goldCorrelationEffect: sourceInter.us02y.goldCorrelationEffect,
+      }
+    : undefined;
+
+  const effectiveTickers = [dxyRow, oilRow, us10yRow, us02yRow].filter(
+    (r): r is NonNullable<typeof r> => Boolean(r)
+  );
+
+  let bullishVotes = 0;
+  let bearishVotes = 0;
+  for (const t of effectiveTickers) {
+    if (t.goldCorrelationEffect === 'BULLISH_GOLD') bullishVotes += t.key === 'DXY' ? 2 : 1;
+    else if (t.goldCorrelationEffect === 'BEARISH_GOLD') bearishVotes += t.key === 'DXY' ? 2 : 1;
+  }
+
+  const intermarketEffectOnGold: 'BULLISH_GOLD' | 'BEARISH_GOLD' | 'NEUTRAL' =
+    bullishVotes > bearishVotes
+      ? 'BULLISH_GOLD'
+      : bearishVotes > bullishVotes
+      ? 'BEARISH_GOLD'
+      : 'NEUTRAL';
+
+  const fundScore = fundamentalBias === 'BUY' ? 78 : fundamentalBias === 'SELL' ? 22 : 50;
+  const interScore =
+    intermarketEffectOnGold === 'BULLISH_GOLD'
+      ? 76
+      : intermarketEffectOnGold === 'BEARISH_GOLD'
+      ? 24
+      : 50;
+
+  const stagflationBonus =
+    localMacro?.scenarioMatrix?.preNewsFlow?.marketSentiment?.stagflationDetected ? 4 : 0;
+  const rawMacroScore = Math.min(100, Math.round(fundScore * 0.5 + interScore * 0.5) + stagflationBonus);
+  const rawMacroBias: MacroBiasDirection =
+    rawMacroScore >= 58 ? 'BUY' : rawMacroScore <= 42 ? 'SELL' : 'MIXED';
+
+  const dxyLabel =
+    dxyRow && dxyRow.changePct !== null
+      ? `DXY ${dxyRow.changePct >= 0 ? '+' : ''}${dxyRow.changePct.toFixed(2)}%`
+      : 'DXY —';
+  const oilLabel =
+    oilRow && oilRow.changePct !== null
+      ? `OIL ${oilRow.changePct >= 0 ? '+' : ''}${oilRow.changePct.toFixed(2)}%`
+      : 'OIL —';
+  const us10yLabel =
+    us10yRow && us10yRow.changePct !== null
+      ? `US10Y ${us10yRow.changePct >= 0 ? '+' : ''}${us10yRow.changePct.toFixed(2)}%`
+      : 'US10Y —';
+  const us02yLabel =
+    us02yRow && us02yRow.changePct !== null
+      ? `US02Y ${us02yRow.changePct >= 0 ? '+' : ''}${us02yRow.changePct.toFixed(2)}%`
+      : 'US02Y —';
+
+  const srcLabels = getMacroSourceLabels(options?.sourceSystem);
+
+  return {
+    fundamentalBias,
+    fundamentalSpeechHeadline,
+    dxyPrice: dxyRow?.lastPrice ?? null,
+    dxyChangePct: dxyRow?.changePct ?? null,
+    oilPrice: oilRow?.lastPrice ?? null,
+    oilChangePct: oilRow?.changePct ?? null,
+    us10yPrice: us10yRow?.lastPrice ?? null,
+    us10yChangePct: us10yRow?.changePct ?? null,
+    us02yPrice: us02yRow?.lastPrice ?? null,
+    us02yChangePct: us02yRow?.changePct ?? null,
+    intermarketEffectOnGold,
+    rawMacroBias,
+    combinedRawBias: rawMacroBias,
+    rawMacroScore,
+    rawMacroSummaryId: `Data Mentah: Fundamental (${fundamentalBias} · ${srcLabels.id}) + [${dxyLabel} · ${oilLabel} · ${us10yLabel} · ${us02yLabel}] → Bias Mentah ${rawMacroBias} (Belum 100%, wajib validasi struktur chart).`,
+    rawMacroSummaryEn: `Raw Data: Fundamental (${fundamentalBias} · ${srcLabels.en}) + [${dxyLabel} · ${oilLabel} · ${us10yLabel} · ${us02yLabel}] → Raw Bias ${rawMacroBias} (Not 100% until validated by chart structure).`,
+    macroSourceSystem: options?.sourceSystem,
+    macroSourceLabelId: srcLabels.id,
+    macroSourceLabelEn: srcLabels.en,
+  };
+}
+
+/**
+ * Resolves the authoritative macro fundamental context by comparing remote Supabase macro cache
+ * against the local 3-System Trade News engine (Pre-News T-5M Lock, Post-News 2H, Live News & Speech 1-month archive).
+ * Ensures fresh offline/APK System 2 & System 3 shifts are NEVER overwritten by stale Supabase rows.
+ */
+export function resolveSyncedMacroContext(
+  remoteMacro: {
+    bias: MacroBiasDirection;
+    analyzedAt: string | null;
+    source: 'supabase' | 'fallback';
+  } | null,
+  intermarketBundle: Awaited<ReturnType<typeof fetchLiveIntermarketPulseBundle>> | null,
+  nowMs: number = Date.now()
+): {
+  macroBias: MacroBiasDirection;
+  effectiveFundamentalBias: MacroBiasDirection;
+  analyzedAt: string | null;
+  source: 'supabase' | 'fallback';
+  rawMacroContext: RawMacroConfluenceContext;
+} {
+  const localMacro = loadLocalCachedMacroSnapshotSync();
+  const monthlyArchive = loadMonthlyNewsSpeechArchive(nowMs);
+  const mergedBreaking = mergeBreakingHeadlinesForPulse(
+    localMacro?.breakingNews || [],
+    monthlyArchive.items || []
+  );
+
+  let threeSystem: MacroThreeSystemState | null = null;
+  if (localMacro) {
+    threeSystem = computeMacroThreeSystemState({
+      snapshot: {
+        ...localMacro,
+        breakingNews: mergedBreaking,
+        topBreakingAlert: mergedBreaking[0] || localMacro.topBreakingAlert,
+      },
+      nowMs,
+    });
+  }
+
+  const localSnapMs = localMacro?.analyzedAt ? Date.parse(localMacro.analyzedAt) : 0;
+  const archiveUpdatedMs =
+    monthlyArchive.items.length > 0 && monthlyArchive.updatedAt
+      ? Date.parse(monthlyArchive.updatedAt)
+      : 0;
+  const postNewsArchivedMs = threeSystem?.system2PostNews?.archivedAt
+    ? Date.parse(threeSystem.system2PostNews.archivedAt)
+    : 0;
+  const localFreshMs = Math.max(
+    Number.isFinite(localSnapMs) ? localSnapMs : 0,
+    Number.isFinite(archiveUpdatedMs) ? archiveUpdatedMs : 0,
+    Number.isFinite(postNewsArchivedMs) ? postNewsArchivedMs : 0
+  );
+  const remoteFreshMs = remoteMacro?.analyzedAt ? Date.parse(remoteMacro.analyzedAt) : 0;
+
+  const preferRemote = Boolean(
+    remoteMacro &&
+      remoteMacro.source === 'supabase' &&
+      remoteMacro.bias !== 'MIXED' &&
+      (!threeSystem ||
+        (threeSystem.effectiveSourceSystem !== 'SYSTEM_2_POST_NEWS' &&
+          Number.isFinite(remoteFreshMs) &&
+          remoteFreshMs > localFreshMs + 60_000))
+  );
+
+  const effectiveFundamentalBias: MacroBiasDirection = preferRemote
+    ? remoteMacro!.bias
+    : threeSystem
+    ? threeSystem.effectiveFundamentalBias
+    : localMacro && (localMacro.dominantBias === 'BUY' || localMacro.dominantBias === 'SELL')
+    ? localMacro.dominantBias
+    : remoteMacro?.bias || 'MIXED';
+
+  const topSpeech =
+    mergedBreaking.find((b) => b.channelType === 'FED_SPEECH') ||
+    mergedBreaking[0] ||
+    null;
+
+  const builtRawMacro = buildRawMacroConfluenceContext(effectiveFundamentalBias, intermarketBundle, {
+    sourceSystem: preferRemote ? undefined : threeSystem?.effectiveSourceSystem,
+    speechHeadline:
+      threeSystem?.system3LivePulse?.topCatalystTitle &&
+      threeSystem.effectiveSourceSystem === 'SYSTEM_3_LIVE_PULSE'
+        ? threeSystem.system3LivePulse.topCatalystTitle
+        : topSpeech?.title || null,
+    localMacro,
+  });
+
+  const resolvedBias: MacroBiasDirection =
+    builtRawMacro.rawMacroBias !== 'MIXED' ? builtRawMacro.rawMacroBias : effectiveFundamentalBias;
+
+  return {
+    macroBias: resolvedBias,
+    effectiveFundamentalBias,
+    analyzedAt: preferRemote
+      ? remoteMacro?.analyzedAt || localMacro?.analyzedAt || null
+      : localMacro?.analyzedAt || remoteMacro?.analyzedAt || null,
+    source: preferRemote ? 'supabase' : remoteMacro?.source || 'fallback',
+    rawMacroContext: builtRawMacro,
+  };
+}
+
 export interface CycleConfluenceDataState {
   candlesByTf: Record<string, ConfluenceCandle[]>;
   macroBias: MacroBiasDirection;
   macroBiasSource: 'supabase' | 'fallback';
   macroAnalyzedAt: string | null;
+  rawMacroContext: RawMacroConfluenceContext;
   livePrice: number | null;
   isLoading: boolean;
   isRefreshing: boolean;
@@ -642,7 +913,8 @@ export interface CycleConfluenceDataState {
   candleSource: ConfluenceCandleSource;
   isMarketOpen: boolean;
   marketStatusText: string;
-  refresh: (force?: boolean) => Promise<void>;
+  isOfflineMode: boolean;
+  refresh: (force?: boolean) => Promise<boolean>;
   updateApiKeyAndReload: (newKey: string) => Promise<void>;
   loadSampleOrCachedCandles: () => void;
 }
@@ -660,9 +932,17 @@ export function useCycleConfluenceData(
     return initial;
   });
 
-  const [macroBias, setMacroBias] = useState<MacroBiasDirection>('MIXED');
-  const [macroBiasSource, setMacroBiasSource] = useState<'supabase' | 'fallback'>('fallback');
-  const [macroAnalyzedAt, setMacroAnalyzedAt] = useState<string | null>(null);
+  const initialMacro = resolveSyncedMacroContext(null, null);
+  const [macroBias, setMacroBias] = useState<MacroBiasDirection>(() => initialMacro.macroBias);
+  const [macroBiasSource, setMacroBiasSource] = useState<'supabase' | 'fallback'>(
+    () => initialMacro.source
+  );
+  const [macroAnalyzedAt, setMacroAnalyzedAt] = useState<string | null>(
+    () => initialMacro.analyzedAt
+  );
+  const [rawMacroContext, setRawMacroContext] = useState<RawMacroConfluenceContext>(
+    () => initialMacro.rawMacroContext
+  );
   const [livePrice, setLivePrice] = useState<number | null>(() => {
     const target = MODE_TIMEFRAMES[tradingMode];
     const lowestTf = target[target.length - 1];
@@ -694,13 +974,86 @@ export function useCycleConfluenceData(
   });
 
   const currentMarketStatus = isMarketOpenForPair(XAU_PAIR.label);
+  const [isOfflineMode, setIsOfflineMode] = useState<boolean>(() => isNewsCycleOfflineMode());
+
+  const syncMacroFromLocalArchive = useCallback(() => {
+    const synced = resolveSyncedMacroContext(null, null);
+    setMacroBias(synced.macroBias);
+    setMacroAnalyzedAt(synced.analyzedAt);
+    setRawMacroContext(synced.rawMacroContext);
+  }, []);
+
+  useEffect(() => {
+    ensureHistoricalActualsArchiveSeeded();
+    const syncOffline = () => setIsOfflineMode(isNewsCycleOfflineMode());
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY) {
+        syncOffline();
+      } else if (
+        e.key === MACRO_SNAPSHOT_LOCAL_STORAGE_KEY ||
+        e.key === MACRO_ACTUALS_ARCHIVE_STORAGE_KEY ||
+        e.key === MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY ||
+        e.key === MACRO_POST_NEWS_ARCHIVE_KEY ||
+        e.key === MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY
+      ) {
+        syncMacroFromLocalArchive();
+      }
+    };
+    window.addEventListener(NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT, syncOffline);
+    window.addEventListener(MACRO_LOCAL_SYNC_EVENT, syncMacroFromLocalArchive);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT, syncOffline);
+      window.removeEventListener(MACRO_LOCAL_SYNC_EVENT, syncMacroFromLocalArchive);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [syncMacroFromLocalArchive]);
 
   const lastManualRefreshRef = useRef<number>(0);
   const abortRef = useRef<AbortController | null>(null);
 
   const loadData = useCallback(
-    async (force: boolean = false, bypassCooldown: boolean = false) => {
-      if (!isEnabled) return;
+    async (force: boolean = false, bypassCooldown: boolean = false): Promise<boolean> => {
+      if (!isEnabled) return false;
+
+      // Offline Mode (News & Cycle): strictly read local cache only, 0 API/network/Gemini calls
+      if (isOfflineMode || isNewsCycleOfflineMode()) {
+        const targetIntervals = MODE_TIMEFRAMES[tradingMode];
+        const nextMap: Record<string, ConfluenceCandle[]> = {};
+        for (const tf of targetIntervals) {
+          const cached = hydrateMemoryCacheFromLocal(TWELVE_DATA_SYMBOL, tf);
+          if (cached && cached.candles.length > 0) {
+            nextMap[tf] = cached.candles;
+          }
+        }
+        if (Object.keys(nextMap).length > 0) {
+          setCandlesByTf((prev) => ({ ...prev, ...nextMap }));
+          const lowestTf = targetIntervals[targetIntervals.length - 1];
+          const refCandles = nextMap[lowestTf] || nextMap[targetIntervals[0]];
+          if (refCandles && refCandles.length > 0) {
+            setLivePrice(refCandles[refCandles.length - 1].close);
+          }
+          setCandleSource('cached');
+        } else {
+          setCandleSource('none');
+        }
+
+        const syncedOfflineMacro = resolveSyncedMacroContext(null, null);
+        setMacroBias(syncedOfflineMacro.macroBias);
+        setMacroAnalyzedAt(syncedOfflineMacro.analyzedAt);
+        setRawMacroContext(syncedOfflineMacro.rawMacroContext);
+        setMacroBiasSource('fallback');
+        setError(null);
+        setTwelveDataError(null);
+        setCooldownNotice(
+          force
+            ? 'Mode Offline aktif: data terbaru tidak diambil. Nonaktifkan Mode Offline untuk sinkronisasi online.'
+            : null
+        );
+        setIsLoading(false);
+        setIsRefreshing(false);
+        return false;
+      }
 
       const now = Date.now();
       if (force && !bypassCooldown && now - lastManualRefreshRef.current < REFRESH_COOLDOWN_MS) {
@@ -710,7 +1063,7 @@ export function useCycleConfluenceData(
         setCooldownNotice(
           `Tunggu ${waitSec} detik sebelum refresh ulang untuk menjaga kuota Twelve Data.`
         );
-        return;
+        return false;
       }
 
       if (force) {
@@ -758,13 +1111,18 @@ export function useCycleConfluenceData(
       // If market is closed (Sabtu/Minggu) and all intervals already have valid Monday–Friday data up to Friday close
       // and this is not a forced manual refresh, only sync the macro bias from Supabase without polling live market ticks
       if (!marketStatusNow.isOpen && intervalsToFetch.length === 0 && !force) {
-        const macroRes = await fetchLatestMacroBiasFromSupabase();
-        if (controller.signal.aborted) return;
-        setMacroBias(macroRes.bias);
-        setMacroBiasSource(macroRes.source);
-        setMacroAnalyzedAt(macroRes.analyzedAt);
+        const [macroRes, intermarketBundle] = await Promise.all([
+          fetchLatestMacroBiasFromSupabase(),
+          fetchLiveIntermarketPulseBundle().catch(() => null),
+        ]);
+        if (controller.signal.aborted) return false;
+        const syncedWeekendMacro = resolveSyncedMacroContext(macroRes, intermarketBundle);
+        setMacroBias(syncedWeekendMacro.macroBias);
+        setMacroBiasSource(syncedWeekendMacro.source);
+        setMacroAnalyzedAt(syncedWeekendMacro.analyzedAt);
+        setRawMacroContext(syncedWeekendMacro.rawMacroContext);
         setLastUpdatedAt(new Date().toISOString());
-        return;
+        return true;
       }
 
       if (force) {
@@ -779,8 +1137,9 @@ export function useCycleConfluenceData(
           memoryMacroCache = null;
         }
 
-        // Run Supabase macro bias check in parallel so slow network never stalls candlestick fetching
+        // Run Supabase macro bias + Live Intermarket (DXY, OIL, US10Y, US02Y) in parallel
         const macroPromise = fetchLatestMacroBiasFromSupabase();
+        const intermarketPromise = fetchLiveIntermarketPulseBundle().catch(() => null);
 
         let latestErrorMsg: string | null = null;
         let hitRateLimit = false;
@@ -791,18 +1150,19 @@ export function useCycleConfluenceData(
         const intervalsNeedingFallback: TwelveDataConfluenceInterval[] = [];
 
         for (const tf of intervalsToFetch) {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) return false;
 
           let fetchedFromTd = false;
           if (!hitRateLimit) {
             const res = await fetchTwelveDataTimeSeries(tf, controller.signal);
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted) return false;
 
             if (res.candles.length > 0) {
               const entry: CachedTfEntry = {
                 candles: res.candles,
                 fetchedAt: Date.now(),
                 source: 'twelvedata',
+                origin: 'spot',
               };
               memoryCandleCache.set(getCacheKey(TWELVE_DATA_SYMBOL, tf), entry);
               writeLocalCandleCache(getCacheKey(TWELVE_DATA_SYMBOL, tf), entry);
@@ -821,7 +1181,7 @@ export function useCycleConfluenceData(
         }
 
         // Parallel real weekday Gold market fallback (Yahoo Finance GC=F, strictly Monday–Friday)
-        // for any intervals that Twelve Data missed/rate-limited
+        // for any intervals that Twelve Data missed/rate-limited, calibrated against Spot XAU/USD basis
         if (intervalsNeedingFallback.length > 0) {
           const fallbackResults = await Promise.allSettled(
             intervalsNeedingFallback.map(async (tf) => ({
@@ -829,16 +1189,95 @@ export function useCycleConfluenceData(
               candles: await fetchWeekdayYahooGoldCandles(tf, controller.signal),
             }))
           );
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) return false;
+
+          // Collect all known Spot XAU/USD candles (either freshly fetched or cached spot) for basis alignment
+          const spotRefBars: ConfluenceCandle[] = [];
+          for (const tf of ALL_CONFLUENCE_INTERVALS) {
+            const cachedEntry = hydrateMemoryCacheFromLocal(TWELVE_DATA_SYMBOL, tf);
+            if (
+              (cachedEntry?.origin === 'spot' || (!cachedEntry?.origin && cachedEntry?.source === 'twelvedata')) &&
+              cachedEntry?.candles?.length
+            ) {
+              spotRefBars.push(...cachedEntry.candles.slice(-60));
+            }
+          }
+
+          let resolvedBasisOffset = 0;
+          let hasFreshBasis = false;
+          if (spotRefBars.length > 0) {
+            const diffs: number[] = [];
+            for (const item of fallbackResults) {
+              if (item.status !== 'fulfilled' || item.value.candles.length === 0) continue;
+              const gcBars = item.value.candles;
+              for (let i = Math.max(0, gcBars.length - 12); i < gcBars.length; i++) {
+                const gc = gcBars[i];
+                let nearestSpot: ConfluenceCandle | null = null;
+                let nearestDt = Infinity;
+                for (const sp of spotRefBars) {
+                  const dt = Math.abs(sp.time - gc.time);
+                  if (dt < nearestDt && dt <= 7200) {
+                    nearestDt = dt;
+                    nearestSpot = sp;
+                  }
+                }
+                if (nearestSpot && nearestSpot.close > 0 && gc.close > 0) {
+                  const d = nearestSpot.close - gc.close;
+                  if (Math.abs(d) <= 80) diffs.push(d);
+                }
+              }
+            }
+            if (diffs.length > 0) {
+              diffs.sort((a, b) => a - b);
+              resolvedBasisOffset = Number(diffs[Math.floor(diffs.length / 2)].toFixed(2));
+              hasFreshBasis = true;
+              try {
+                window.localStorage.setItem(
+                  XAU_GCF_BASIS_STORAGE_KEY,
+                  JSON.stringify({ offset: resolvedBasisOffset, updatedAt: Date.now() })
+                );
+              } catch {}
+            }
+          }
+
+          if (!hasFreshBasis && typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+            try {
+              const rawBasis = window.localStorage.getItem(XAU_GCF_BASIS_STORAGE_KEY);
+              if (rawBasis) {
+                const parsedBasis = JSON.parse(rawBasis);
+                if (
+                  typeof parsedBasis?.offset === 'number' &&
+                  Number.isFinite(parsedBasis.offset) &&
+                  Math.abs(parsedBasis.offset) <= 80 &&
+                  typeof parsedBasis?.updatedAt === 'number' &&
+                  Date.now() - parsedBasis.updatedAt <= XAU_GCF_BASIS_MAX_AGE_MS
+                ) {
+                  resolvedBasisOffset = parsedBasis.offset;
+                  hasFreshBasis = true;
+                }
+              }
+            } catch {}
+          }
 
           for (const item of fallbackResults) {
             if (item.status === 'fulfilled') {
-              const { tf, candles: weekdayGoldCandles } = item.value;
-              if (weekdayGoldCandles.length > 0) {
+              const { tf, candles: rawGcCandles } = item.value;
+              if (rawGcCandles.length > 0) {
+                const weekdayGoldCandles =
+                  hasFreshBasis && Math.abs(resolvedBasisOffset) > 0.01
+                    ? rawGcCandles.map((c) => ({
+                        ...c,
+                        open: Number((c.open + resolvedBasisOffset).toFixed(XAU_PAIR.decimals)),
+                        high: Number((c.high + resolvedBasisOffset).toFixed(XAU_PAIR.decimals)),
+                        low: Number((c.low + resolvedBasisOffset).toFixed(XAU_PAIR.decimals)),
+                        close: Number((c.close + resolvedBasisOffset).toFixed(XAU_PAIR.decimals)),
+                      }))
+                    : rawGcCandles;
                 const entry: CachedTfEntry = {
                   candles: weekdayGoldCandles,
                   fetchedAt: Date.now(),
                   source: 'twelvedata',
+                  origin: hasFreshBasis ? 'futures_calibrated' : 'futures_raw',
                 };
                 memoryCandleCache.set(getCacheKey(TWELVE_DATA_SYMBOL, tf), entry);
                 writeLocalCandleCache(getCacheKey(TWELVE_DATA_SYMBOL, tf), entry);
@@ -851,12 +1290,17 @@ export function useCycleConfluenceData(
           }
         }
 
-        const macroRes = await macroPromise;
-        if (controller.signal.aborted) return;
+        const [macroRes, intermarketBundle] = await Promise.all([
+          macroPromise,
+          intermarketPromise,
+        ]);
+        if (controller.signal.aborted) return false;
 
-        setMacroBias(macroRes.bias);
-        setMacroBiasSource(macroRes.source);
-        setMacroAnalyzedAt(macroRes.analyzedAt);
+        const syncedMacro = resolveSyncedMacroContext(macroRes, intermarketBundle);
+        setMacroBias(syncedMacro.macroBias);
+        setMacroBiasSource(syncedMacro.source);
+        setMacroAnalyzedAt(syncedMacro.analyzedAt);
+        setRawMacroContext(syncedMacro.rawMacroContext);
         setCandlesByTf((prev) => ({ ...prev, ...nextMap }));
 
         const lowestTf = targetIntervals[targetIntervals.length - 1];
@@ -904,6 +1348,7 @@ export function useCycleConfluenceData(
         }
 
         setLastUpdatedAt(new Date().toISOString());
+        return true;
       } catch (err: any) {
         if (err?.name !== 'AbortError') {
           const msg = err?.message || 'Gagal memuat data pasar Twelve Data.';
@@ -911,6 +1356,7 @@ export function useCycleConfluenceData(
           setTwelveDataStatus(keyPresent ? 'error' : 'missing_key');
           setTwelveDataError(msg);
         }
+        return false;
       } finally {
         if (!controller.signal.aborted) {
           setIsLoading(false);
@@ -918,7 +1364,7 @@ export function useCycleConfluenceData(
         }
       }
     },
-    [tradingMode, isEnabled]
+    [tradingMode, isEnabled, isOfflineMode]
   );
 
   useEffect(() => {
@@ -931,9 +1377,21 @@ export function useCycleConfluenceData(
     };
   }, [loadData, isEnabled]);
 
+  // Real-time auto-refresh for Scalping mode (every 90 seconds when market is open & online)
+  useEffect(() => {
+    if (!isEnabled || isOfflineMode || tradingMode !== 'SCALP') return;
+    const intervalId = window.setInterval(() => {
+      const mStatus = isMarketOpenForPair(XAU_PAIR.label);
+      if (mStatus.isOpen && !isNewsCycleOfflineMode()) {
+        void loadData(false);
+      }
+    }, 90 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [isEnabled, isOfflineMode, tradingMode, loadData]);
+
   const refresh = useCallback(
-    async (force: boolean = true) => {
-      await loadData(force, false);
+    async (force: boolean = true): Promise<boolean> => {
+      return await loadData(force, false);
     },
     [loadData]
   );
@@ -1001,6 +1459,7 @@ export function useCycleConfluenceData(
     macroBias,
     macroBiasSource,
     macroAnalyzedAt,
+    rawMacroContext,
     livePrice,
     isLoading,
     isRefreshing,
@@ -1013,6 +1472,7 @@ export function useCycleConfluenceData(
     candleSource,
     isMarketOpen: currentMarketStatus.isOpen,
     marketStatusText: currentMarketStatus.statusText,
+    isOfflineMode,
     refresh,
     updateApiKeyAndReload,
     loadSampleOrCachedCandles,

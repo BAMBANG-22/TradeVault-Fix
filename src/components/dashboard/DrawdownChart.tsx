@@ -76,7 +76,7 @@ export function resolveDrawdownInteractionState(
   );
 }
 
-export const DrawdownChart: React.FC<DrawdownChartProps> = ({
+export const DrawdownChart: React.FC<DrawdownChartProps> = React.memo(({
   equityCurve,
   settings,
   height = 200,
@@ -234,14 +234,20 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
         const measuredTooltipWidth =
           tooltipRef.current && tooltipRef.current.offsetWidth > 0
             ? tooltipRef.current.offsetWidth
-            : 148;
+            : 184;
+        const measuredTooltipHeight =
+          tooltipRef.current && tooltipRef.current.offsetHeight > 0
+            ? tooltipRef.current.offsetHeight
+            : 64;
         const placement = computeDynamicChartTooltipPlacement({
           pointIndex: point.index,
           totalPoints: renderCurve.length,
           containerWidthPx: rect.width,
+          containerTopPx: rect.top,
           touchClientX: clientX,
           containerLeftPx: rect.left,
           tooltipWidthPx: measuredTooltipWidth,
+          tooltipHeightPx: measuredTooltipHeight,
           svgWidth: width,
           paddingLeft: padding.left,
           paddingRight: padding.right,
@@ -253,25 +259,34 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
     [hasExecutedTrades, safeCurve, renderCurve.length, width, padding.left, padding.right]
   );
 
-  // Refine placement with exact DOM offsetWidth on first mount of tooltip
+  // Refine placement with exact DOM offsetWidth & offsetHeight on first mount of tooltip
   useEffect(() => {
     if (!hoveredPoint || !svgRef.current || !tooltipRef.current) return;
     const actualWidth = tooltipRef.current.offsetWidth;
+    const actualHeight = tooltipRef.current.offsetHeight;
     if (actualWidth <= 0) return;
     const rect = svgRef.current.getBoundingClientRect();
     const updated = computeDynamicChartTooltipPlacement({
       pointIndex: hoveredPoint.index,
       totalPoints: renderCurve.length,
       containerWidthPx: rect.width,
+      containerTopPx: rect.top,
       touchClientX: lastClientXRef.current,
       containerLeftPx: rect.left,
       tooltipWidthPx: actualWidth,
+      tooltipHeightPx: actualHeight > 0 ? actualHeight : 64,
       svgWidth: width,
       paddingLeft: padding.left,
       paddingRight: padding.right,
     });
     setTooltipPlacement((prev) =>
-      !prev || prev.leftPx !== updated.leftPx || prev.side !== updated.side ? updated : prev
+      !prev ||
+      prev.leftPx !== updated.leftPx ||
+      prev.vertical !== updated.vertical ||
+      prev.caretOffsetPx !== updated.caretOffsetPx ||
+      prev.side !== updated.side
+        ? updated
+        : prev
     );
   }, [hoveredPoint, renderCurve.length, width, padding.left, padding.right]);
 
@@ -321,9 +336,9 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
     : tr('Terbaru', 'Latest');
 
   return (
-    <div className="relative w-full overflow-hidden select-none">
+    <div className="w-full select-none">
       {!hasValidStartingBalance && hasExecutedTrades && (
-        <div className="mb-2.5 rounded-lg bg-[#F5F7FA] dark:bg-[#171D26] border border-[#DDE3EA] dark:border-[#252B34] px-3 py-2 text-[11px] text-amber-600 dark:text-amber-400">
+        <div className="mb-2.5 rounded-lg bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] px-3 py-2 text-[11px] text-[#D97706] dark:text-[#F59E0B]">
           {tr(
             'Saldo awal periode bernilai nol atau negatif. Persentase drawdown ditampilkan secara aman pada batas 0.00%.',
             'Period starting balance is zero or negative. Drawdown percentage is safely displayed at 0.00%.'
@@ -331,6 +346,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
         </div>
       )}
 
+      <div className="relative w-full overflow-visible">
       <svg
         ref={svgRef}
         data-testid="drawdown-chart-svg"
@@ -378,7 +394,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
                 x2={width - padding.right}
                 y2={yPos}
                 stroke="currentColor"
-                className="text-[#DDE3EA]/80 dark:text-[#252B34]"
+                className="text-[#E4E4E7]/80 dark:text-[#20252D]"
                 strokeDasharray="3 3"
                 strokeWidth="1"
               />
@@ -386,7 +402,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
                 x={padding.left - 8}
                 y={yPos + 3.5}
                 textAnchor="end"
-                className="fill-[#697586] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
+                className="fill-[#526071] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
               >
                 {label}
               </text>
@@ -413,13 +429,20 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
             <line
               data-testid="drawdown-chart-crosshair"
               x1={getX(hoveredPoint.index)}
-              y1={padding.top}
+              y1={tooltipPlacement?.vertical === 'below' ? padding.top : 2}
               x2={getX(hoveredPoint.index)}
-              y2={padding.top + innerHeight}
+              y2={tooltipPlacement?.vertical === 'below' ? height - 2 : padding.top + innerHeight}
               stroke="#E11D48"
               strokeWidth="1"
               strokeDasharray="2 2"
-              opacity="0.65"
+              opacity="0.7"
+            />
+            <circle
+              cx={getX(hoveredPoint.index)}
+              cy={getY(hoveredPoint.drawdownPercent)}
+              r="8.5"
+              fill="#E11D48"
+              fillOpacity="0.16"
             />
             <circle
               data-testid="drawdown-chart-point-marker"
@@ -428,7 +451,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
               r="4.5"
               fill="#E11D48"
               stroke="currentColor"
-              className="text-white dark:text-[#11151B]"
+              className="text-white dark:text-[#101318]"
               strokeWidth="2"
             />
           </g>
@@ -439,7 +462,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
           <text
             x={padding.left}
             y={padding.top + innerHeight + 18}
-            className="fill-[#697586] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
+            className="fill-[#526071] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
             textAnchor="start"
           >
             {startLabel}
@@ -447,7 +470,7 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
           <text
             x={width - padding.right}
             y={padding.top + innerHeight + 18}
-            className="fill-[#697586] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
+            className="fill-[#526071] dark:fill-[#929BA9] font-mono-numbers tabular-nums text-[10px]"
             textAnchor="end"
           >
             {endLabel}
@@ -458,54 +481,73 @@ export const DrawdownChart: React.FC<DrawdownChartProps> = ({
       {/* Empty Period Notice Overlay */}
       {!hasExecutedTrades && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="px-3 py-1 rounded-lg bg-white/90 dark:bg-[#11151B]/90 border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#697586] dark:text-[#929BA9]">
+          <span className="px-3 py-1 rounded-lg bg-white/95 dark:bg-[#101318]/95 border border-[#E4E4E7] dark:border-[#20252D] text-[11px] text-[#526071] dark:text-[#929BA9]">
             {tr('Belum ada transaksi pada periode ini', 'No trades in this period')}
           </span>
         </div>
       )}
 
-      {/* Compact Tooltip Overlay on Hover / Touch (Immediately dismissed on touchend / mouseup / mouseleave) */}
-      {hoveredPoint && hasExecutedTrades && (
-        <div
-          ref={tooltipRef}
-          data-testid="drawdown-chart-tooltip"
-          data-tooltip-side={tooltipPlacement?.side ?? 'right'}
-          style={{ left: `${tooltipPlacement?.leftPx ?? 8}px` }}
-          className="absolute top-2 z-10 rounded-lg bg-white/95 dark:bg-[#171D26]/95 border border-[#DDE3EA] dark:border-[#252B34] px-2.5 py-1.5 shadow-sm text-xs pointer-events-none font-mono-numbers tabular-nums whitespace-nowrap"
-        >
-          <div className="flex items-center justify-between gap-4 text-[10px] text-[#697586] dark:text-[#929BA9] font-sans mb-0.5">
-            <span>
-              {hoveredPoint.index === 0 ? tr('Modal Awal', 'Initial Balance') : `Trade #${hoveredPoint.index}`}
-            </span>
-            <span className="font-mono-numbers">{hoveredPoint.date.slice(0, 10)}</span>
-          </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="font-bold text-[#E11D48] dark:text-[#FB7185]">
-              {hoveredPoint.drawdownPercent > 0
-                ? `-${hoveredPoint.drawdownPercent.toFixed(2)}%`
-                : '0.00%'}
-            </span>
-            <span className="text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F5F9]">
+      {/* Compact Tooltip Overlay floating cleanly outside the SVG plot area (Immediately dismissed on touchend / mouseup / mouseleave) */}
+      {hoveredPoint && hasExecutedTrades && (() => {
+        const isBelow = tooltipPlacement?.vertical === 'below';
+        const caretLeftPx = tooltipPlacement?.caretOffsetPx ?? 24;
+        return (
+          <div
+            ref={tooltipRef}
+            data-testid="drawdown-chart-tooltip"
+            data-tooltip-side={tooltipPlacement?.side ?? 'right'}
+            data-tooltip-vertical={tooltipPlacement?.vertical ?? 'above'}
+            style={{
+              transform: `translate3d(${tooltipPlacement?.leftPx ?? 6}px, 0, 0)`,
+            }}
+            className={`absolute left-0 z-20 max-w-[calc(100%-12px)] rounded-xl bg-white/98 dark:bg-[#101318]/98 border border-[#E4E4E7] dark:border-[#20252D] px-2.5 py-1.5 shadow-[0_10px_28px_-6px_rgba(15,23,42,0.16)] dark:shadow-[0_14px_32px_-6px_rgba(0,0,0,0.75)] text-xs pointer-events-none font-mono-numbers tabular-nums whitespace-nowrap will-change-transform ${
+              isBelow ? 'top-[calc(100%+6px)]' : 'bottom-[calc(100%+6px)]'
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              style={{ left: `${caretLeftPx}px` }}
+              className={`absolute h-2 w-2 -translate-x-1/2 rotate-45 bg-white dark:bg-[#101318] border-[#E4E4E7] dark:border-[#20252D] ${
+                isBelow
+                  ? '-top-[5px] border-l border-t'
+                  : '-bottom-[5px] border-r border-b'
+              }`}
+            />
+            <div className="flex items-center justify-between gap-4 text-[10px] text-[#526071] dark:text-[#929BA9] font-sans mb-0.5">
+              <span>
+                {hoveredPoint.index === 0 ? tr('Modal Awal', 'Initial Balance') : `Trade #${hoveredPoint.index}`}
+              </span>
+              <span className="font-mono-numbers">{hoveredPoint.date.slice(0, 10)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-bold text-[#E11D48] dark:text-[#E05260]">
+                {hoveredPoint.drawdownPercent > 0
+                  ? `-${hoveredPoint.drawdownPercent.toFixed(2)}%`
+                  : '0.00%'}
+              </span>
+              <span className="text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                {isPrivacyMode
+                  ? '******'
+                  : hoveredPoint.drawdownAmount > 0
+                  ? `-${fmtMoney(hoveredPoint.drawdownAmount, false)}`
+                  : fmtMoney(0, false)}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[10px] text-[#526071] dark:text-[#929BA9] truncate">
+              {tr('Puncak:', 'Peak:')}{' '}
               {isPrivacyMode
                 ? '******'
-                : hoveredPoint.drawdownAmount > 0
-                ? `-${fmtMoney(hoveredPoint.drawdownAmount, false)}`
-                : fmtMoney(0, false)}
-            </span>
+                : fmtMoney(hoveredPoint.peak, false)}{' '}
+              • {tr('Saldo:', 'Balance:')}{' '}
+              {isPrivacyMode
+                ? '******'
+                : fmtMoney(hoveredPoint.equity, false)}
+            </div>
           </div>
-          <div className="mt-0.5 text-[10px] text-[#697586] dark:text-[#929BA9]">
-            {tr('Puncak:', 'Peak:')}{' '}
-            {isPrivacyMode
-              ? '******'
-              : fmtMoney(hoveredPoint.peak, false)}{' '}
-            • {tr('Saldo:', 'Balance:')}{' '}
-            {isPrivacyMode
-              ? '******'
-              : fmtMoney(hoveredPoint.equity, false)}
-          </div>
-        </div>
-      )}
+        );
+      })()}
+      </div>
     </div>
   );
-};
+});
 

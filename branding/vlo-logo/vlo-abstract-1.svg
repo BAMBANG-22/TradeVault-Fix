@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 180" width="420" height="180" role="img" aria-label="Flow-Cut VLO Core Dot">
+  <g fill="#151D2A">
+    <path d="M 114 38 H 142 L 109 142 L 95 96 Z"/><path d="M 160 38 H 186 V 104 L 160 128 Z"/><path d="M 273.06 67.18 A 54.00 54.00 0 1 1 277.77 120.97 A 11.00 11.00 0 0 1 295.79 108.35 A 32.00 32.00 0 1 0 293.00 76.48 A 11.00 11.00 0 0 1 273.06 67.18 Z"/>
+  </g>
+  <g fill="#1769E8">
+    <path d="M 36 38 H 64 L 96 142 H 72 Z"/><path d="M 198 118 H 252 L 242 142 H 172 Z"/>
+  </g>
+  <g fill="#10B981">
+    <path d="M 322 75 A 15 15 0 1 1 321.9 75 Z"/>
+  </g>
+</svg>

@@ -97,6 +97,11 @@ CREATE POLICY "Pengguna hanya dapat memperbarui pengaturannya"
     USING (auth.uid() = user_id)
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Pengguna hanya dapat menghapus pengaturannya" ON public.user_settings;
+CREATE POLICY "Pengguna hanya dapat menghapus pengaturannya"
+    ON public.user_settings FOR DELETE
+    USING (auth.uid() = user_id);
+
 -- ====================================================================
 -- 4. STORAGE BUCKET PRIVAT UNTUK SCREENSHOT CHART (trade-screenshots)
 -- ====================================================================
@@ -183,7 +188,9 @@ CREATE POLICY "Semua pengguna dapat membaca cache macro_news_snapshots"
     USING (true);
 
 DROP POLICY IF EXISTS "Semua pengguna dapat menyimpan cache macro_news_snapshots" ON public.macro_news_snapshots;
-CREATE POLICY "Semua pengguna dapat menyimpan cache macro_news_snapshots"
+DROP POLICY IF EXISTS "Pengguna terautentikasi dapat menyimpan cache macro_news_snapshots" ON public.macro_news_snapshots;
+CREATE POLICY "Pengguna terautentikasi dapat menyimpan cache macro_news_snapshots"
     ON public.macro_news_snapshots FOR INSERT
-    WITH CHECK (true);
+    TO authenticated
+    WITH CHECK (auth.uid() IS NOT NULL);
 

@@ -7,79 +7,119 @@ import React from 'react';
 
 export interface BrandLogoProps {
   /**
-   * 'symbol': square mark (viewBox 0 0 256 256)
-   * 'wordmark': vector wordmark "TradeVault" only (viewBox 270 64 715 128)
-   * 'lockup': horizontal mark with vector wordmark (viewBox 0 0 1019 256)
+   * 'symbol': BD-D Orbit-Pulse Bowl mark (viewBox 0 0 256 256)
+   * 'wordmark': vector wordmark "VLO" only (viewBox 255 72 308 112)
+   * 'lockup': horizontal mark with vector wordmark (viewBox 0 0 584 256)
    */
   variant?: 'symbol' | 'wordmark' | 'lockup';
+  /** Wraps symbol in soft squircle app-icon tile */
+  withTile?: boolean;
+  /** Enables fluid GPU-composited orbit & core micro-motion on hover/active */
+  interactive?: boolean;
   className?: string;
   title?: string;
 }
 
 /**
- * TradeVault Active Brand Logo Component (CV3-R2 Version A — "Dual Embrace")
+ * Refined G1-continuous Vault Body path (smooth liquid scoop transition from V-arm into bowl)
+ */
+export const VLO_BODY_PATH =
+  'M 34.21 74.65 A 18.00 18.00 0 0 1 65.79 57.35 C 79.24 81.91, 97.88 100.71, 122.99 93.98 A 58.00 58.00 0 1 1 80.00 150.00 C 80.00 120.50, 49.58 102.72, 34.21 74.65 Z M 138.00 125.00 A 25.00 25.00 0 1 0 138.10 125.00 Z';
+
+/**
+ * Tapered aerodynamic Sapphire Flow Pulse arc (swells smoothly from -68deg tail to -14deg head)
+ */
+export const VLO_PULSE_PATH =
+  'M 169.65 71.65 C 195.85 80.01, 216.99 101.01, 225.81 128.11 A 10.50 10.50 0 0 1 205.44 133.19 C 201.93 110.46, 187.25 90.60, 166.28 80.00 A 4.50 4.50 0 0 1 169.65 71.65 Z';
+
+/**
+ * Emerald Core Focus dot centered at (138, 150)
+ */
+export const VLO_CORE_PATH =
+  'M 138.00 136.00 A 14.00 14.00 0 1 1 137.90 136.00 Z';
+
+const VLO_WORDMARK_PATH =
+  'M 262 80 H 285 L 304 148 L 323 80 H 346 L 316.5 176 H 291.5 Z M 366 80 H 387 V 150 A 6 6 0 0 0 393 156 H 434 V 176 H 389 A 23 23 0 0 1 366 153 Z M 504 78 A 50 50 0 1 1 503.9 78 Z M 504 99 A 29 29 0 1 0 504.1 99 Z';
+
+/**
+ * VLO Official Brand Logo Component (BD-D — "Orbit-Pulse Bowl" · Carbon + Emerald)
  *
- * Strict vector path preservation:
- * - Symbol: 2 paths (U-Cradle base + Inverted-L keystone)
- * - Wordmark: 2 paths ("Trade" + "Vault")
- * - Lockup: 4 paths (Symbol base + Symbol keystone + "Trade" wordmark + "Vault" wordmark)
+ * Geometry:
+ * - Symbol: Continuous-curve Vault body + Tapered Sapphire Flow Pulse arc + Emerald Core Focus dot
+ * - Wordmark: Rounded-geometric "VLO"
  *
- * Theme color adaptation:
- * - Light surface: Navy (#172033) + Primary Blue (#1458C4)
- * - Dark surface: Light Surface (#F8FAFC) + Sky Blue Accent (#38BDF8)
+ * Theme color adaptation (DESIGN.md):
+ * - Light surface: #151D2A Vault Ink + #1769E8 Flow Pulse + #059669 Core Focus Dot
+ * - Dark surface:  #F2F5F9 Vault Ink + #1769E8 Flow Pulse + #10B981 Core Focus Dot
  */
 export const BrandLogo: React.FC<BrandLogoProps> = ({
   variant = 'lockup',
+  withTile = false,
+  interactive = true,
   className = 'h-8 w-auto',
-  title = 'TradeVault',
+  title = 'VLO',
 }) => {
+  const interactiveClass = interactive ? 'vlo-logo-interactive' : '';
+
   if (variant === 'symbol') {
-    return (
+    const svg = (
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 256 256"
+        viewBox={withTile ? '14 14 228 228' : '0 0 256 256'}
         fill="none"
         aria-label={title}
         role="img"
-        className={`shrink-0 ${className}`}
+        className={
+          withTile
+            ? `h-full w-full block ${interactiveClass}`
+            : `shrink-0 ${interactiveClass} ${className}`
+        }
       >
         <title>{title}</title>
-        {/* Base U-cradle: Navy on light, Off-white on dark */}
         <path
-          className="fill-[#172033] dark:fill-[#F8FAFC] transition-colors duration-150"
-          d="M 28 54 A 26 26 0 0 1 80 54 V 162 A 14 14 0 0 0 94 176 H 162 A 14 14 0 0 0 176 162 V 128 A 26 26 0 0 1 228 128 V 176 A 52 52 0 0 1 176 228 H 80 A 52 52 0 0 1 28 176 Z"
+          className="vlo-mark-body fill-[#151D2A] dark:fill-[#F2F5F9]"
+          fillRule="evenodd"
+          d={VLO_BODY_PATH}
         />
-        {/* Keystone inverted-L: Blue on light, Sky blue on dark */}
         <path
-          className="fill-[#1458C4] dark:fill-[#38BDF8] transition-colors duration-150"
-          d="M 128 28 H 194 A 34 34 0 0 1 228 62 A 18 18 0 0 1 210 80 H 168 A 14 14 0 0 0 154 94 V 128 A 26 26 0 0 1 102 128 V 54 A 26 26 0 0 1 128 28 Z"
+          className="vlo-mark-pulse fill-[#1769E8]"
+          d={VLO_PULSE_PATH}
+        />
+        <path
+          className="vlo-mark-core fill-[#059669] dark:fill-[#10B981]"
+          d={VLO_CORE_PATH}
         />
       </svg>
     );
+
+    if (withTile) {
+      return (
+        <span
+          className={`vlo-tile-surface inline-flex items-center justify-center shrink-0 overflow-hidden rounded-[26%] bg-[#FAFAFA] dark:bg-white/[0.045] border border-black/[0.06] dark:border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.85),0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${className}`}
+        >
+          {svg}
+        </span>
+      );
+    }
+
+    return svg;
   }
 
   if (variant === 'wordmark') {
     return (
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        viewBox="275 72 705 112"
+        viewBox="255 72 308 112"
         fill="none"
         aria-label={title}
         role="img"
-        className={`shrink-0 ${className}`}
+        className={`shrink-0 ${interactive ? 'vlo-wordmark-interactive' : ''} ${className}`}
       >
         <title>{title}</title>
-        {/* Vector Wordmark "Trade" */}
         <path
-          className="fill-[#172033] dark:fill-[#F8FAFC] transition-colors duration-150"
+          className="fill-[#151D2A] dark:fill-[#F2F5F9] transition-colors duration-200"
           fillRule="evenodd"
-          d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"
-        />
-        {/* Vector Wordmark "Vault" */}
-        <path
-          className="fill-[#1458C4] dark:fill-[#38BDF8] transition-colors duration-150"
-          fillRule="evenodd"
-          d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"
+          d={VLO_WORDMARK_PATH}
         />
       </svg>
     );
@@ -88,34 +128,30 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 1019 256"
+      viewBox="0 0 584 256"
       fill="none"
       aria-label={title}
       role="img"
-      className={`shrink-0 ${className}`}
+      className={`shrink-0 ${interactiveClass} ${className}`}
     >
       <title>{title}</title>
-      {/* Symbol Base U-cradle */}
       <path
-        className="fill-[#172033] dark:fill-[#F8FAFC] transition-colors duration-150"
-        d="M 48 54 A 26 26 0 0 1 100 54 V 162 A 14 14 0 0 0 114 176 H 182 A 14 14 0 0 0 196 162 V 128 A 26 26 0 0 1 248 128 V 176 A 52 52 0 0 1 196 228 H 100 A 52 52 0 0 1 48 176 Z"
-      />
-      {/* Symbol Keystone inverted-L */}
-      <path
-        className="fill-[#1458C4] dark:fill-[#38BDF8] transition-colors duration-150"
-        d="M 148 28 H 214 A 34 34 0 0 1 248 62 A 18 18 0 0 1 230 80 H 188 A 14 14 0 0 0 174 94 V 128 A 26 26 0 0 1 122 128 V 54 A 26 26 0 0 1 148 28 Z"
-      />
-      {/* Vector Wordmark "Trade" */}
-      <path
-        className="fill-[#172033] dark:fill-[#F8FAFC] transition-colors duration-150"
+        className="vlo-mark-body fill-[#151D2A] dark:fill-[#F2F5F9]"
         fillRule="evenodd"
-        d="M 280 80 H 346 V 98 H 322 V 176 H 304 V 98 H 280 Z M 358 104 H 402 V 122 H 384 A 8 8 0 0 0 376 130 V 176 H 358 Z M 438 104 H 458 A 20 20 0 0 1 478 124 V 176 H 460 V 170 H 438 A 24 24 0 0 1 414 146 V 128 A 24 24 0 0 1 438 104 Z M 432 136 V 144 A 14 14 0 0 0 460 144 V 136 A 14 14 0 0 0 432 136 Z M 538 80 H 556 V 176 H 516 A 24 24 0 0 1 492 152 V 128 A 24 24 0 0 1 516 104 H 538 V 80 Z M 510 136 V 144 A 14 14 0 0 0 538 144 V 136 A 14 14 0 0 0 510 136 Z M 594 104 H 614 A 20 20 0 0 1 634 124 V 146 H 588 V 160 H 632 V 176 H 594 A 24 24 0 0 1 570 152 V 128 A 24 24 0 0 1 594 104 Z M 588 120 V 132 H 616 V 120 Z"
+        d={VLO_BODY_PATH}
       />
-      {/* Vector Wordmark "Vault" */}
       <path
-        className="fill-[#1458C4] dark:fill-[#38BDF8] transition-colors duration-150"
+        className="vlo-mark-pulse fill-[#1769E8]"
+        d={VLO_PULSE_PATH}
+      />
+      <path
+        className="vlo-mark-core fill-[#059669] dark:fill-[#10B981]"
+        d={VLO_CORE_PATH}
+      />
+      <path
+        className="fill-[#151D2A] dark:fill-[#F2F5F9] transition-colors duration-200"
         fillRule="evenodd"
-        d="M 652 80 H 670.43 L 689.72 152 L 689.72 152 L 709.01 80 H 727.44 L 701.72 176 H 677.72 Z M 763.44 104 H 783.44 A 20 20 0 0 1 803.44 124 V 176 H 785.44 V 170 H 763.44 A 24 24 0 0 1 739.44 146 V 128 A 24 24 0 0 1 763.44 104 Z M 757.44 136 V 144 A 14 14 0 0 0 785.44 144 V 136 A 14 14 0 0 0 757.44 136 Z M 817.44 104 H 835.44 V 154 A 6 6 0 0 0 841.44 160 H 855.44 A 6 6 0 0 0 861.44 154 V 104 H 879.44 V 154 A 22 22 0 0 1 857.44 176 H 839.44 A 22 22 0 0 1 817.44 154 Z M 893.44 80 H 911.44 V 176 H 893.44 Z M 935.44 84 H 953.44 V 104 H 971.44 V 120 H 953.44 V 160 H 971.44 V 176 H 951.44 A 16 16 0 0 1 935.44 160 V 120 H 925.44 V 104 H 935.44 Z"
+        d={VLO_WORDMARK_PATH}
       />
     </svg>
   );

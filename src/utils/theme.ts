@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 
 export type AppTheme = 'light' | 'dark';
 export type ThemeMode = AppTheme;
@@ -11,6 +12,8 @@ export type ThemeMode = AppTheme;
 export const THEME_STORAGE_KEY = 'tradevault_theme_v1';
 export const THEME_CHANGE_EVENT = 'tradevault-theme-change';
 export const THEME_EVENT_NAME = THEME_CHANGE_EVENT;
+
+const THEME_INSTANT_CLASS = 'vlo-theme-instant';
 
 /**
  * Reads the persisted theme from localStorage.
@@ -31,19 +34,114 @@ export function getStoredTheme(): AppTheme {
 
 export const getThemeMode = getStoredTheme;
 
-/**
- * Persists the user's manual theme choice to localStorage and notifies listeners.
- */
-export function setStoredTheme(theme: AppTheme): void {
+function commitThemeChange(theme: AppTheme): void {
   try {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(THEME_STORAGE_KEY, theme);
-      applyThemeToDocument(theme);
-      window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: theme }));
-    }
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
   } catch (err) {
     console.warn('Failed to save theme preference:', err);
   }
+  applyThemeToDocument(theme);
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: theme }));
+}
+
+function prefersReducedMotion(): boolean {
+  try {
+    return (
+      typeof window !== 'undefined' &&
+      Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lightweight GPU-composited veil fallback for browsers without View Transitions API.
+ * Uses only opacity + translateZ(0) so zero CPU color interpolation occurs.
+ */
+function runFallbackGpuVeil(targetTheme: AppTheme): void {
+  if (typeof document === 'undefined' || prefersReducedMotion()) return;
+  try {
+    const veil = document.createElement('div');
+    veil.setAttribute('aria-hidden', 'true');
+    veil.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:2147483646',
+      'pointer-events:none',
+      `background:${targetTheme === 'dark' ? '#050607' : '#FFFFFF'}`,
+      'opacity:0.24',
+      'transform:translateZ(0)',
+      'will-change:opacity',
+      'transition:opacity 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+    ].join(';');
+
+    document.body.appendChild(veil);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        veil.style.opacity = '0';
+      });
+    });
+    window.setTimeout(() => {
+      veil.remove();
+    }, 230);
+  } catch {
+    // Ignore fallback veil errors
+  }
+}
+
+/**
+ * Persists the user's manual theme choice and executes a zero-jank GPU-composited transition.
+ * Suppresses per-element CSS color transitions during the swap so the browser never runs
+ * hundreds of simultaneous CPU repaints, then crossfades smoothly on the GPU compositor.
+ */
+export function setStoredTheme(theme: AppTheme): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+  const root = document.documentElement;
+  const currentIsLight = root.classList.contains('light');
+  const isNoop =
+    (theme === 'light' && currentIsLight) ||
+    (theme === 'dark' && !currentIsLight && root.classList.contains('dark'));
+
+  if (isNoop) {
+    commitThemeChange(theme);
+    return;
+  }
+
+  root.classList.add(THEME_INSTANT_CLASS);
+
+  const startViewTransition = (document as Document & {
+    startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+  }).startViewTransition;
+
+  if (!prefersReducedMotion() && typeof startViewTransition === 'function') {
+    try {
+      const transition = startViewTransition.call(document, () => {
+        flushSync(() => {
+          commitThemeChange(theme);
+        });
+      });
+
+      transition.finished
+        .catch(() => {})
+        .finally(() => {
+          root.classList.remove(THEME_INSTANT_CLASS);
+        });
+      return;
+    } catch {
+      // Fall through to atomic swap + GPU veil fallback
+    }
+  }
+
+  commitThemeChange(theme);
+  runFallbackGpuVeil(theme);
+
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      root.classList.remove(THEME_INSTANT_CLASS);
+    });
+  });
 }
 
 export const setThemeMode = setStoredTheme;
@@ -72,7 +170,7 @@ export function applyThemeToDocument(theme: AppTheme): void {
   // Update theme-color meta tag for mobile browsers and PWA header
   const metaThemeColor = document.querySelector('meta[name="theme-color"]');
   if (metaThemeColor) {
-    metaThemeColor.setAttribute('content', theme === 'light' ? '#F5F7FA' : '#080A0E');
+    metaThemeColor.setAttribute('content', theme === 'light' ? '#FFFFFF' : '#050607');
   }
 
   // Synchronize native Android status bar (top) and navigation bar (bottom) colors
@@ -95,16 +193,11 @@ export function useTheme() {
   const [theme, setCurrentThemeState] = useState<AppTheme>(() => getStoredTheme());
 
   useEffect(() => {
-    // Initial sync
-    applyThemeToDocument(theme);
+    applyThemeToDocument(getStoredTheme());
 
     const handleThemeChange = (e: Event) => {
       const customEvent = e as CustomEvent<AppTheme>;
-      if (customEvent.detail) {
-        setCurrentThemeState(customEvent.detail);
-      } else {
-        setCurrentThemeState(getStoredTheme());
-      }
+      setCurrentThemeState(customEvent.detail || getStoredTheme());
     };
 
     const handleStorageChange = (e: StorageEvent) => {
@@ -122,18 +215,15 @@ export function useTheme() {
       window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange);
       window.removeEventListener('storage', handleStorageChange);
     };
-  }, [theme]);
+  }, []);
 
   const setTheme = useCallback((nextTheme: AppTheme) => {
-    setCurrentThemeState(nextTheme);
     setStoredTheme(nextTheme);
   }, []);
 
   const toggleTheme = useCallback(() => {
-    const nextTheme: AppTheme = theme === 'dark' ? 'light' : 'dark';
-    setCurrentThemeState(nextTheme);
-    setStoredTheme(nextTheme);
-  }, [theme]);
+    toggleThemeMode();
+  }, []);
 
   return {
     theme,

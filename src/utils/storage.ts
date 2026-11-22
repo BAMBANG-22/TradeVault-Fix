@@ -164,12 +164,26 @@ export function mergeWithExistingSettings(
     result.riskCapitalBasis = incomingSettings.riskCapitalBasis;
   }
 
-  const numericKeys: Array<
-    Exclude<
-      keyof AppSettings,
-      'currency' | 'currencySymbol' | 'resetTimezone' | 'riskCapitalBasis'
-    >
-  > = [
+  if (typeof incomingSettings.activeAccountId === 'string' && incomingSettings.activeAccountId.trim() !== '') {
+    result.activeAccountId = incomingSettings.activeAccountId.trim();
+  }
+  if (Array.isArray(incomingSettings.accounts)) {
+    result.accounts = incomingSettings.accounts;
+  }
+  if (Array.isArray(incomingSettings.preTradeChecklist)) {
+    result.preTradeChecklist = incomingSettings.preTradeChecklist;
+  }
+  if (Array.isArray(incomingSettings.playbooks)) {
+    result.playbooks = incomingSettings.playbooks;
+  }
+  if (typeof incomingSettings.dailyLossAlertEnabled === 'boolean') {
+    result.dailyLossAlertEnabled = incomingSettings.dailyLossAlertEnabled;
+  }
+  if (typeof incomingSettings.stopTradingAlertEnabled === 'boolean') {
+    result.stopTradingAlertEnabled = incomingSettings.stopTradingAlertEnabled;
+  }
+
+  const numericKeys: Array<keyof AppSettings> = [
     'startingBalance',
     'xauusdContractSize',
     'xauusdPointValue',
@@ -206,15 +220,37 @@ export function mergeWithExistingSettings(
   return result;
 }
 
+const XAUUSD_PIP_ALIGNED_FLAG_KEY = 'vlo_xauusd_pip_aligned_v1';
+
 export function loadStoredSettings(userId?: string | null): AppSettings {
   try {
     const key = getSettingsStorageKey(userId);
     const raw = localStorage.getItem(key);
     if (!raw) {
+      try {
+        localStorage.setItem(XAUUSD_PIP_ALIGNED_FLAG_KEY, '1');
+      } catch {
+        // ignore storage restrictions
+      }
       return { ...DEFAULT_SETTINGS };
     }
     const parsed = JSON.parse(raw);
-    return mergeWithExistingSettings(DEFAULT_SETTINGS, parsed);
+    const merged = mergeWithExistingSettings(DEFAULT_SETTINGS, parsed);
+
+    try {
+      const alreadyAligned = localStorage.getItem(XAUUSD_PIP_ALIGNED_FLAG_KEY) === '1';
+      if (!alreadyAligned) {
+        if (parsed?.xauusdPipSize === 1 || parsed?.xauusdPipSize === 1.0) {
+          merged.xauusdPipSize = 0.1;
+          saveStoredSettings(merged, userId);
+        }
+        localStorage.setItem(XAUUSD_PIP_ALIGNED_FLAG_KEY, '1');
+      }
+    } catch {
+      // ignore storage restrictions
+    }
+
+    return merged;
   } catch (error) {
     console.error('Failed to load settings:', error);
     return { ...DEFAULT_SETTINGS };

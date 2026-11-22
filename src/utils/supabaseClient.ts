@@ -1,6 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Capacitor } from '@capacitor/core';
+import { Browser } from '@capacitor/browser';
 
 const CONFIG_STORAGE_KEY = 'tradevault_supabase_config';
+export const NATIVE_OAUTH_REDIRECT_URL = 'com.tradevault.journal.next://login-callback';
+export type OAuthProviderId = 'google';
 
 export interface SupabaseConfig {
   url: string;
@@ -10,6 +14,46 @@ export interface SupabaseConfig {
 let cachedClient: SupabaseClient | null = null;
 let cachedConfigKey = '';
 
+export const DEFAULT_DEPLOYED_SUPABASE_URL = 'https://hhotzotsdhkgymgtwfdk.supabase.co';
+export const DEFAULT_DEPLOYED_SUPABASE_ANON_KEY =
+  'sb_publishable_vKVwLGvnwhIemsvegm0X_Q_69p7_Eml';
+
+const PLACEHOLDER_SUPABASE_HOSTS = new Set([
+  'your-project-id.supabase.co',
+  'your-project.supabase.co',
+  'xxxx.supabase.co',
+  'xxx.supabase.co',
+  'xyzcompany.supabase.co',
+  'placeholder.supabase.co',
+]);
+
+export function isPlaceholderSupabaseUrl(rawUrl: string): boolean {
+  if (!rawUrl || typeof rawUrl !== 'string') return true;
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return true;
+  if (/^(sb_publishable_|sb_secret_|eyJhbGci|AIza)/i.test(trimmed)) return true;
+
+  try {
+    const clean = sanitizeSupabaseUrl(trimmed);
+    const parsed = new URL(clean);
+    const host = parsed.hostname.toLowerCase();
+    if (PLACEHOLDER_SUPABASE_HOSTS.has(host)) return true;
+    if (host !== 'localhost' && host !== '127.0.0.1' && !host.includes('.')) return true;
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+export function isPlaceholderSupabaseKey(rawKey: string): boolean {
+  if (!rawKey || typeof rawKey !== 'string') return true;
+  const trimmed = rawKey.trim().replace(/^['"]+|['"]+$/g, '');
+  if (!trimmed || trimmed.length < 20) return true;
+  if (trimmed.endsWith('...')) return true;
+  if (/^(your[-_]?anon[-_]?key|placeholder|example)/i.test(trimmed)) return true;
+  return false;
+}
+
 /**
  * Sanitizes Supabase Project URL to ensure it is strictly the root origin (e.g. https://xxx.supabase.co).
  * Strips any accidentally appended paths such as /auth/v1, /rest/v1, or trailing slashes,
@@ -18,6 +62,18 @@ let cachedConfigKey = '';
 export function sanitizeSupabaseUrl(rawUrl: string): string {
   if (!rawUrl) return '';
   let clean = rawUrl.trim().replace(/^['"]+|['"]+$/g, '');
+  if (!clean) return '';
+
+  // Convert Supabase Dashboard URL (https://supabase.com/dashboard/project/<ref>) to https://<ref>.supabase.co
+  const dashboardMatch = clean.match(/supabase\.com\/dashboard\/project\/([a-z0-9]{15,30})/i);
+  if (dashboardMatch && dashboardMatch[1]) {
+    return `https://${dashboardMatch[1].toLowerCase()}.supabase.co`;
+  }
+
+  // Convert bare project reference ID (e.g. "hhotzotsdhkgymgtwfdk") to https://<ref>.supabase.co
+  if (/^[a-z0-9]{15,30}$/i.test(clean) && !clean.includes('.')) {
+    return `https://${clean.toLowerCase()}.supabase.co`;
+  }
 
   try {
     const hasScheme = clean.startsWith('http://') || clean.startsWith('https://');
@@ -37,20 +93,37 @@ export function sanitizeSupabaseUrl(rawUrl: string): string {
 export function getSupabaseConfig(): SupabaseConfig {
   let envUrl = '';
   let envKey = '';
+  let envApiBase = '';
 
   // 1. Read environment variables first
   try {
     if (typeof import.meta !== 'undefined' && import.meta && (import.meta as any).env) {
       envUrl = ((import.meta as any).env.VITE_SUPABASE_URL || '').trim();
       envKey = ((import.meta as any).env.VITE_SUPABASE_ANON_KEY || '').trim();
+      envApiBase = ((import.meta as any).env.VITE_API_BASE_URL || '').trim();
     }
   } catch {
     // ignore import.meta access error
   }
 
-  if (!envUrl && typeof process !== 'undefined' && process?.env) {
-    envUrl = (process.env.VITE_SUPABASE_URL || '').trim();
-    envKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+  if (typeof process !== 'undefined' && process?.env) {
+    if (!envUrl) envUrl = (process.env.VITE_SUPABASE_URL || '').trim();
+    if (!envKey) envKey = (process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+    if (!envApiBase) envApiBase = (process.env.VITE_API_BASE_URL || '').trim();
+  }
+
+  // Filter out template placeholders (e.g. "https://your-project-id.supabase.co" or "eyJ...")
+  const validEnvUrl = !isPlaceholderSupabaseUrl(envUrl) ? sanitizeSupabaseUrl(envUrl) : '';
+  let validEnvKey = !isPlaceholderSupabaseKey(envKey) ? envKey.trim() : '';
+
+  // Recover if user placed a Supabase publishable/anon key into VITE_API_BASE_URL by mistake
+  if (
+    !validEnvKey &&
+    envApiBase &&
+    /^(sb_publishable_|eyJhbGci)/i.test(envApiBase) &&
+    !isPlaceholderSupabaseKey(envApiBase)
+  ) {
+    validEnvKey = envApiBase;
   }
 
   // 2. Read in-app localStorage config (allows user overrides or manual setups)
@@ -63,17 +136,22 @@ export function getSupabaseConfig(): SupabaseConfig {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed?.url && parsed?.anonKey) {
-          storedUrl = parsed.url.trim();
-          storedKey = parsed.anonKey.trim();
+          const candidateUrl = sanitizeSupabaseUrl(String(parsed.url));
+          const candidateKey = String(parsed.anonKey).trim();
 
-          // Auto-clean stored URL if it had /auth/v1 or trailing slashes
-          const cleanedStoredUrl = sanitizeSupabaseUrl(storedUrl);
-          if (cleanedStoredUrl !== storedUrl) {
-            localStorage.setItem(
-              CONFIG_STORAGE_KEY,
-              JSON.stringify({ url: cleanedStoredUrl, anonKey: storedKey })
-            );
-            storedUrl = cleanedStoredUrl;
+          if (!isPlaceholderSupabaseUrl(candidateUrl) && !isPlaceholderSupabaseKey(candidateKey)) {
+            storedUrl = candidateUrl;
+            storedKey = candidateKey;
+
+            if (candidateUrl !== parsed.url.trim()) {
+              localStorage.setItem(
+                CONFIG_STORAGE_KEY,
+                JSON.stringify({ url: candidateUrl, anonKey: candidateKey })
+              );
+            }
+          } else {
+            // Auto-evict invalid placeholder config stored in localStorage
+            localStorage.removeItem(CONFIG_STORAGE_KEY);
           }
         }
       }
@@ -82,10 +160,12 @@ export function getSupabaseConfig(): SupabaseConfig {
     }
   }
 
-  // Priority: If environment variables are provided and valid, prioritize them.
-  // Otherwise use stored localStorage configuration.
-  const finalUrl = sanitizeSupabaseUrl(envUrl || storedUrl);
-  const finalKey = (envKey || storedKey).trim();
+  // Priority:
+  // 1. Valid user override in localStorage
+  // 2. Valid build/runtime environment variable
+  // 3. Built-in deployed VLO Cloud project credentials
+  const finalUrl = storedUrl || validEnvUrl || DEFAULT_DEPLOYED_SUPABASE_URL;
+  const finalKey = storedKey || validEnvKey || DEFAULT_DEPLOYED_SUPABASE_ANON_KEY;
 
   return {
     url: finalUrl,
@@ -114,14 +194,22 @@ export function clearSupabaseConfig(): void {
   cachedConfigKey = '';
 }
 
+export function isBuiltInCloudConfigured(): boolean {
+  const cfg = getSupabaseConfig();
+  return !isPlaceholderSupabaseUrl(cfg.url) && !isPlaceholderSupabaseKey(cfg.anonKey);
+}
+
 export function isSupabaseConfigured(): boolean {
   const config = getSupabaseConfig();
   if (!config.url || !config.anonKey) return false;
+  if (isPlaceholderSupabaseUrl(config.url) || isPlaceholderSupabaseKey(config.anonKey)) {
+    return false;
+  }
   const cleanUrl = sanitizeSupabaseUrl(config.url);
   try {
     const parsed = new URL(cleanUrl);
     const isValidProtocol = parsed.protocol === 'https:' || parsed.protocol === 'http:';
-    return isValidProtocol && config.anonKey.trim().length > 15;
+    return isValidProtocol && config.anonKey.trim().length >= 20;
   } catch {
     return false;
   }
@@ -146,6 +234,7 @@ export function getSupabase(): SupabaseClient | null {
     // Never pass /auth/v1 in cleanUrl!
     cachedClient = createClient(cleanUrl, cleanKey, {
       auth: {
+        flowType: 'pkce',
         persistSession: true,
         autoRefreshToken: true,
         detectSessionInUrl: true,
@@ -212,6 +301,14 @@ export function translateAuthError(error: any): string {
     return 'Tautan atau kode verifikasi telah kedaluwarsa. Silakan minta tautan verifikasi baru.';
   }
 
+  if (message.includes('provider is not enabled') || message.includes('unsupported provider')) {
+    return 'Metode login ini belum diaktifkan pada server VLO.';
+  }
+
+  if (message.includes('access_denied') || message.includes('user cancelled') || message.includes('canceled')) {
+    return 'Proses masuk dibatalkan.';
+  }
+
   if (status === 400) {
     return `Permintaan autentikasi tidak valid: ${error.message || 'Periksa input data Anda.'}`;
   }
@@ -221,6 +318,137 @@ export function translateAuthError(error: any): string {
   }
 
   return error.message || 'Terjadi kesalahan saat memproses autentikasi. Silakan coba lagi.';
+}
+
+export function getOAuthRedirectUrl(): string {
+  if (typeof window === 'undefined') return '';
+  if (Capacitor.isNativePlatform()) {
+    return NATIVE_OAUTH_REDIRECT_URL;
+  }
+  return window.location.origin;
+}
+
+export async function signInWithOAuthProvider(
+  provider: OAuthProviderId
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabase();
+  if (!client) {
+    return {
+      success: false,
+      error: 'Layanan cloud VLO belum terhubung.',
+    };
+  }
+
+  try {
+    const isNative = Capacitor.isNativePlatform();
+    const redirectTo = getOAuthRedirectUrl();
+
+    if (isNative) {
+      const { data, error } = await client.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+        },
+      });
+
+      if (error) {
+        return { success: false, error: translateAuthError(error) };
+      }
+
+      if (!data?.url) {
+        return { success: false, error: 'URL autentikasi tidak tersedia.' };
+      }
+
+      await Browser.open({
+        url: data.url,
+        presentationStyle: 'popover',
+      });
+      return { success: true };
+    }
+
+    const { error } = await client.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo,
+        queryParams: provider === 'google' ? { prompt: 'select_account' } : undefined,
+      },
+    });
+
+    if (error) {
+      return { success: false, error: translateAuthError(error) };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: translateAuthError(err) };
+  }
+}
+
+export async function handleNativeOAuthCallbackUrl(
+  rawUrl: string
+): Promise<{ handled: boolean; success: boolean; user?: any; error?: string }> {
+  if (!rawUrl || !rawUrl.startsWith('com.tradevault.journal.next://')) {
+    return { handled: false, success: false };
+  }
+
+  try {
+    if (Capacitor.isNativePlatform()) {
+      await Browser.close().catch(() => {});
+    }
+  } catch {}
+
+  const client = getSupabase();
+  if (!client) {
+    return { handled: true, success: false, error: 'Koneksi cloud tidak tersedia.' };
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    const searchParams = parsed.searchParams;
+    const hashParams = new URLSearchParams(parsed.hash ? parsed.hash.replace(/^#/, '') : '');
+
+    const errorParam =
+      searchParams.get('error_description') ||
+      searchParams.get('error') ||
+      hashParams.get('error_description') ||
+      hashParams.get('error');
+
+    if (errorParam) {
+      return {
+        handled: true,
+        success: false,
+        error: translateAuthError({ message: errorParam }),
+      };
+    }
+
+    const code = searchParams.get('code');
+    if (code) {
+      const { data, error } = await client.auth.exchangeCodeForSession(code);
+      if (error) {
+        return { handled: true, success: false, error: translateAuthError(error) };
+      }
+      return { handled: true, success: true, user: data?.user || data?.session?.user };
+    }
+
+    const accessToken = hashParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token');
+    if (accessToken && refreshToken) {
+      const { data, error } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) {
+        return { handled: true, success: false, error: translateAuthError(error) };
+      }
+      return { handled: true, success: true, user: data?.user || data?.session?.user };
+    }
+
+    return { handled: true, success: false, error: 'Token sesi login tidak ditemukan.' };
+  } catch (err: any) {
+    return { handled: true, success: false, error: translateAuthError(err) };
+  }
 }
 
 /**
@@ -262,6 +490,213 @@ export async function signOutUser(): Promise<{ success: boolean; error: any }> {
     return { success: !error, error };
   } catch (err) {
     return { success: false, error: err };
+  }
+}
+
+const LOCAL_AVATAR_CACHE_PREFIX = 'tradevault_user_avatar_';
+
+/**
+ * Resolves the active user's profile avatar URL.
+ * Prioritizes high-DPI local cache for the same user when a custom avatar is set,
+ * falling back to user_metadata.avatar_url or OAuth picture (unless explicitly removed).
+ */
+export function getUserAvatarUrl(user: any): string {
+  if (!user || typeof user !== 'object') return '';
+  const meta = user.user_metadata || {};
+
+  if (meta.avatar_removed === true && !meta.avatar_url) {
+    return '';
+  }
+
+  const userId = typeof user.id === 'string' ? user.id.trim() : '';
+  if (userId && typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      const cached = localStorage.getItem(`${LOCAL_AVATAR_CACHE_PREFIX}${userId}`);
+      if (cached && cached.startsWith('data:image/')) {
+        return cached;
+      }
+    } catch {
+      // ignore localStorage read errors
+    }
+  }
+
+  const rawUrl = meta.avatar_url || meta.picture || '';
+  return typeof rawUrl === 'string' ? rawUrl.trim() : '';
+}
+
+/**
+ * Center-crops and compresses an uploaded image file into:
+ * 1) highResDataUrl (256x256 JPEG) for crisp local retina rendering
+ * 2) cloudDataUrl (compact square JPEG <= 3.2 KB) safe for Supabase Auth user_metadata without bloating JWT headers
+ */
+export async function compressAndCropAvatarImage(
+  file: File
+): Promise<{ highResDataUrl: string; cloudDataUrl: string }> {
+  if (!file || !file.type.startsWith('image/')) {
+    throw new Error('File yang dipilih bukan format gambar yang valid (gunakan JPG, PNG, atau WebP).');
+  }
+  const MAX_RAW_BYTES = 8 * 1024 * 1024; // 8 MB
+  if (file.size > MAX_RAW_BYTES) {
+    throw new Error('Ukuran file foto maksimal 8 MB.');
+  }
+
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result);
+      else reject(new Error('Gagal membaca file gambar.'));
+    };
+    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+    reader.readAsDataURL(file);
+  });
+
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Format gambar rusak atau tidak didukung.'));
+    image.src = dataUrl;
+  });
+
+  const srcWidth = img.naturalWidth || img.width;
+  const srcHeight = img.naturalHeight || img.height;
+  if (!srcWidth || !srcHeight) {
+    throw new Error('Dimensi gambar tidak valid.');
+  }
+
+  // Center 1:1 square crop coordinates
+  const cropSize = Math.min(srcWidth, srcHeight);
+  const cropX = Math.floor((srcWidth - cropSize) / 2);
+  const cropY = Math.floor((srcHeight - cropSize) / 2);
+
+  const renderSquareJpeg = (targetDim: number, quality: number): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = targetDim;
+    canvas.height = targetDim;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Gagal menginisialisasi pengolah gambar.');
+    }
+    // Fill subtle dark/neutral background for transparent PNGs
+    ctx.fillStyle = '#0F172A';
+    ctx.fillRect(0, 0, targetDim, targetDim);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cropX, cropY, cropSize, cropSize, 0, 0, targetDim, targetDim);
+    return canvas.toDataURL('image/jpeg', quality);
+  };
+
+  const highResDataUrl = renderSquareJpeg(256, 0.86);
+
+  // Produce a compact cloud avatar safe for JWT user_metadata (<= 3200 chars)
+  let cloudDataUrl = renderSquareJpeg(96, 0.72);
+  const candidateConfigs: Array<[number, number]> = [
+    [96, 0.64],
+    [80, 0.65],
+    [72, 0.62],
+    [64, 0.58],
+  ];
+  for (const [dim, q] of candidateConfigs) {
+    if (cloudDataUrl.length <= 3200) break;
+    cloudDataUrl = renderSquareJpeg(dim, q);
+  }
+
+  return { highResDataUrl, cloudDataUrl };
+}
+
+/**
+ * Uploads and updates the currently logged-in user's profile avatar in Supabase Auth
+ * and caches the high-resolution version locally for instant rendering.
+ */
+export async function updateUserProfileAvatar(
+  file: File
+): Promise<{ success: boolean; user?: any; error?: string }> {
+  const client = getSupabase();
+  if (!client) {
+    return { success: false, error: 'Layanan VLO Cloud belum terhubung.' };
+  }
+
+  try {
+    const { data: sessionData } = await client.auth.getSession();
+    const activeUser = sessionData?.session?.user;
+    if (!activeUser?.id) {
+      return { success: false, error: 'Sesi login tidak ditemukan. Silakan masuk kembali.' };
+    }
+
+    const { highResDataUrl, cloudDataUrl } = await compressAndCropAvatarImage(file);
+
+    const { data, error } = await client.auth.updateUser({
+      data: {
+        avatar_url: cloudDataUrl,
+        avatar_removed: false,
+        avatar_updated_at: Date.now(),
+      },
+    });
+
+    if (error) {
+      return { success: false, error: translateAuthError(error) };
+    }
+
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(`${LOCAL_AVATAR_CACHE_PREFIX}${activeUser.id}`, highResDataUrl);
+      } catch {
+        // ignore quota errors
+      }
+    }
+
+    return { success: true, user: data.user };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || translateAuthError(err),
+    };
+  }
+}
+
+/**
+ * Removes the logged-in user's profile photo and reverts to the default initial/icon avatar.
+ */
+export async function removeUserProfileAvatar(): Promise<{
+  success: boolean;
+  user?: any;
+  error?: string;
+}> {
+  const client = getSupabase();
+  if (!client) {
+    return { success: false, error: 'Layanan VLO Cloud belum terhubung.' };
+  }
+
+  try {
+    const { data: sessionData } = await client.auth.getSession();
+    const activeUser = sessionData?.session?.user;
+    if (!activeUser?.id) {
+      return { success: false, error: 'Sesi login tidak ditemukan. Silakan masuk kembali.' };
+    }
+
+    const { data, error } = await client.auth.updateUser({
+      data: {
+        avatar_url: '',
+        avatar_removed: true,
+        avatar_updated_at: Date.now(),
+      },
+    });
+
+    if (error) {
+      return { success: false, error: translateAuthError(error) };
+    }
+
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem(`${LOCAL_AVATAR_CACHE_PREFIX}${activeUser.id}`);
+      } catch {}
+    }
+
+    return { success: true, user: data.user };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || translateAuthError(err),
+    };
   }
 }
 

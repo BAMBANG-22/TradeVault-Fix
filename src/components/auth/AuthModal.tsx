@@ -1,9 +1,16 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   getSupabase,
   isSupabaseConfigured,
   translateAuthError,
   resendVerificationEmail,
+  signInWithOAuthProvider,
+  OAuthProviderId,
 } from '../../utils/supabaseClient';
 import {
   X,
@@ -11,45 +18,78 @@ import {
   UserPlus,
   Mail,
   Lock,
+  User,
   Eye,
   EyeOff,
   CheckCircle,
   AlertCircle,
-  ShieldCheck,
   Database,
   RefreshCw,
   Send,
+  HardDrive,
 } from 'lucide-react';
 import { useLanguage } from '../../utils/language';
+import { useTheme } from '../../utils/theme';
+import { VloMech } from '../layout/VloMechanicalOrbit';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAuthSuccess: (user: any) => void;
   onOpenConfig: () => void;
+  onContinueLocal?: () => void;
+  isDeveloperMode?: boolean;
 }
 
 type AuthMode = 'signin' | 'signup' | 'forgot' | 'verify_notice';
+
+const GoogleIcon: React.FC<{ className?: string }> = ({ className = 'h-4 w-4' }) => (
+  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+    <path
+      fill="#4285F4"
+      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+    />
+    <path
+      fill="#34A853"
+      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+    />
+    <path
+      fill="#EA4335"
+      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+    />
+  </svg>
+);
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onAuthSuccess,
   onOpenConfig,
+  onContinueLocal,
+  isDeveloperMode = false,
 }) => {
   const { tr } = useLanguage();
+  const { theme } = useTheme();
   const [mode, setMode] = useState<AuthMode>('signin');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthProviderLoading, setOauthProviderLoading] = useState<OAuthProviderId | null>(null);
   const [resendingEmail, setResendingEmail] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [registeredEmail, setRegisteredEmail] = useState<string>('');
 
+  const isBusy = loading || resendingEmail || oauthProviderLoading !== null;
+
   useEffect(() => {
-    if (!isOpen || loading || resendingEmail) return;
+    if (!isOpen || isBusy) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
@@ -57,7 +97,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, loading, resendingEmail, onClose]);
+  }, [isOpen, isBusy, onClose]);
 
   if (!isOpen) return null;
 
@@ -68,6 +108,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setSuccessMessage(null);
   };
 
+  const handleOAuthLogin = async (provider: OAuthProviderId) => {
+    handleResetState();
+
+    if (!isConfigured) {
+      setErrorMessage(
+        tr(
+          'Layanan VLO Cloud belum diaktifkan pada build ini.',
+          'VLO Cloud service is not enabled on this build.'
+        )
+      );
+      return;
+    }
+
+    setOauthProviderLoading(provider);
+    const result = await signInWithOAuthProvider(provider);
+    if (!result.success) {
+      setOauthProviderLoading(null);
+      setErrorMessage(
+        result.error ||
+          tr('Gagal memulai autentikasi pihak ketiga.', 'Failed to start social authentication.')
+      );
+      return;
+    }
+    // Note: on web the page redirects; on Capacitor Android Browser opens and appUrlOpen handles return.
+    // Release spinner after short timeout in case user closes browser manually.
+    window.setTimeout(() => {
+      setOauthProviderLoading(null);
+    }, 8000);
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     handleResetState();
@@ -75,8 +145,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!isConfigured) {
       setErrorMessage(
         tr(
-          'Konfigurasi URL & Anon Key Supabase belum diatur.',
-          'Supabase URL & Anon Key configuration has not been set.'
+          'Layanan VLO Cloud belum tersedia.',
+          'VLO Cloud service is unavailable.'
         )
       );
       return;
@@ -84,7 +154,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const client = getSupabase();
     if (!client) {
-      setErrorMessage(tr('Koneksi Supabase tidak tersedia.', 'Supabase connection is unavailable.'));
+      setErrorMessage(tr('Koneksi VLO Cloud tidak tersedia.', 'VLO Cloud connection is unavailable.'));
       return;
     }
 
@@ -114,12 +184,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       if (data?.user) {
         setSuccessMessage(
-          tr('Berhasil masuk! Mengalihkan ke dasbor...', 'Signed in! Redirecting to dashboard...')
+          tr('Berhasil masuk! Memuat jurnal Anda...', 'Signed in! Loading your journal...')
         );
         setTimeout(() => {
           onAuthSuccess(data.user);
           onClose();
-        }, 600);
+        }, 450);
       } else {
         setErrorMessage(
           tr(
@@ -142,8 +212,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (!isConfigured) {
       setErrorMessage(
         tr(
-          'Konfigurasi URL & Anon Key Supabase belum diatur.',
-          'Supabase URL & Anon Key configuration has not been set.'
+          'Layanan VLO Cloud belum tersedia.',
+          'VLO Cloud service is unavailable.'
         )
       );
       return;
@@ -151,10 +221,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const client = getSupabase();
     if (!client) {
-      setErrorMessage(tr('Koneksi Supabase tidak tersedia.', 'Supabase connection is unavailable.'));
+      setErrorMessage(tr('Koneksi VLO Cloud tidak tersedia.', 'VLO Cloud connection is unavailable.'));
       return;
     }
 
+    const cleanName = fullName.trim();
     const cleanEmail = email.trim();
     const cleanPassword = password.trim();
 
@@ -181,6 +252,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const { data, error } = await client.auth.signUp({
         email: cleanEmail,
         password: cleanPassword,
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+          data: cleanName ? { full_name: cleanName } : undefined,
+        },
       });
 
       if (error) {
@@ -194,21 +269,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setMode('verify_notice');
         setSuccessMessage(
           tr(
-            'Pendaftaran akun berhasil dibuat. Silakan lakukan konfirmasi email.',
-            'Account registration created. Please confirm your email.'
+            'Akun VLO berhasil dibuat. Silakan cek email Anda untuk konfirmasi.',
+            'VLO account created. Please check your email to confirm.'
           )
         );
       } else if (data?.session && data?.user) {
         setSuccessMessage(
           tr(
-            'Pendaftaran berhasil! Anda telah masuk secara otomatis.',
-            'Registration successful! You have been signed in automatically.'
+            'Pendaftaran berhasil! Selamat datang di Vlo Journal.',
+            'Registration successful! Welcome to Vlo Journal.'
           )
         );
         setTimeout(() => {
           onAuthSuccess(data.user);
           onClose();
-        }, 800);
+        }, 550);
       } else {
         setErrorMessage(
           tr(
@@ -241,7 +316,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     const client = getSupabase();
     if (!client) {
-      setErrorMessage(tr('Koneksi Supabase tidak tersedia.', 'Supabase connection is unavailable.'));
+      setErrorMessage(tr('Koneksi VLO Cloud tidak tersedia.', 'VLO Cloud connection is unavailable.'));
       return;
     }
 
@@ -257,8 +332,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       } else {
         setSuccessMessage(
           tr(
-            `Instruksi pemulihan kata sandi telah dikirim ke ${cleanEmail}. Periksa kotak masuk dan folder spam Anda.`,
-            `Password recovery instructions have been sent to ${cleanEmail}. Check your inbox and spam folder.`
+            `Tautan pemulihan kata sandi telah dikirim ke ${cleanEmail}. Periksa kotak masuk atau folder spam.`,
+            `Password recovery link sent to ${cleanEmail}. Check your inbox or spam folder.`
           )
         );
       }
@@ -289,141 +364,213 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const handleContinueLocalClick = () => {
+    if (onContinueLocal) {
+      onContinueLocal();
+    } else {
+      onClose();
+    }
+  };
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 dark:bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150"
-      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 dark:bg-black/75 p-4 animate-in fade-in duration-150"
+      onClick={() => {
+        if (!isBusy) onClose();
+      }}
     >
       <div
-        className="w-full max-w-md max-h-[90vh] max-h-[90dvh] overflow-y-auto rounded-2xl border border-[#DDE3EA] dark:border-[#252B34] bg-white dark:bg-[#11151B] p-6 shadow-2xl text-[#151D2A] dark:text-[#F2F5F9] relative"
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('Autentikasi Vlo Journal', 'Vlo Journal Authentication')}
+        className="w-full max-w-md max-h-[92vh] max-h-[92dvh] overflow-y-auto rounded-2xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] p-6 shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] text-[#0F172A] dark:text-[#F2F4F7] relative transform-gpu"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-[#DDE3EA] dark:border-[#252B34]">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#EEF2F6] dark:bg-[#171D26] text-[#697586] dark:text-[#929BA9] border border-[#DDE3EA] dark:border-[#252B34]">
-              <ShieldCheck className="h-5 w-5 stroke-[1.75]" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-[#151D2A] dark:text-[#F2F5F9]">
-                {mode === 'signin' && tr('Masuk ke TradeVault', 'Sign In to TradeVault')}
-                {mode === 'signup' && tr('Buat Akun Trader Baru', 'Create New Trader Account')}
+        <div className="flex items-center justify-between pb-4 border-b border-[#E4E4E7] dark:border-[#20252D]">
+          <div className="flex items-center gap-3 min-w-0">
+            <VloMech theme={theme} size={44} slowMo={0.8} className="shrink-0" />
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-[#0F172A] dark:text-[#F2F4F7] truncate">
+                {mode === 'signin' && tr('Masuk ke Vlo Journal', 'Sign In to Vlo Journal')}
+                {mode === 'signup' && tr('Buat Akun Vlo Journal', 'Create Vlo Journal Account')}
                 {mode === 'forgot' && tr('Pemulihan Kata Sandi', 'Password Recovery')}
-                {mode === 'verify_notice' && tr('Verifikasi Email Diperlukan', 'Email Verification Required')}
+                {mode === 'verify_notice' && tr('Konfirmasi Email Anda', 'Confirm Your Email')}
               </h3>
-              <p className="text-xs text-[#697586] dark:text-[#929BA9]">
-                {tr('Autentikasi aman melalui Supabase Auth', 'Secure authentication via Supabase Auth')}
+              <p className="text-xs text-[#526071] dark:text-[#929BA9] truncate">
+                {tr(
+                  'Sinkronkan jurnal trading lintas perangkat',
+                  'Sync your trading journal across devices'
+                )}
               </p>
             </div>
           </div>
           <button
+            type="button"
+            disabled={isBusy}
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-[#EEF2F6] dark:bg-[#171D26] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9] transition-colors"
+            className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-full bg-[#FAFAFA] hover:bg-[#F4F4F5] dark:bg-[#161A22] dark:hover:bg-[#1E2430] text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             aria-label={tr('Tutup', 'Close')}
           >
-            <X className="h-5 w-5 stroke-[1.75]" />
+            <X className="h-4 w-4 stroke-[1.75]" />
           </button>
         </div>
 
         {!isConfigured ? (
-          <div className="my-5 p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-[#151D2A] dark:text-[#F2F5F9] space-y-3">
-            <div className="flex items-center gap-2 font-bold text-amber-600 dark:text-amber-400">
-              <AlertCircle className="h-4 w-4 shrink-0 stroke-[1.75]" />
-              <span>{tr('Koneksi Supabase Belum Dikonfigurasi', 'Supabase Connection Not Configured')}</span>
+          <div className="my-5 space-y-4">
+            <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-xs space-y-2">
+              <div className="flex items-center gap-2 font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                <HardDrive className="h-4 w-4 shrink-0 text-[#0F172A] dark:text-white stroke-[1.75]" />
+                <span>{tr('Mode Penyimpanan Lokal Aktif', 'Local Storage Mode Active')}</span>
+              </div>
+              <p className="text-[11px] text-[#526071] dark:text-[#929BA9] leading-relaxed">
+                {tr(
+                  'Sinkronisasi cloud belum diaktifkan pada build ini. Anda tetap dapat mencatat dan menganalisis transaksi XAUUSD secara penuh di perangkat ini.',
+                  'Cloud sync is not active on this build yet. You can still log and analyze your XAUUSD trades locally on this device.'
+                )}
+              </p>
             </div>
-            <p className="text-[11px] text-[#697586] dark:text-[#929BA9] leading-relaxed">
-              {tr(
-                'Untuk mendaftar dan masuk menggunakan Supabase Auth, Project URL dan Anon Key harus diatur terlebih dahulu melalui pengaturan database di aplikasi.',
-                'To sign up and sign in using Supabase Auth, Project URL and Anon Key must be configured first via database settings in the app.'
-              )}
-            </p>
+
             <button
-              onClick={() => {
-                onClose();
-                onOpenConfig();
-              }}
-              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors"
+              type="button"
+              onClick={handleContinueLocalClick}
+              className="w-full min-h-[44px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             >
-              <Database className="h-4 w-4 stroke-[1.75]" />
-              <span>{tr('Buka Konfigurasi Supabase', 'Open Supabase Configuration')}</span>
+              {tr('Lanjutkan dengan Mode Lokal', 'Continue in Local Mode')}
             </button>
+
+            {isDeveloperMode && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenConfig();
+                }}
+                className="w-full min-h-[40px] flex items-center justify-center gap-2 py-2 px-4 rounded-full border border-[#E4E4E7] dark:border-[#20252D] text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] font-medium text-xs transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+              >
+                <Database className="h-3.5 w-3.5 stroke-[1.75]" />
+                <span>{tr('Konfigurasi Cloud (Developer)', 'Cloud Config (Developer)')}</span>
+              </button>
+            )}
           </div>
         ) : (
-          <>
+          <div className="pt-4 space-y-4">
             {/* Navigation Tabs (only for signin & signup) */}
             {(mode === 'signin' || mode === 'signup') && (
-              <div className="my-4 grid grid-cols-2 p-1 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs">
+              <div className="grid grid-cols-2 p-1 rounded-full bg-[#F4F4F5] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-xs">
                 <button
                   type="button"
+                  disabled={isBusy}
                   onClick={() => {
                     setMode('signin');
                     handleResetState();
                   }}
-                  className={`py-2 rounded-lg font-bold transition-colors ${
+                  className={`min-h-[38px] py-1.5 rounded-full font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
                     mode === 'signin'
-                      ? 'bg-[#1769E8] text-white'
-                      : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9]'
+                      ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] shadow-2xs'
+                      : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
                   }`}
                 >
-                  {tr('Masuk Akun', 'Sign In')}
+                  {tr('Masuk', 'Sign In')}
                 </button>
                 <button
                   type="button"
+                  disabled={isBusy}
                   onClick={() => {
                     setMode('signup');
                     handleResetState();
                   }}
-                  className={`py-2 rounded-lg font-bold transition-colors ${
+                  className={`min-h-[38px] py-1.5 rounded-full font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
                     mode === 'signup'
-                      ? 'bg-[#1769E8] text-white'
-                      : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9]'
+                      ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] shadow-2xs'
+                      : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7]'
                   }`}
                 >
-                  {tr('Daftar Akun Baru', 'Create New Account')}
+                  {tr('Daftar Akun', 'Create Account')}
                 </button>
               </div>
             )}
 
             {/* Error Message Box */}
             {errorMessage && (
-              <div className="my-3 p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-rose-600 dark:text-rose-400 flex items-start gap-2.5 animate-in fade-in">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400 stroke-[1.75]" />
+              <div
+                role="alert"
+                className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E11D48]/30 dark:border-[#E05260]/30 text-xs text-[#E11D48] dark:text-[#E05260] flex items-start gap-2.5 animate-in fade-in"
+              >
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 stroke-[1.75]" />
                 <span className="leading-relaxed">{errorMessage}</span>
               </div>
             )}
 
             {/* Success Message Box */}
             {successMessage && (
-              <div className="my-3 p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-xs text-emerald-600 dark:text-emerald-400 flex items-start gap-2.5 animate-in fade-in">
-                <CheckCircle className="h-4 w-4 shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400 stroke-[1.75]" />
+              <div
+                role="status"
+                className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#059669]/30 dark:border-[#00A878]/30 text-xs text-[#059669] dark:text-[#00A878] flex items-start gap-2.5 animate-in fade-in"
+              >
+                <CheckCircle className="h-4 w-4 shrink-0 mt-0.5 stroke-[1.75]" />
                 <span className="leading-relaxed">{successMessage}</span>
               </div>
             )}
 
-            {/* VIEW 1: SIGN IN */}
+            {/* Social / OAuth Providers (Standard App Login Flow) */}
+            {(mode === 'signin' || mode === 'signup') && (
+              <div className="space-y-2.5">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  data-testid="auth-google-button"
+                  onClick={() => handleOAuthLogin('google')}
+                  className="w-full min-h-[44px] px-4 py-2.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] hover:bg-[#F4F4F5] dark:bg-[#161A22] dark:hover:bg-[#1E2430] text-[#0F172A] dark:text-[#F2F4F7] text-xs font-semibold transition-colors flex items-center justify-center gap-2.5 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                >
+                  {oauthProviderLoading === 'google' ? (
+                    <RefreshCw className="h-4 w-4 animate-spin stroke-[1.75]" />
+                  ) : (
+                    <GoogleIcon className="h-4 w-4 shrink-0" />
+                  )}
+                  <span>
+                    {mode === 'signup'
+                      ? tr('Daftar dengan Google', 'Sign up with Google')
+                      : tr('Lanjutkan dengan Google', 'Continue with Google')}
+                  </span>
+                </button>
+
+                {/* Divider */}
+                <div className="relative flex items-center py-1.5">
+                  <div className="flex-grow border-t border-[#E4E4E7] dark:border-[#20252D]" />
+                  <span className="shrink-0 mx-3 text-[11px] text-[#526071] dark:text-[#929BA9]">
+                    {mode === 'signup'
+                      ? tr('atau daftar dengan Akun VLO', 'or sign up with VLO Account')
+                      : tr('atau masuk dengan Akun VLO', 'or sign in with VLO Account')}
+                  </span>
+                  <div className="flex-grow border-t border-[#E4E4E7] dark:border-[#20252D]" />
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 1: SIGN IN (AKUN VLO) */}
             {mode === 'signin' && (
-              <form onSubmit={handleSignIn} className="space-y-4 text-xs">
+              <form onSubmit={handleSignIn} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1">
-                    {tr('Alamat Email', 'Email Address')}
+                  <label className="block text-[#0F172A] dark:text-[#F2F4F7] font-semibold mb-1.5">
+                    {tr('Email Akun VLO', 'VLO Account Email')}
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
                     <input
                       type="email"
                       required
-                      autoFocus
                       placeholder="trader@domain.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] pl-9 pr-3 py-2 text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-3 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[#151D2A] dark:text-[#F2F5F9] font-semibold">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-[#0F172A] dark:text-[#F2F4F7] font-semibold">
                       {tr('Kata Sandi', 'Password')}
                     </label>
                     <button
@@ -432,25 +579,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         setMode('forgot');
                         handleResetState();
                       }}
-                      className="text-[11px] text-[#1769E8] dark:text-[#60A5FA] hover:underline"
+                      className="text-[11px] text-[#0F172A] dark:text-white font-semibold hover:underline cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                     >
                       {tr('Lupa kata sandi?', 'Forgot password?')}
                     </button>
                   </div>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
                       placeholder={tr('Masukkan kata sandi', 'Enter password')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] pl-9 pr-10 py-2 text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-10 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2.5 text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9]"
+                      className="absolute right-2.5 top-2.5 h-6 w-6 flex items-center justify-center text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                       aria-label={
                         showPassword
                           ? tr('Sembunyikan kata sandi', 'Hide password')
@@ -464,8 +611,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                  disabled={isBusy}
+                  className="w-full min-h-[44px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                 >
                   {loading ? (
                     <>
@@ -475,52 +622,67 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   ) : (
                     <>
                       <LogIn className="h-4 w-4 stroke-[1.75]" />
-                      <span>{tr('Masuk ke Akun', 'Sign In to Account')}</span>
+                      <span>{tr('Masuk dengan Akun VLO', 'Sign In with VLO Account')}</span>
                     </>
                   )}
                 </button>
               </form>
             )}
 
-            {/* VIEW 2: SIGN UP */}
+            {/* VIEW 2: SIGN UP (AKUN VLO) */}
             {mode === 'signup' && (
-              <form onSubmit={handleSignUp} className="space-y-4 text-xs">
+              <form onSubmit={handleSignUp} className="space-y-3.5 text-xs">
                 <div>
-                  <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1">
-                    {tr('Alamat Email', 'Email Address')}
+                  <label className="block text-[#0F172A] dark:text-[#F2F4F7] font-semibold mb-1.5">
+                    {tr('Nama Trader (Opsional)', 'Trader Name (Optional)')}
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
+                    <User className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
                     <input
-                      type="email"
-                      required
-                      autoFocus
-                      placeholder="trader@domain.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] pl-9 pr-3 py-2 text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
+                      type="text"
+                      placeholder={tr('Contoh: Bambang A.', 'e.g., Alex Morgan')}
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-3 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1">
-                    {tr('Kata Sandi Baru', 'New Password')}
+                  <label className="block text-[#0F172A] dark:text-[#F2F4F7] font-semibold mb-1.5">
+                    {tr('Alamat Email', 'Email Address')}
                   </label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-4 w-4 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="trader@domain.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-3 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[#0F172A] dark:text-[#F2F4F7] font-semibold mb-1.5">
+                    {tr('Buat Kata Sandi', 'Create Password')}
+                  </label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
                     <input
                       type={showPassword ? 'text' : 'password'}
                       required
                       placeholder={tr('Minimal 6 karakter', 'Minimum 6 characters')}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] pl-9 pr-10 py-2 text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-10 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-2.5 text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F5F9]"
+                      className="absolute right-2.5 top-2.5 h-6 w-6 flex items-center justify-center text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                       aria-label={
                         showPassword
                           ? tr('Sembunyikan kata sandi', 'Hide password')
@@ -530,28 +692,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       {showPassword ? <EyeOff className="h-4 w-4 stroke-[1.75]" /> : <Eye className="h-4 w-4 stroke-[1.75]" />}
                     </button>
                   </div>
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9] mt-1">
-                    {tr(
-                      'Gunakan kombinasi huruf dan angka minimal 6 karakter.',
-                      'Use a combination of letters and numbers (at least 6 characters).'
-                    )}
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] text-[11px] text-[#697586] dark:text-[#929BA9]">
-                  <span className="font-semibold text-[#151D2A] dark:text-[#F2F5F9] block mb-0.5">
-                    {tr('Catatan Verifikasi Email:', 'Email Verification Note:')}
-                  </span>
-                  {tr(
-                    'Jika verifikasi email diaktifkan pada proyek Supabase Anda, tautan konfirmasi akan dikirimkan ke email Anda sebelum dapat masuk.',
-                    'If email verification is enabled on your Supabase project, a confirmation link will be sent to your email before you can sign in.'
-                  )}
                 </div>
 
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                  disabled={isBusy}
+                  className="w-full min-h-[44px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                 >
                   {loading ? (
                     <>
@@ -561,7 +707,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   ) : (
                     <>
                       <UserPlus className="h-4 w-4 stroke-[1.75]" />
-                      <span>{tr('Daftar Akun Baru', 'Create New Account')}</span>
+                      <span>{tr('Daftar Akun VLO', 'Create VLO Account')}</span>
                     </>
                   )}
                 </button>
@@ -572,11 +718,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'forgot' && (
               <form onSubmit={handleForgotPassword} className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-[#151D2A] dark:text-[#F2F5F9] font-semibold mb-1">
+                  <label className="block text-[#0F172A] dark:text-[#F2F4F7] font-semibold mb-1.5">
                     {tr('Alamat Email Terdaftar', 'Registered Email Address')}
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-4 w-4 text-[#697586] dark:text-[#929BA9] stroke-[1.75]" />
+                    <Mail className="absolute left-3 top-3 h-4 w-4 text-[#526071] dark:text-[#929BA9] stroke-[1.75]" />
                     <input
                       type="email"
                       required
@@ -584,21 +730,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       placeholder="trader@domain.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full rounded-lg bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] pl-9 pr-3 py-2 text-[#151D2A] dark:text-[#F2F5F9] placeholder-[#697586] dark:placeholder-[#929BA9] focus:border-[#1769E8] focus:outline-none"
+                      className="w-full min-h-[42px] rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] pl-9 pr-3 py-2 text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#526071] dark:placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25"
                     />
                   </div>
-                  <p className="text-[11px] text-[#697586] dark:text-[#929BA9] mt-1">
+                  <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1.5">
                     {tr(
-                      'Kami akan mengirimkan instruksi dan tautan untuk membuat kata sandi baru.',
-                      'We will send instructions and a link to create a new password.'
+                      'Kami akan mengirimkan tautan untuk mengatur ulang kata sandi Akun VLO Anda.',
+                      'We will send a link to reset your VLO Account password.'
                     )}
                   </p>
                 </div>
 
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  disabled={isBusy}
+                  className="w-full min-h-[44px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                 >
                   {loading ? (
                     <>
@@ -613,14 +759,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   )}
                 </button>
 
-                <div className="pt-2 text-center">
+                <div className="pt-1 text-center">
                   <button
                     type="button"
                     onClick={() => {
                       setMode('signin');
                       handleResetState();
                     }}
-                    className="text-xs text-[#697586] dark:text-[#929BA9] hover:text-[#1769E8] dark:hover:text-[#60A5FA] font-medium"
+                    className="text-xs text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-white font-medium cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                   >
                     {tr('← Kembali ke Halaman Masuk', '← Back to Sign In')}
                   </button>
@@ -628,62 +774,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </form>
             )}
 
-            {/* VIEW 4: VERIFY NOTICE (When Email Confirmation is required) */}
+            {/* VIEW 4: VERIFY NOTICE */}
             {mode === 'verify_notice' && (
-              <div className="space-y-4 text-xs py-2">
-                <div className="p-4 rounded-xl bg-[#F5F7FA] dark:bg-[#080A0E] border border-[#DDE3EA] dark:border-[#252B34] space-y-3">
-                  <div className="flex items-center gap-2 text-[#1769E8] dark:text-[#60A5FA] font-bold text-sm">
+              <div className="space-y-4 text-xs py-1">
+                <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
+                  <div className="flex items-center gap-2 text-[#0F172A] dark:text-white font-bold text-sm">
                     <Mail className="h-5 w-5 shrink-0 stroke-[1.75]" />
-                    <span>{tr('Konfirmasi Email Telah Dikirim!', 'Confirmation Email Sent!')}</span>
+                    <span>{tr('Tautan Konfirmasi Terkirim!', 'Confirmation Link Sent!')}</span>
                   </div>
-                  <p className="text-[#151D2A] dark:text-[#F2F5F9] leading-relaxed text-xs">
+                  <p className="text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed text-xs">
                     {tr(
-                      'Akun Anda telah berhasil dibuat di Supabase. Sebuah tautan verifikasi telah dikirimkan ke:',
-                      'Your account has been created in Supabase. A verification link has been sent to:'
+                      'Silakan konfirmasi pendaftaran Akun VLO Anda melalui tautan yang telah dikirim ke:',
+                      'Please confirm your VLO Account registration via the link sent to:'
                     )}
                   </p>
-                  <div className="p-2.5 rounded-lg bg-white dark:bg-[#11151B] border border-[#DDE3EA] dark:border-[#252B34] font-mono-numbers text-[#1769E8] dark:text-[#60A5FA] text-xs text-center font-bold break-all">
+                  <div className="pt-2 border-t border-[#E4E4E7] dark:border-[#20252D] font-mono-numbers text-[#0F172A] dark:text-white text-xs font-bold break-all">
                     {registeredEmail || email}
-                  </div>
-                  <div className="text-[11px] text-[#697586] dark:text-[#929BA9] space-y-1 pt-1">
-                    <p className="font-semibold text-[#151D2A] dark:text-[#F2F5F9]">
-                      {tr('Langkah berikutnya:', 'Next steps:')}
-                    </p>
-                    <ol className="list-decimal list-inside space-y-1 pl-1">
-                      <li>
-                        {tr(
-                          'Buka aplikasi email Anda (cek kotak masuk atau folder spam).',
-                          'Open your email app (check your inbox or spam folder).'
-                        )}
-                      </li>
-                      <li>
-                        {tr(
-                          'Klik tautan verifikasi dari Supabase.',
-                          'Click the verification link from Supabase.'
-                        )}
-                      </li>
-                      <li>
-                        {tr(
-                          'Setelah terverifikasi, kembali ke sini dan masuk menggunakan email & kata sandi Anda.',
-                          'Once verified, return here and sign in with your email & password.'
-                        )}
-                      </li>
-                    </ol>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-2 pt-2">
+                <div className="flex flex-col gap-2">
                   <button
                     type="button"
                     onClick={() => {
                       setMode('signin');
                       handleResetState();
                     }}
-                    className="w-full py-2.5 rounded-lg bg-[#1769E8] hover:bg-[#1458C4] text-white font-bold text-xs transition-colors flex items-center justify-center gap-2"
+                    className="w-full min-h-[44px] py-2.5 px-4 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] font-semibold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                   >
                     <LogIn className="h-4 w-4 stroke-[1.75]" />
                     <span>
-                      {tr('Saya Sudah Konfirmasi, Masuk Sekarang', 'I Have Confirmed, Sign In Now')}
+                      {tr('Saya Sudah Konfirmasi, Masuk Sekarang', 'I Confirmed, Sign In Now')}
                     </span>
                   </button>
 
@@ -691,7 +812,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     type="button"
                     disabled={resendingEmail}
                     onClick={handleResendVerification}
-                    className="w-full py-2 rounded-lg bg-[#EEF2F6] hover:bg-[#DDE3EA] dark:bg-[#171D26] dark:hover:bg-[#252B34] border border-[#DDE3EA] dark:border-[#252B34] text-[#151D2A] dark:text-[#F2F5F9] font-medium text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                    className="w-full min-h-[40px] py-2 px-4 rounded-full bg-[#FAFAFA] hover:bg-[#F4F4F5] dark:bg-[#161A22] dark:hover:bg-[#1E2430] border border-[#E4E4E7] dark:border-[#20252D] text-[#0F172A] dark:text-[#F2F4F7] font-medium text-xs transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                   >
                     {resendingEmail ? (
                       <>
@@ -700,7 +821,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       </>
                     ) : (
                       <>
-                        <RefreshCw className="h-3.5 w-3.5 stroke-[1.75] text-[#697586] dark:text-[#929BA9]" />
+                        <RefreshCw className="h-3.5 w-3.5 stroke-[1.75] text-[#526071] dark:text-[#929BA9]" />
                         <span>{tr('Kirim Ulang Email Konfirmasi', 'Resend Confirmation Email')}</span>
                       </>
                     )}
@@ -708,7 +829,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
             )}
-          </>
+
+            {/* Local Offline Option */}
+            {(mode === 'signin' || mode === 'signup') && (
+              <div className="pt-2 border-t border-[#E4E4E7] dark:border-[#20252D]">
+                <button
+                  type="button"
+                  disabled={isBusy}
+                  data-testid="auth-continue-local-button"
+                  onClick={handleContinueLocalClick}
+                  className="w-full min-h-[40px] py-2 px-4 rounded-full text-[11px] font-medium text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                >
+                  {tr('Gunakan Mode Lokal Tanpa Akun', 'Use Local Mode Without Account')}
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="BD-1. Cradle-O VLO">
+  <rect width="256" height="256" rx="56" fill="#1769E8"/>
+  <g fill="#FFFFFF"><path fill-rule="evenodd" d="M 35 68 A 18 18 0 0 1 69 56 L 92 146 C 96 162, 106 168, 126 168 H 194 A 18 18 0 0 1 194 204 H 118 C 82 204, 62 184, 52 148 Z"/></g>
+  <g fill="#0B0E14"><path fill-rule="evenodd" d="M 162 52 A 50 50 0 1 1 161.9 52 Z M 162 82 A 20 20 0 1 0 162.1 82 Z"/></g>
+  <g fill="#10B981"><path d="M 162 90 A 12 12 0 1 1 161.9 90 Z"/></g>
+</svg>

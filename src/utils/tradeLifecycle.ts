@@ -38,6 +38,12 @@ export interface TradeLifecycleMeta {
   cancellationReason?: string;
   cancelledAt?: string;
   activityLog?: TradeActivityEvent[];
+  mistakeTags?: string[];
+  emotionTag?: string;
+  accountId?: string;
+  playbookId?: string;
+  checklistPassed?: boolean;
+  ruleCompliant?: boolean;
 }
 
 export interface ResolvedTradeLifecycle {
@@ -60,6 +66,12 @@ export interface ResolvedTradeLifecycle {
   cancellationReason?: string;
   cancelledAt?: string;
   activityLog: TradeActivityEvent[];
+  mistakeTags?: string[];
+  emotionTag?: string;
+  accountId?: string;
+  playbookId?: string;
+  checklistPassed?: boolean;
+  ruleCompliant?: boolean;
   isLegacyClosedTrade: boolean;
 }
 
@@ -173,6 +185,24 @@ export function encodeLifecycleMetaIntoExecutionNotes(
   }
   if (Array.isArray(meta.activityLog) && meta.activityLog.length > 0) {
     cleanMeta.activityLog = meta.activityLog;
+  }
+  if (Array.isArray(meta.mistakeTags) && meta.mistakeTags.length > 0) {
+    cleanMeta.mistakeTags = meta.mistakeTags.filter((x) => typeof x === 'string' && x.trim() !== '');
+  }
+  if (typeof meta.emotionTag === 'string' && meta.emotionTag.trim()) {
+    cleanMeta.emotionTag = meta.emotionTag.trim();
+  }
+  if (typeof meta.accountId === 'string' && meta.accountId.trim()) {
+    cleanMeta.accountId = meta.accountId.trim();
+  }
+  if (typeof meta.playbookId === 'string' && meta.playbookId.trim()) {
+    cleanMeta.playbookId = meta.playbookId.trim();
+  }
+  if (typeof meta.checklistPassed === 'boolean') {
+    cleanMeta.checklistPassed = meta.checklistPassed;
+  }
+  if (typeof meta.ruleCompliant === 'boolean') {
+    cleanMeta.ruleCompliant = meta.ruleCompliant;
   }
 
   if (Object.keys(cleanMeta).length === 0) {
@@ -310,6 +340,12 @@ export function resolveTradeLifecycle(trade: Trade): ResolvedTradeLifecycle {
     cancellationReason: meta.cancellationReason,
     cancelledAt: meta.cancelledAt,
     activityLog,
+    mistakeTags: Array.isArray(trade.mistakeTags) && trade.mistakeTags.length > 0 ? trade.mistakeTags : meta.mistakeTags,
+    emotionTag: trade.emotionTag || meta.emotionTag,
+    accountId: trade.accountId || meta.accountId,
+    playbookId: trade.playbookId || meta.playbookId,
+    checklistPassed: typeof trade.checklistPassed === 'boolean' ? trade.checklistPassed : meta.checklistPassed,
+    ruleCompliant: typeof trade.ruleCompliant === 'boolean' ? trade.ruleCompliant : meta.ruleCompliant,
     isLegacyClosedTrade,
   };
 }
@@ -406,6 +442,12 @@ export function transitionPlannedTradeToOpen(
     beforeScreenshotUrl: current.beforeScreenshotUrl,
     afterScreenshotUrl: current.afterScreenshotUrl,
     activityLog: nextLog,
+    mistakeTags: current.mistakeTags,
+    emotionTag: current.emotionTag,
+    accountId: current.accountId,
+    playbookId: current.playbookId,
+    checklistPassed: current.checklistPassed,
+    ruleCompliant: current.ruleCompliant,
   };
 
   return {
@@ -465,6 +507,12 @@ export function transitionPlannedTradeToCancelled(
     cancellationReason: cleanReason,
     cancelledAt: nowIso,
     activityLog: nextLog,
+    mistakeTags: current.mistakeTags,
+    emotionTag: current.emotionTag,
+    accountId: current.accountId,
+    playbookId: current.playbookId,
+    checklistPassed: current.checklistPassed,
+    ruleCompliant: current.ruleCompliant,
   };
 
   return {
@@ -571,6 +619,12 @@ export function transitionOpenTradeToClosed(
     beforeScreenshotUrl: current.beforeScreenshotUrl,
     afterScreenshotUrl: current.afterScreenshotUrl,
     activityLog: nextLog,
+    mistakeTags: current.mistakeTags,
+    emotionTag: current.emotionTag,
+    accountId: current.accountId,
+    playbookId: current.playbookId,
+    checklistPassed: current.checklistPassed,
+    ruleCompliant: current.ruleCompliant,
   };
 
   return {

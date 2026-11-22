@@ -293,7 +293,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
     >
       {/* 4.A Header: Title + Dropdown Bulan */}
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#697586] dark:text-[#929BA9]">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#526071] dark:text-[#929BA9]">
           {tr('KALENDER PERFORMA', 'PERFORMANCE CALENDAR')}
         </h2>
 
@@ -304,11 +304,11 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
             onClick={() => setIsMonthDropdownOpen((prev) => !prev)}
             aria-haspopup="listbox"
             aria-expanded={isMonthDropdownOpen}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F5F7FA] dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] hover:border-[#3478DC] text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] transition-colors cursor-pointer whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] hover:border-[#0F172A]/40 dark:hover:border-white/40 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
           >
             <span>{monthDisplayLabel}</span>
             <ChevronDown
-              className={`h-3.5 w-3.5 stroke-[2] text-[#697586] dark:text-[#929BA9] transition-transform duration-150 ${
+              className={`h-3.5 w-3.5 stroke-[2] text-[#526071] dark:text-[#929BA9] transition-transform duration-150 ${
                 isMonthDropdownOpen ? 'rotate-180' : ''
               }`}
             />
@@ -319,7 +319,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
               role="listbox"
               aria-label={tr('Pilih Bulan Kalender', 'Select Calendar Month')}
               data-testid="calendar-month-dropdown-menu"
-              className="absolute right-0 top-full mt-1.5 z-30 w-48 max-h-64 overflow-y-auto rounded-xl bg-white dark:bg-[#101318] border border-[#DDE3EA] dark:border-[#20252D] py-1 shadow-xl"
+              className="absolute right-0 top-full mt-1.5 z-30 w-48 max-h-64 overflow-y-auto rounded-xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] py-1 shadow-xl"
             >
               {availableMonths.map((mKey) => {
                 const [yS, mS] = mKey.split('-');
@@ -343,13 +343,13 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                     }}
                     className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors cursor-pointer ${
                       isSelected
-                        ? 'bg-[#EEF2F6] dark:bg-[#1C2330] text-[#1769E8] dark:text-[#3478DC] font-semibold'
-                        : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F5F7FA] dark:hover:bg-[#141820]'
+                        ? 'bg-[#F4F4F5] dark:bg-[#161A22] text-[#0F172A] dark:text-white font-semibold'
+                        : 'text-[#0F172A] dark:text-[#F2F4F7] hover:bg-[#FAFAFA] dark:hover:bg-[#161A22]'
                     }`}
                   >
                     <span>{label}</span>
                     {isSelected && (
-                      <Check className="h-3.5 w-3.5 stroke-[2] text-[#1769E8] dark:text-[#3478DC]" />
+                      <Check className="h-3.5 w-3.5 stroke-[2] text-[#0F172A] dark:text-white" />
                     )}
                   </button>
                 );
@@ -362,7 +362,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
       {/* 4.B Ringkasan Statistik */}
       <div className="grid grid-cols-3 gap-2 py-1 text-center font-mono-numbers tabular-nums">
         <div>
-          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
             {tr('HARI PROFIT', 'PROFIT DAYS')}
           </div>
           <div className="text-xl sm:text-2xl font-bold text-[#059669] dark:text-[#00A878] mt-0.5">
@@ -371,7 +371,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
         </div>
 
         <div>
-          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
             {tr('HARI LOSS', 'LOSS DAYS')}
           </div>
           <div className="text-xl sm:text-2xl font-bold text-[#E11D48] dark:text-[#E05260] mt-0.5">
@@ -380,10 +380,10 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
         </div>
 
         <div>
-          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+          <div className="text-[10px] sm:text-[11px] font-sans font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
             {tr('TANPA TRADE', 'NO TRADE')}
           </div>
-          <div className="text-xl sm:text-2xl font-bold text-[#151D2A] dark:text-[#F2F4F7] mt-0.5">
+          <div className="text-xl sm:text-2xl font-bold text-[#0F172A] dark:text-[#F2F4F7] mt-0.5">
             {summary.noTradeDays}
           </div>
         </div>
@@ -391,12 +391,12 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
 
       {/* 4.C Days of Week Header */}
       <div>
-        <div className="grid grid-cols-7 gap-1 text-center text-[10px] sm:text-[11px] font-semibold text-[#697586] dark:text-[#929BA9] py-1.5">
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] sm:text-[11px] font-semibold text-[#526071] dark:text-[#929BA9] py-1.5">
           {daysOfWeek.map((dayName) => (
             <div key={dayName}>{dayName}</div>
           ))}
         </div>
-        <div className="border-b border-[#DDE3EA] dark:border-[#20252D] my-1" />
+        <div className="border-b border-[#E4E4E7] dark:border-[#20252D] my-1" />
       </div>
 
       {/* 4.C Calendar Grid */}
@@ -413,7 +413,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
               key={`${cell.dateKey}-${idx}`}
               type="button"
               onClick={() => setSelectedDate(isSelected ? null : cell.dateKey)}
-              className="group flex flex-col items-center justify-center py-1 transition-colors cursor-pointer relative"
+              className="group flex flex-col items-center justify-center py-1 transition-colors cursor-pointer relative rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
               title={`${cell.dateKey}${
                 cell.tradesCount > 0
                   ? `: ${cell.tradesCount} ${tr('Trade Selesai', 'Closed Trades')}`
@@ -423,12 +423,12 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
               <span
                 className={`text-xs sm:text-sm leading-tight transition-colors ${
                   isSelected
-                    ? 'text-[#1769E8] dark:text-[#3478DC] font-bold'
+                    ? 'text-[#0F172A] dark:text-white font-bold'
                     : isToday
-                    ? 'text-[#1769E8] dark:text-[#3478DC] font-bold'
+                    ? 'text-[#0F172A] dark:text-white font-bold'
                     : cell.isCurrentMonth
-                    ? 'text-[#151D2A] dark:text-[#F2F4F7] font-medium group-hover:text-[#1769E8] dark:group-hover:text-[#3478DC]'
-                    : 'text-[#697586]/40 dark:text-[#929BA9]/35 font-normal'
+                    ? 'text-[#0F172A] dark:text-[#F2F4F7] font-medium group-hover:text-[#0F172A] dark:group-hover:text-white'
+                    : 'text-[#526071]/40 dark:text-[#929BA9]/35 font-normal'
                 }`}
               >
                 {cell.dayNum}
@@ -440,34 +440,34 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                 ) : isLoss ? (
                   <span className="w-1.5 h-1.5 rounded-full bg-[#E11D48] dark:bg-[#E05260]" />
                 ) : isBreakeven ? (
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#697586] dark:bg-[#929BA9]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#526071] dark:bg-[#929BA9]" />
                 ) : (
                   <span className="w-1.5 h-1.5 opacity-0" />
                 )}
               </div>
 
               {isSelected && (
-                <span className="absolute bottom-0 w-3 h-0.5 rounded-full bg-[#1769E8] dark:bg-[#3478DC]" />
+                <span className="absolute bottom-0 w-3 h-0.5 rounded-full bg-[#0F172A] dark:bg-white" />
               )}
             </button>
           );
         })}
       </div>
 
-      {/* 4.D SMOKED GLASS DAILY PERFORMANCE CARD */}
+      {/* 4.D DAILY PERFORMANCE DETAIL CARD */}
       {selectedDate && (
         <div
           data-testid="daily-performance-smoked-card"
           role="region"
           aria-label={tr('Detail Performa Harian', 'Daily Performance Detail')}
-          className="tv-smoked-glass-card mt-5 p-4 sm:p-5 rounded-[18px] border border-[#DDE3EA] dark:border-white/[0.09] transition-all duration-300 select-none"
+          className="mt-5 p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_4px_20px_rgba(15,23,42,0.06)] dark:shadow-none transition-all duration-200 select-none animate-in fade-in slide-in-from-top-2"
         >
-          <div className="flex items-start justify-between gap-4 pb-3 border-b border-black/10 dark:border-white/[0.08]">
+          <div className="flex items-start justify-between gap-4 pb-3 border-b border-[#E4E4E7] dark:border-[#20252D]">
             <div className="space-y-0.5 min-w-0">
-              <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#697586] dark:text-[#929BA9]">
+              <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-[#526071] dark:text-[#929BA9]">
                 {tr('PERFORMA HARIAN', 'DAILY PERFORMANCE')}
               </span>
-              <h3 className="text-xs sm:text-sm font-bold text-[#151D2A] dark:text-[#F2F4F7] truncate">
+              <h3 className="text-xs sm:text-sm font-bold text-[#0F172A] dark:text-[#F2F4F7] truncate">
                 {selectedDateFormatted}
               </h3>
             </div>
@@ -475,7 +475,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
               type="button"
               data-testid="daily-card-close-button"
               onClick={() => setSelectedDate(null)}
-              className="p-1.5 rounded-full text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] hover:bg-black/5 dark:hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+              className="p-1.5 rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
               title={tr('Tutup Detail Harian', 'Close Daily Detail')}
               aria-label={tr('Tutup Detail Harian', 'Close Daily Detail')}
             >
@@ -492,7 +492,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                     ? 'text-[#059669] dark:text-[#00A878]'
                     : selectedDateNetProfit < 0
                     ? 'text-[#E11D48] dark:text-[#E05260]'
-                    : 'text-[#151D2A] dark:text-[#F2F4F7]'
+                    : 'text-[#0F172A] dark:text-[#F2F4F7]'
                 }`}
               >
                 {isPrivacyMode
@@ -524,7 +524,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                     ? 'text-[#059669] dark:text-[#00A878]'
                     : selectedDateNetProfit < 0
                     ? 'text-[#E11D48] dark:text-[#E05260]'
-                    : 'text-[#697586] dark:text-[#929BA9]'
+                    : 'text-[#526071] dark:text-[#929BA9]'
                 }`}
               >
                 {selectedDateNetProfit > 0
@@ -537,7 +537,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
               </div>
             </div>
 
-            <div className="text-xs text-[#697586] dark:text-[#929BA9] font-sans">
+            <div className="text-xs text-[#526071] dark:text-[#929BA9] font-sans">
               {selectedTrades.length}{' '}
               {selectedTrades.length === 1
                 ? tr('Trade Selesai', 'Closed Trade')
@@ -545,13 +545,13 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
             </div>
           </div>
 
-          <div className="pt-2 border-t border-black/10 dark:border-white/[0.08]">
+          <div className="pt-2 border-t border-[#E4E4E7] dark:border-[#20252D]">
             {selectedTrades.length === 0 ? (
-              <div className="py-4 text-center text-xs text-[#697586] dark:text-[#929BA9]">
+              <div className="py-4 text-center text-xs text-[#526071] dark:text-[#929BA9]">
                 {tr('Tidak ada transaksi pada tanggal ini', 'No trades on this date')}
               </div>
             ) : (
-              <div className="divide-y divide-black/5 dark:divide-white/[0.06] max-h-60 overflow-y-auto pr-0.5">
+              <div className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] max-h-60 overflow-y-auto pr-0.5">
                 {selectedTrades.map((t) => {
                   const pnl = computeTradeNetProfit(t);
                   const isBuy = t.position === 'BUY';
@@ -563,10 +563,10 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                       key={t.id}
                       type="button"
                       onClick={() => onViewTrade?.(t)}
-                      className="w-full py-2.5 px-2 flex items-center justify-between text-left cursor-pointer text-xs font-mono-numbers tabular-nums group transition-colors hover:bg-black/5 dark:hover:bg-white/[0.05] rounded-lg"
+                      className="w-full py-2.5 px-2 flex items-center justify-between text-left cursor-pointer text-xs font-mono-numbers tabular-nums group transition-colors hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="font-bold text-[#151D2A] dark:text-[#F2F4F7] group-hover:text-[#1769E8] dark:group-hover:text-white transition-colors truncate">
+                        <span className="font-bold text-[#0F172A] dark:text-[#F2F4F7] group-hover:text-black dark:group-hover:text-white transition-colors truncate">
                           {t.instrument}
                         </span>
                         <span
@@ -578,7 +578,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                         >
                           {t.position}
                         </span>
-                        <span className="text-[#697586] dark:text-[#929BA9] text-[11px] truncate">
+                        <span className="text-[#526071] dark:text-[#929BA9] text-[11px] truncate">
                           {Number(t.lotSize || 0).toFixed(2)} Lot
                         </span>
                       </div>
@@ -590,7 +590,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                               ? 'text-[#059669] dark:text-[#00A878]'
                               : isLoss
                               ? 'text-[#E11D48] dark:text-[#E05260]'
-                              : 'text-[#697586] dark:text-[#929BA9]'
+                              : 'text-[#526071] dark:text-[#929BA9]'
                           }`}
                         >
                           {isPrivacyMode
@@ -604,7 +604,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                                 true
                               )}
                         </span>
-                        <ArrowUpRight className="h-3.5 w-3.5 text-[#697586] dark:text-[#929BA9] group-hover:text-[#1769E8] dark:group-hover:text-white transition-colors" />
+                        <ArrowUpRight className="h-3.5 w-3.5 text-[#526071] dark:text-[#929BA9] group-hover:text-[#0F172A] dark:group-hover:text-white transition-colors" />
                       </div>
                     </button>
                   );

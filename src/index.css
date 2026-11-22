@@ -3,20 +3,21 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: Arial, Helvetica, sans-serif;
-  --font-mono: Arial, Helvetica, sans-serif;
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 :root,
 html.light {
-  --tv-bg: #F5F7FA;
+  --tv-bg: #FFFFFF;
   --tv-surface: #FFFFFF;
-  --tv-surface-elevated: #EEF2F6;
-  --tv-border: #DDE3EA;
-  --tv-text-primary: #151D2A;
-  --tv-text-secondary: #697586;
-  --tv-accent: #1769E8;
-  --tv-accent-hover: #1458C4;
+  --tv-surface-elevated: #FAFAFA;
+  --tv-border: #E4E4E7;
+  --tv-text-primary: #0F172A;
+  --tv-text-secondary: #526071;
+  --tv-accent: #0F172A;
+  --tv-accent-hover: #1E293B;
   --tv-profit: #059669;
   --tv-loss: #E11D48;
   --tv-warning: #D97706;
@@ -29,8 +30,8 @@ html.dark {
   --tv-border: #20252D;
   --tv-text-primary: #F2F4F7;
   --tv-text-secondary: #929BA9;
-  --tv-accent: #3478DC;
-  --tv-accent-hover: #2860B2;
+  --tv-accent: #FFFFFF;
+  --tv-accent-hover: #E2E8F0;
   --tv-profit: #00A878;
   --tv-loss: #E05260;
   --tv-warning: #F59E0B;
@@ -47,11 +48,18 @@ html.dark {
 
   html,
   body {
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1, "zero" 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     background-color: var(--tv-bg);
     color: var(--tv-text-primary);
     overflow-x: clip;
-    transition: background-color 150ms ease, color 150ms ease;
+  }
+
+  :where(h1, h2, h3) {
+    font-family: var(--font-display);
   }
 
   button,
@@ -61,17 +69,17 @@ html.dark {
   optgroup,
   svg,
   text {
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: inherit;
   }
 
   html.dark body {
-    background-color: #080A0E;
-    color: #F2F5F9;
+    background-color: var(--tv-bg);
+    color: var(--tv-text-primary);
   }
 
   html.light body {
-    background-color: #F5F7FA;
-    color: #151D2A;
+    background-color: var(--tv-bg);
+    color: var(--tv-text-primary);
   }
 
   button:not(:disabled),
@@ -90,15 +98,63 @@ html.dark {
   }
 
   :focus-visible {
-    outline: 2px solid #1769E8;
+    outline: 2px solid #0F172A;
     outline-offset: 2px;
+  }
+
+  html.dark :focus-visible {
+    outline: 2px solid #FFFFFF;
+    outline-offset: 2px;
+  }
+
+  /* Universal tactile micro-press inside @layer base so Tailwind utilities (active:scale-*, transition-all/transform, motion-reduce:transition-none) cleanly take precedence */
+  :where(button, [role="tab"]):not(:disabled):not([aria-disabled="true"]):not([data-tactile="none"]) {
+    transition-property: color, background-color, border-color, opacity, box-shadow, scale;
+    transition-duration: 140ms;
+    transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  :where(button, [role="tab"]):not(:disabled):not([aria-disabled="true"]):not([data-tactile="none"]):active {
+    scale: 0.98;
   }
 }
 
+/* Atomic 1-frame color switch during theme toggle (eliminates 400+ simultaneous CPU color repaints) */
+html.vlo-theme-instant *,
+html.vlo-theme-instant *::before,
+html.vlo-theme-instant *::after {
+  transition-property: none !important;
+  transition-duration: 0s !important;
+}
+
+/* GPU-composited crossfade between old & new theme snapshots (locked 60fps/120fps) */
+@keyframes vloThemeFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+::view-transition-old(root) {
+  animation: none;
+  mix-blend-mode: normal;
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  animation: vloThemeFadeIn 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  mix-blend-mode: normal;
+  z-index: 2;
+}
+
 .font-mono-numbers,
-.font-mono {
-  font-family: Arial, Helvetica, sans-serif;
-  font-variant-numeric: tabular-nums;
+.font-mono,
+.tabular-nums {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums lining-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1, "zero" 0, "cv02" 1, "cv03" 1, "cv04" 1, "cv11" 1;
 }
 
 /* Custom subtle scrollbars */
@@ -108,7 +164,7 @@ html.dark {
 }
 
 html.dark ::-webkit-scrollbar-track {
-  background: #080A0E;
+  background: #050607;
 }
 
 html.dark ::-webkit-scrollbar-thumb {
@@ -121,16 +177,33 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 }
 
 html.light ::-webkit-scrollbar-track {
-  background: #F5F7FA;
+  background: #FFFFFF;
 }
 
 html.light ::-webkit-scrollbar-thumb {
-  background: #DDE3EA;
+  background: #D4D4D8;
   border-radius: 3px;
 }
 
 html.light ::-webkit-scrollbar-thumb:hover {
-  background: #C4CDD8;
+  background: #A1A1AA;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.text-editorial-justify {
+  text-align: justify;
+  text-align-last: left;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+  overflow-wrap: break-word;
 }
 
 @keyframes tvSmokedCardIn {
@@ -145,7 +218,7 @@ html.light ::-webkit-scrollbar-thumb:hover {
 }
 
 .tv-smoked-glass-card {
-  animation: tvSmokedCardIn 240ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: tvSmokedCardIn 240ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 html.dark .tv-smoked-glass-card {
@@ -160,13 +233,546 @@ html.dark .tv-smoked-glass-card {
 
 html.light .tv-smoked-glass-card,
 :root:not(.dark) .tv-smoked-glass-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.97) 0%, rgba(248, 250, 252, 0.94) 100%);
-  backdrop-filter: blur(14px) saturate(135%);
-  -webkit-backdrop-filter: blur(14px) saturate(135%);
+  background: #FFFFFF;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   box-shadow:
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.9),
-    0 8px 24px -4px rgba(15, 23, 42, 0.06),
-    0 2px 6px rgba(15, 23, 42, 0.04);
+    0 1px 2px rgba(15, 23, 42, 0.03),
+    0 4px 16px -4px rgba(15, 23, 42, 0.04);
+}
+
+@keyframes vloWaveIn {
+  0% {
+    opacity: 0;
+    transform: translate3d(-6px, 2px, 0) scale3d(0.86, 0.86, 1);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(0.5px, 0, 0) scale3d(1.03, 1.03, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloDotsFadeOut {
+  0% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale3d(1.045, 1.045, 1);
+  }
+}
+
+@keyframes vloSolidFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.94, 0.94, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloPulseOrbitSweep {
+  0% {
+    opacity: 0;
+    transform: rotate(-28deg) scale3d(0.88, 0.88, 1);
+  }
+  45% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(0deg) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloCoreSpringSettle {
+  0% {
+    opacity: 0;
+    transform: scale3d(0.45, 0.45, 1);
+  }
+  65% {
+    opacity: 1;
+    transform: scale3d(1.14, 1.14, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloWordAppear {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0) scale3d(0.98, 0.98, 1);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+.vlo-dot-wave {
+  opacity: 0;
+  transform-origin: 138px 150px;
+  will-change: opacity, transform;
+}
+
+.vlo-dots-layer {
+  transform-origin: 138px 150px;
+  will-change: opacity, transform;
+}
+
+.vlo-solid-layer {
+  opacity: 0;
+  transform-origin: 138px 150px;
+  will-change: opacity, transform;
+}
+
+.vlo-solid-pulse,
+.vlo-solid-core {
+  transform-origin: 138px 150px;
+  will-change: opacity, transform;
+}
+
+/* Normal (Splash Screen): fluid organic wave & orbital sweep (~1.6s) */
+.vlo-reveal-normal .vlo-dot-wave-0 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 0ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-1 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 60ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-2 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 115ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-3 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 170ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-4 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 225ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-5 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 285ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-6 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 350ms forwards; }
+.vlo-reveal-normal .vlo-dot-wave-7 { animation: vloWaveIn 400ms cubic-bezier(0.16, 1, 0.3, 1) 420ms forwards; }
+
+.vlo-reveal-normal .vlo-dots-layer {
+  animation: vloDotsFadeOut 480ms cubic-bezier(0.4, 0, 0.2, 1) 860ms forwards;
+}
+
+.vlo-reveal-normal .vlo-solid-layer {
+  animation: vloSolidFadeIn 540ms cubic-bezier(0.16, 1, 0.3, 1) 780ms forwards;
+}
+
+.vlo-reveal-normal .vlo-solid-pulse {
+  opacity: 0;
+  animation: vloPulseOrbitSweep 620ms cubic-bezier(0.16, 1, 0.3, 1) 830ms forwards;
+}
+
+.vlo-reveal-normal .vlo-solid-core {
+  opacity: 0;
+  animation: vloCoreSpringSettle 520ms cubic-bezier(0.34, 1.56, 0.64, 1) 920ms forwards;
+}
+
+/* Fast (Auth Modal): crisp 60fps flow (~0.95s) */
+.vlo-reveal-fast .vlo-dot-wave-0 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 0ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-1 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 35ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-2 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 70ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-3 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 105ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-4 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 140ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-5 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 180ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-6 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 220ms forwards; }
+.vlo-reveal-fast .vlo-dot-wave-7 { animation: vloWaveIn 250ms cubic-bezier(0.16, 1, 0.3, 1) 265ms forwards; }
+
+.vlo-reveal-fast .vlo-dots-layer {
+  animation: vloDotsFadeOut 320ms cubic-bezier(0.4, 0, 0.2, 1) 500ms forwards;
+}
+
+.vlo-reveal-fast .vlo-solid-layer {
+  animation: vloSolidFadeIn 380ms cubic-bezier(0.16, 1, 0.3, 1) 440ms forwards;
+}
+
+.vlo-reveal-fast .vlo-solid-pulse {
+  opacity: 0;
+  animation: vloPulseOrbitSweep 440ms cubic-bezier(0.16, 1, 0.3, 1) 470ms forwards;
+}
+
+.vlo-reveal-fast .vlo-solid-core {
+  opacity: 0;
+  animation: vloCoreSpringSettle 380ms cubic-bezier(0.34, 1.56, 0.64, 1) 520ms forwards;
+}
+
+.vlo-splash-wordmark {
+  opacity: 0;
+  will-change: opacity, transform;
+  animation: vloWordAppear 480ms cubic-bezier(0.16, 1, 0.3, 1) 1040ms forwards;
+}
+
+/* Interactive BrandLogo micro-motion (Navbar, Sidebar, MobileNav — 60fps GPU-composited <= 220ms) */
+.vlo-tile-surface {
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 200ms ease,
+    box-shadow 200ms ease,
+    background-color 200ms ease;
+}
+
+.vlo-logo-interactive .vlo-mark-body,
+.vlo-logo-interactive .vlo-mark-pulse,
+.vlo-logo-interactive .vlo-mark-core {
+  transform-origin: 138px 150px;
+  transition:
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    fill 160ms ease;
+}
+
+.vlo-wordmark-interactive {
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 160ms ease;
+}
+
+.group:hover .vlo-tile-surface,
+.vlo-tile-surface:hover {
+  transform: translate3d(0, -0.5px, 0) scale3d(1.03, 1.03, 1);
+  border-color: rgba(15, 23, 42, 0.24);
+}
+
+html.dark .group:hover .vlo-tile-surface,
+html.dark .vlo-tile-surface:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.group:hover .vlo-logo-interactive .vlo-mark-body,
+.vlo-logo-interactive:hover .vlo-mark-body {
+  transform: scale3d(1.015, 1.015, 1);
+}
+
+.group:hover .vlo-logo-interactive .vlo-mark-pulse,
+.vlo-logo-interactive:hover .vlo-mark-pulse {
+  transform: rotate(9deg) scale3d(1.04, 1.04, 1);
+}
+
+.group:hover .vlo-logo-interactive .vlo-mark-core,
+.vlo-logo-interactive:hover .vlo-mark-core {
+  transform: scale3d(1.13, 1.13, 1);
+}
+
+.group:hover .vlo-wordmark-interactive {
+  transform: translate3d(1px, 0, 0);
+}
+
+.group:active .vlo-tile-surface,
+.vlo-tile-surface:active {
+  transform: scale3d(0.95, 0.95, 1);
+}
+
+.group:active .vlo-logo-interactive .vlo-mark-pulse,
+.vlo-logo-interactive:active .vlo-mark-pulse {
+  transform: rotate(15deg) scale3d(0.96, 0.96, 1);
+}
+
+.group:active .vlo-logo-interactive .vlo-mark-core,
+.vlo-logo-interactive:active .vlo-mark-core {
+  transform: scale3d(0.9, 0.9, 1);
+}
+
+/* Fluid GPU-composited Notification Center open/close (zero layout thrash, zero frame drops) */
+.vlo-notif-panel {
+  transform-origin: top center;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transition:
+    transform 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 640px) {
+  .vlo-notif-panel {
+    transform-origin: top right;
+  }
+}
+
+.vlo-notif-panel-open {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  pointer-events: auto;
+}
+
+.vlo-notif-panel-closed {
+  opacity: 0;
+  transform: translate3d(0, -10px, 0) scale3d(0.96, 0.96, 1);
+  pointer-events: none;
+}
+
+/* ── VLO Mechanical Orbital Assembly (100% GPU-composited transform + opacity) ── */
+.vm {
+  --vm-t: 1;
+  --vm-tile: #FFFFFF;
+  --vm-tile-stroke: #DDE3EA;
+  --vm-body: #151D2A;
+  --vm-pulse: #1769E8;
+  --vm-core: #059669;
+  --vm-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --vm-soft: cubic-bezier(0.45, 0, 0.3, 1);
+  display: block;
+}
+
+@media (prefers-color-scheme: dark) {
+  .vm[data-theme="auto"] {
+    --vm-tile: #11151B;
+    --vm-tile-stroke: #252B34;
+    --vm-body: #F2F5F9;
+    --vm-core: #10B981;
+  }
+}
+
+html.light .vm[data-theme="auto"] {
+  --vm-tile: #FFFFFF;
+  --vm-tile-stroke: #DDE3EA;
+  --vm-body: #151D2A;
+  --vm-core: #059669;
+}
+
+html.dark .vm[data-theme="auto"],
+.vm[data-theme="dark"] {
+  --vm-tile: #11151B;
+  --vm-tile-stroke: #252B34;
+  --vm-body: #F2F5F9;
+  --vm-core: #10B981;
+}
+
+.vm .tile-bg {
+  fill: var(--vm-tile);
+  stroke: var(--vm-tile-stroke);
+  transform-origin: 128px 128px;
+  animation: vm-tile calc(380ms * var(--vm-t)) var(--vm-expo) both;
+}
+
+.vm .body-path { fill: var(--vm-body); }
+.vm .pulse-path { fill: var(--vm-pulse); }
+.vm .core-dot { fill: var(--vm-core); }
+
+.vm .vm__all,
+.vm .vm__lever,
+.vm .vm__orbit,
+.vm .core-dot,
+.vm .vm__ripple,
+.vm .vm__sheen {
+  transform-origin: 138px 150px;
+}
+
+@keyframes vm-tile {
+  from { opacity: 0; transform: scale3d(0.96, 0.96, 1); }
+  to { opacity: 1; transform: scale3d(1, 1, 1); }
+}
+
+.vm .vm__lever {
+  will-change: transform, opacity;
+  animation:
+    vm-lever calc(820ms * var(--vm-t)) linear both,
+    vm-fade calc(200ms * var(--vm-t)) var(--vm-expo) both;
+}
+
+@keyframes vm-lever {
+  0% { transform: translate3d(5px, -6px, 0) rotate(24deg) scale3d(0.93, 0.93, 1); animation-timing-function: cubic-bezier(0.32, 0.72, 0.12, 1); }
+  52% { transform: translate3d(0, 0, 0) rotate(-3.2deg) scale3d(1.014, 1.014, 1); animation-timing-function: var(--vm-soft); }
+  76% { transform: translate3d(0, 0, 0) rotate(1deg) scale3d(0.997, 0.997, 1); animation-timing-function: var(--vm-soft); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg) scale3d(1, 1, 1); }
+}
+
+.vm .vm__orbit {
+  will-change: transform, opacity;
+  animation:
+    vm-orbit calc(780ms * var(--vm-t)) linear calc(260ms * var(--vm-t)) both,
+    vm-fade calc(200ms * var(--vm-t)) ease-out calc(260ms * var(--vm-t)) both;
+}
+
+@keyframes vm-orbit {
+  0% { transform: rotate(-65deg) scale3d(0.9, 0.9, 1); animation-timing-function: cubic-bezier(0.55, 0.05, 0.12, 1); }
+  72% { transform: rotate(2.6deg) scale3d(1.012, 1.012, 1); animation-timing-function: var(--vm-soft); }
+  88% { transform: rotate(-0.7deg) scale3d(0.998, 0.998, 1); animation-timing-function: var(--vm-soft); }
+  100% { transform: rotate(0deg) scale3d(1, 1, 1); }
+}
+
+@keyframes vm-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vm .core-dot {
+  will-change: transform;
+  animation:
+    vm-core calc(580ms * var(--vm-t)) linear calc(620ms * var(--vm-t)) both,
+    vm-breathe calc(4000ms * var(--vm-t)) ease-in-out calc(1450ms * var(--vm-t)) infinite;
+}
+
+@keyframes vm-core {
+  0% { transform: translate3d(24px, -16px, 0) scale3d(0, 0, 1); animation-timing-function: cubic-bezier(0.5, 0, 0.75, 0.4); }
+  40% { transform: translate3d(0, 0, 0) scale3d(1.16, 1.16, 1); animation-timing-function: var(--vm-soft); }
+  70% { transform: translate3d(0, 0, 0) scale3d(0.97, 0.97, 1); animation-timing-function: var(--vm-soft); }
+  100% { transform: translate3d(0, 0, 0) scale3d(1, 1, 1); }
+}
+
+@keyframes vm-breathe {
+  0%, 100% { transform: scale3d(1, 1, 1); }
+  50% { transform: scale3d(1.03, 1.03, 1); }
+}
+
+.vm .vm__ripple {
+  fill: none;
+  stroke: var(--vm-core);
+  stroke-width: 1.25;
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: vm-ripple calc(540ms * var(--vm-t)) cubic-bezier(0.2, 0.7, 0.25, 1) calc(840ms * var(--vm-t)) both;
+}
+
+@keyframes vm-ripple {
+  0% { transform: scale3d(0.9, 0.9, 1); opacity: 0; }
+  16% { opacity: 0.3; }
+  100% { transform: scale3d(2.6, 2.6, 1); opacity: 0; }
+}
+
+.vm .vm__all {
+  will-change: transform;
+  animation: vm-sync calc(420ms * var(--vm-t)) linear calc(980ms * var(--vm-t)) both;
+}
+
+@keyframes vm-sync {
+  0% { transform: rotate(0deg) scale3d(1, 1, 1); animation-timing-function: cubic-bezier(0.2, 0.8, 0.3, 1); }
+  25% { transform: rotate(0.6deg) scale3d(1.01, 1.01, 1); animation-timing-function: var(--vm-soft); }
+  55% { transform: rotate(-0.35deg) scale3d(0.996, 0.996, 1); animation-timing-function: var(--vm-soft); }
+  80% { transform: rotate(0.1deg) scale3d(1.001, 1.001, 1); animation-timing-function: var(--vm-soft); }
+  100% { transform: rotate(0deg) scale3d(1, 1, 1); }
+}
+
+.vm .vm__sheen {
+  opacity: 0;
+  will-change: transform, opacity;
+  animation: vm-sheen calc(4000ms * var(--vm-t)) cubic-bezier(0.4, 0, 0.2, 1) calc(1650ms * var(--vm-t)) infinite;
+}
+
+@keyframes vm-sheen {
+  0% { transform: rotate(-82deg); opacity: 0; }
+  6% { opacity: 1; }
+  26% { transform: rotate(4deg); opacity: 1; }
+  32%, 100% { transform: rotate(4deg); opacity: 0; }
+}
+
+@keyframes vloEnter {
+  from {
+    opacity: var(--vlo-enter-opacity, 1);
+    transform: translate3d(0, var(--vlo-enter-y, 0px), 0)
+      scale3d(var(--vlo-enter-scale, 1), var(--vlo-enter-scale, 1), 1);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloModalDialogInMobile {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0) scale3d(0.985, 0.985, 1);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloModalDialogInDesktop {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale3d(0.975, 0.975, 1);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale3d(1, 1, 1);
+  }
+}
+
+@keyframes vloViewEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes vloViewFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vloSkeletonPulse {
+  0%, 100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+/* Revive .animate-in / .fade-in / .slide-in-from-top-* utilities for Tailwind v4 (100% GPU-composited) */
+/* IMPORTANT: Use 'backwards' (not 'both'/'forwards') so transform releases cleanly to 'none' after entrance and never traps position:fixed descendants. */
+.animate-in {
+  --vlo-enter-opacity: 1;
+  --vlo-enter-y: 0px;
+  --vlo-enter-scale: 1;
+  animation: vloEnter var(--vlo-enter-dur, 180ms) cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.animate-in.duration-150 {
+  --vlo-enter-dur: 150ms;
+}
+
+.animate-in.duration-200 {
+  --vlo-enter-dur: 200ms;
+}
+
+.fade-in {
+  --vlo-enter-opacity: 0;
+}
+
+.slide-in-from-top-1 {
+  --vlo-enter-y: -6px;
+}
+
+.slide-in-from-top-2 {
+  --vlo-enter-y: -10px;
+}
+
+/* Smooth GPU card entrance inside every modal backdrop (.animate-in.fixed) */
+.animate-in.fixed > :first-child {
+  animation: vloModalDialogInMobile 210ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@media (min-width: 640px) {
+  .animate-in.fixed > :first-child {
+    animation: vloModalDialogInDesktop 190ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  }
+}
+
+/* Subtle fluid view entrance when switching tabs without unmounting preserved state */
+.vlo-view-enter {
+  animation: vloViewEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.vlo-view-fade {
+  animation: vloViewFade 160ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Calm editorial loading skeleton */
+.vlo-skeleton {
+  background-color: #F4F4F5;
+  animation: vloSkeletonPulse 1.5s ease-in-out infinite;
+}
+
+html.dark .vlo-skeleton {
+  background-color: #161A22;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -177,6 +783,35 @@ html.light .tv-smoked-glass-card,
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .vlo-dots-layer,
+  .vm .vm__ripple,
+  .vm .vm__sheen {
+    display: none !important;
+  }
+
+  .vlo-solid-layer,
+  .vlo-solid-pulse,
+  .vlo-solid-core,
+  .vlo-splash-wordmark,
+  .vm .tile-bg,
+  .vm .vm__all,
+  .vm .vm__lever,
+  .vm .vm__orbit,
+  .vm .core-dot,
+  .animate-in,
+  .animate-in.fixed > :first-child,
+  .vlo-view-enter,
+  .vlo-view-fade,
+  .vlo-skeleton {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+
+  :where(button, [role="tab"]):active {
+    scale: 1 !important;
   }
 }
 
@@ -212,3 +847,108 @@ html.light .tv-smoked-glass-card,
   pointer-events: auto !important;
   touch-action: none !important;
 }
+
+/* Editorial Light Mode surface adaptation for Market Chart workspace chrome, floating bars, wheel pickers & modals */
+html.light [data-testid="market-chart-view"] .bg-\[\#131722\] {
+  background-color: #FFFFFF;
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#131722\]\/95 {
+  background-color: rgba(255, 255, 255, 0.96);
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#0B0E14\] {
+  background-color: #F4F4F5;
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#1E222D\] {
+  background-color: #F4F4F5;
+}
+
+html.light [data-testid="market-chart-view"] .hover\:bg-\[\#1E222D\]:hover {
+  background-color: #F4F4F5;
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#2A2E39\] {
+  background-color: #0F172A;
+  color: #FFFFFF;
+}
+
+html.light [data-testid="market-chart-view"] .hover\:bg-\[\#2A2E39\]:hover {
+  background-color: #E4E4E7;
+}
+
+html.light [data-testid="market-chart-view"] .hover\:bg-\[\#363A45\]:hover {
+  background-color: #1E293B;
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#131722\].text-white,
+html.light [data-testid="market-chart-view"] .bg-\[\#1E222D\].text-white,
+html.light [data-testid="market-chart-view"] .text-\[\#F8FAFC\] {
+  color: #0F172A;
+}
+
+html.light [data-testid="market-chart-view"] .text-\[\#D1D4DC\] {
+  color: #1E293B;
+}
+
+html.light [data-testid="market-chart-view"] .text-\[\#868993\],
+html.light [data-testid="market-chart-view"] .text-\[\#787B86\] {
+  color: #526071;
+}
+
+html.light [data-testid="market-chart-view"] .text-\[\#5D606B\] {
+  color: #94A3B8;
+}
+
+html.light [data-testid="market-chart-view"] .hover\:text-white:hover,
+html.light [data-testid="market-chart-view"] .hover\:text-\[\#D1D4DC\]:hover {
+  color: #0F172A;
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#2A2E39\],
+html.light [data-testid="market-chart-view"] .bg-\[\#2A2E39\] .text-\[\#D1D4DC\],
+html.light [data-testid="market-chart-view"] .bg-\[\#2A2E39\].hover\:text-white:hover {
+  color: #FFFFFF;
+}
+
+html.light [data-testid="market-chart-view"] .border-white\/\[0\.06\],
+html.light [data-testid="market-chart-view"] .border-white\/\[0\.07\],
+html.light [data-testid="market-chart-view"] .border-white\/\[0\.08\],
+html.light [data-testid="market-chart-view"] .border-white\/5,
+html.light [data-testid="market-chart-view"] .border-white\/10,
+html.light [data-testid="market-chart-view"] .border-white\/15,
+html.light [data-testid="market-chart-view"] .border-white\/20,
+html.light [data-testid="market-chart-view"] .border-white\/25,
+html.light [data-testid="market-chart-view"] .border-\[\#D1D4DC\] {
+  border-color: #E4E4E7;
+}
+
+html.light [data-testid="market-chart-view"] .bg-white\/\[0\.08\] {
+  background-color: #E4E4E7;
+}
+
+html.light [data-testid="market-chart-view"] .bg-black\/60,
+html.light [data-testid="market-chart-view"] .bg-black\/65 {
+  background-color: rgba(15, 23, 42, 0.35);
+}
+
+html.light [data-testid="market-chart-view"] .bg-white.text-black {
+  background-color: #0F172A;
+  color: #FFFFFF;
+}
+
+html.light [data-testid="market-chart-view"] .from-\[\#131722\]\/90 {
+  --tw-gradient-from: rgba(255, 255, 255, 0.94);
+}
+
+html.light [data-testid="market-chart-view"] .bg-\[\#2A2E39\] .bg-white {
+  background-color: #FFFFFF;
+}
+
+html.light [data-testid="market-chart-view"] [data-testid="replay-cutter-handle"] {
+  background-color: #FFFFFF;
+  color: #0F172A;
+  border-color: #CBD5E1;
+}
+

@@ -7,6 +7,7 @@ import {
   TradeLifecycleStatus,
   TradeOrderType,
   TradeCloseType,
+  PlaybookSetup,
 } from '../../types/trade';
 import { AppSettings } from '../../types/settings';
 import {
@@ -53,6 +54,14 @@ import {
   scanTradeScreenshotOrUrl,
   resolveTradingViewSnapshotUrl,
 } from '../../utils/tradeScreenshotScanner';
+import {
+  MISTAKE_TAGS_CATALOG,
+  EMOTION_TAGS_CATALOG,
+  getActiveChecklist,
+  getActivePlaybooks,
+  resolveTradeBehavior,
+} from '../../utils/journalExtras';
+import { playErrorTone } from '../../utils/soundEngine';
 import { useLanguage } from '../../utils/language';
 import {
   X,
@@ -66,6 +75,9 @@ import {
   Check,
   Search,
   Sparkles,
+  ShieldAlert,
+  ClipboardCheck,
+  BookOpen,
 } from 'lucide-react';
 
 export interface TradeSaveResult {
@@ -80,6 +92,9 @@ interface TradeFormProps {
   settings: AppSettings;
   currentEquity: number;
   existingTrades?: Trade[];
+  dailyLossToday?: number;
+  activeAccountId?: string;
+  initialPlaybook?: PlaybookSetup | null;
   onSave: (
     trade: Trade,
     originalId?: string
@@ -147,9 +162,9 @@ const EXECUTION_ADHERENCE_OPTIONS: { value: ExecutionAdherenceTag; labelId: stri
  */
 export const compressAndResizeImage = (
   file: File | Blob,
-  maxWidth = 1920,
-  maxHeight = 1920,
-  quality = 0.9
+  maxWidth = 1440,
+  maxHeight = 2200,
+  quality = 0.82
 ): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -198,11 +213,14 @@ export const TradeForm: React.FC<TradeFormProps> = ({
   settings,
   currentEquity,
   existingTrades = [],
+  dailyLossToday = 0,
+  activeAccountId,
+  initialPlaybook = null,
   onSave,
   onCancel,
   isPopupModal = true,
 }) => {
-  const { tr } = useLanguage();
+  const { tr, isEn } = useLanguage();
   const { preferredCurrency, formatDynamic } = useGlobalCurrency();
   const fmtMoney = (val: number) =>
     preferredCurrency === 'IDR' ? formatDynamic(val) : formatCurrency(val, settings);
@@ -219,6 +237,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
   // View State: Main View vs Slide-Up Detail View
   const [isDetailViewOpen, setIsDetailViewOpen] = useState<boolean>(false);
+  const [isQuickScanUrlOpen, setIsQuickScanUrlOpen] = useState<boolean>(false);
 
   // Core Form State
   const [id, setId] = useState(initialTrade?.id || generateUniqueId());
@@ -312,6 +331,25 @@ export const TradeForm: React.FC<TradeFormProps> = ({
   const [cleanExecutionNotes, setCleanExecutionNotes] = useState<string>(
     initialParsedAdherence.cleanNotes
   );
+
+  // Behavioral, Pre-Trade SOP Checklist & Playbook state
+  const initialBehavior = initialTrade ? resolveTradeBehavior(initialTrade) : null;
+  const effectiveChecklist = useMemo(
+    () => getActiveChecklist(settings).filter((item) => item.enabled),
+    [settings]
+  );
+  const effectivePlaybooks = useMemo(() => getActivePlaybooks(settings), [settings]);
+
+  const [mistakeTags, setMistakeTags] = useState<string[]>(initialBehavior?.mistakeTags || []);
+  const [emotionTag, setEmotionTag] = useState<string>(initialBehavior?.emotionTag || '');
+  const [playbookId, setPlaybookId] = useState<string>(
+    initialBehavior?.playbookId || initialPlaybook?.id || ''
+  );
+  const [checkedChecklistIds, setCheckedChecklistIds] = useState<string[]>(() =>
+    initialBehavior?.checklistPassed ? effectiveChecklist.map((c) => c.id) : []
+  );
+  const [isChecklistExpanded, setIsChecklistExpanded] = useState<boolean>(false);
+  const guardrailTrippedRef = useRef<boolean>(false);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -423,6 +461,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       profit?: number | null;
       status?: 'PLANNED' | 'ACTIVE' | 'CLOSED';
       plannedRiskReward: number | null;
+      modelUsed?: string;
     };
   } | null>(null);
 
@@ -531,6 +570,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       const parsedAdherence = parseExecutionAdherenceTag(initialTrade.executionNotes);
       setAdherenceTag(parsedAdherence.tag);
       setCleanExecutionNotes(parsedAdherence.cleanNotes);
+      const behav = resolveTradeBehavior(initialTrade);
+      setMistakeTags(behav.mistakeTags);
+      setEmotionTag(behav.emotionTag || '');
+      setPlaybookId(behav.playbookId || '');
+      setCheckedChecklistIds(behav.checklistPassed ? effectiveChecklist.map((c) => c.id) : []);
+      setIsChecklistExpanded(false);
       setErrorMsg(null);
       setIsDetailViewOpen(false);
     } else {
@@ -544,8 +589,8 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       setOrderType('Market');
       setLifecycleStatus('PLANNED');
       setCloseType('TP');
-      setStrategy('');
-      setSession('London');
+      setStrategy(initialPlaybook?.name || '');
+      setSession(initialPlaybook?.session || 'London');
       setLotSize('0.01');
       setEntryPrice('');
       setStopLoss('');
@@ -563,15 +608,20 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       setScreenshotUrl('');
       setAfterScreenshotUrl('');
       setNotes('');
-      setEntryReason('');
+      setEntryReason(initialPlaybook?.summary || '');
       setPostTradeEvaluation('');
       setAdherenceTag('AUTO');
       setCleanExecutionNotes('');
+      setMistakeTags([]);
+      setEmotionTag('');
+      setPlaybookId(initialPlaybook?.id || '');
+      setCheckedChecklistIds([]);
+      setIsChecklistExpanded(false);
       setErrorMsg(null);
       setIsDetailViewOpen(false);
     }
     pnlInputModeRef.current = 'gross';
-  }, [initialTrade, settings.defaultRiskPercent]);
+  }, [initialTrade, initialPlaybook, settings.defaultRiskPercent]);
 
   // Internal Lot-based Pip Value, SL/TP Distance, Risk Amount, Potential Profit & Dynamic RR Engine
   const numEntry = parseFloat(entryPrice);
@@ -892,9 +942,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         extractedInfoSummary.push('Status: PLANNED');
       } else if (data.status === 'ACTIVE' || data.status === 'CLOSED') {
         setLifecycleStatus(data.status === 'ACTIVE' ? 'OPEN' : 'CLOSED');
-        if (data.status === 'ACTIVE') {
-          setOrderType('Market');
-        }
+        setOrderType('Market');
         extractedInfoSummary.push(`Status: ${data.status}`);
       }
       if (data.entryPrice !== null && data.entryPrice !== undefined) {
@@ -974,8 +1022,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         setGrossProfit(p.toFixed(2));
         setNetProfit(p.toFixed(2));
         setOutcome(classifyNetProfitOutcome(p));
+        if (data.status === 'CLOSED') {
+          setCloseType(p > 0 ? 'TP' : p < 0 ? 'SL' : 'Manual');
+        }
         extractedInfoSummary.push(`P/L: ${p >= 0 ? '+' : ''}${p.toFixed(2)}`);
       }
+      setIsQuickScanUrlOpen(false);
 
       if (data.notes) {
         setNotes((prev) => {
@@ -1005,6 +1057,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           profit: data.profit,
           status: data.status,
           plannedRiskReward: data.plannedRiskReward,
+          modelUsed: data.modelUsed,
         },
       });
     } catch (err: any) {
@@ -1388,6 +1441,18 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           : getCurrentUsdIdrSnapshot(getCachedUsdIdrRate())
         : undefined;
 
+    const resolvedAccountId =
+      initialTrade?.accountId ||
+      existingResolved?.accountId ||
+      (activeAccountId && activeAccountId !== 'ALL' ? activeAccountId : undefined);
+    const checklistPassed =
+      effectiveChecklist.length > 0 && checkedChecklistIds.length >= effectiveChecklist.length
+        ? true
+        : checkedChecklistIds.length > 0
+        ? false
+        : existingResolved?.checklistPassed;
+    const finalRuleCompliant = !isGuardrailBreached;
+
     const lifecycleMeta: TradeLifecycleMeta = {
       status: effectiveStatus,
       orderType,
@@ -1431,6 +1496,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       cancelledAt: existingResolved?.cancelledAt,
       closeExchangeRate: finalCloseSnapshot,
       activityLog: nextActivityLog,
+      mistakeTags: mistakeTags.length > 0 ? mistakeTags : undefined,
+      emotionTag: emotionTag || undefined,
+      accountId: resolvedAccountId,
+      playbookId: playbookId || undefined,
+      checklistPassed,
+      ruleCompliant: finalRuleCompliant,
     };
 
     const finalExecutionNotes = encodeLifecycleMetaIntoExecutionNotes(
@@ -1468,6 +1539,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           : undefined,
       executionNotes: finalExecutionNotes || undefined,
       closeExchangeRate: finalCloseSnapshot,
+      mistakeTags: mistakeTags.length > 0 ? mistakeTags : undefined,
+      emotionTag: emotionTag || undefined,
+      accountId: resolvedAccountId,
+      playbookId: playbookId || undefined,
+      checklistPassed,
+      ruleCompliant: finalRuleCompliant,
       isDemo: initialTrade?.isDemo || false,
       createdAt: initialTrade?.createdAt || nowIso,
       updatedAt: nowIso,
@@ -1520,6 +1597,44 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       ? lotOrderMetrics.riskPercent
       : parseFloat(riskPercentage) || 0;
 
+  // Rule Guardrail evaluation (Risk per trade + Daily Loss Limit)
+  const maxTradeRiskLimit = settings.maxTradeRiskPercent || 2;
+  const maxDailyLossLimitUsd =
+    (activeCapitalBasisValue * (settings.maxDailyLossPercent || 3)) / 100;
+  const isRiskGuardrailBreached =
+    displayedRiskPercent > 0 && displayedRiskPercent > maxTradeRiskLimit + 0.001;
+  const isDailyLossGuardrailBreached =
+    settings.dailyLossAlertEnabled !== false &&
+    maxDailyLossLimitUsd > 0 &&
+    dailyLossToday >= maxDailyLossLimitUsd;
+  const isGuardrailBreached = isRiskGuardrailBreached || isDailyLossGuardrailBreached;
+
+  useEffect(() => {
+    if (isGuardrailBreached && !guardrailTrippedRef.current) {
+      guardrailTrippedRef.current = true;
+      playErrorTone();
+    } else if (!isGuardrailBreached) {
+      guardrailTrippedRef.current = false;
+    }
+  }, [isGuardrailBreached]);
+
+  const selectedPlaybookObj = useMemo(
+    () => effectivePlaybooks.find((p) => p.id === playbookId) || null,
+    [effectivePlaybooks, playbookId]
+  );
+
+  const toggleMistakeTag = (tagId: string) => {
+    setMistakeTags((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    );
+  };
+
+  const toggleChecklistItem = (itemId: string) => {
+    setCheckedChecklistIds((prev) =>
+      prev.includes(itemId) ? prev.filter((id) => id !== itemId) : [...prev, itemId]
+    );
+  };
+
   const activeSessionObj =
     PRIMARY_SESSIONS.find((s) => s.key === session) || PRIMARY_SESSIONS[1];
 
@@ -1527,7 +1642,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
     <form
       onSubmit={handleSubmit}
       data-testid="add-trade-popup-form"
-      className="relative w-[92vw] sm:w-full max-w-[420px] max-h-[calc(100vh-1.5rem)] supports-[height:100dvh]:max-h-[calc(100dvh-1.5rem)] my-auto shrink-0 flex flex-col rounded-[28px] border border-[#DDE3EA] dark:border-[#1E232B] bg-white dark:bg-[#0B0D11] text-[#151D2A] dark:text-[#F2F4F7] font-['Arial',Helvetica,sans-serif] shadow-[0_24px_64px_rgba(15,23,42,0.18)] dark:shadow-[0_24px_64px_rgba(0,0,0,0.85)] overflow-hidden select-none"
+      className="relative w-[92vw] sm:w-full max-w-[420px] sm:max-w-[460px] max-h-[calc(100vh-1.5rem)] supports-[height:100dvh]:max-h-[calc(100dvh-1.5rem)] my-auto shrink-0 flex flex-col rounded-2xl border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[#0F172A] dark:text-[#F2F4F7] font-sans shadow-[0_20px_50px_-12px_rgba(15,23,42,0.22)] dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.8)] overflow-hidden select-none"
       onClick={(e) => e.stopPropagation()}
     >
       {/* =================================================================== */}
@@ -1540,15 +1655,15 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         aria-hidden={isDetailViewOpen}
       >
         {/* 1. Header "Tambah Transaksi" & Close Button */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#DDE3EA] dark:border-[#1E232B] shrink-0">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#E4E4E7] dark:border-[#20252D] shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <h2 className="text-[15px] font-bold tracking-tight text-[#151D2A] dark:text-[#F2F4F7] truncate">
+            <h2 className="text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#F2F4F7] truncate">
               {initialTrade
                 ? tr('Edit Transaksi', 'Edit Trade')
                 : tr('Tambah Transaksi', 'Add Trade')}
             </h2>
             {lifecycleStatus === 'CLOSED' && (
-              <span className="text-[10px] font-semibold tracking-wider uppercase text-[#697586] dark:text-[#929BA9]">
+              <span className="text-[10px] font-semibold tracking-wider uppercase text-[#526071] dark:text-[#929BA9]">
                 · {tr('SELESAI', 'CLOSED')}
               </span>
             )}
@@ -1557,7 +1672,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="rounded-full p-1.5 text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] hover:bg-[#F5F7FA] dark:hover:bg-[#151921] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+            className="rounded-full p-1.5 text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] active:scale-95 transition-all disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             title={tr('Tutup Formulir', 'Close Form')}
             aria-label={tr('Tutup formulir transaksi', 'Close trade form')}
           >
@@ -1566,16 +1681,220 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         </div>
 
         {/* Main Body (Compact, fits standard mobile screens without scroll, safe overflow-y-auto fallback for tiny screens/keyboard) */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[#DDE3EA] dark:divide-[#1E232B] min-h-0">
+        <div className="flex-1 overflow-y-auto divide-y divide-[#E4E4E7] dark:divide-[#20252D] min-h-0">
           {/* Error Banner (if any) */}
           {errorMsg && !isDetailViewOpen && (
-            <div ref={errorRef} tabIndex={-1} className="px-5 py-2.5 bg-[#E05260]/10 outline-none">
-              <div className="flex items-center gap-2 text-[11px] text-[#E05260]">
+            <div ref={errorRef} tabIndex={-1} className="px-5 py-2.5 bg-[#E11D48]/10 dark:bg-[#E05260]/10 outline-none">
+              <div className="flex items-center gap-2 text-[11px] text-[#E11D48] dark:text-[#E05260]">
                 <AlertCircle className="h-3.5 w-3.5 stroke-[2] shrink-0" />
                 <span className="leading-snug">{errorMsg}</span>
               </div>
             </div>
           )}
+
+          {/* Guardrail Alert Banner (Only visible when risk or daily loss rule is breached) */}
+          {isGuardrailBreached && !isDetailViewOpen && (
+            <div className="px-5 py-2 bg-[#E11D48]/8 dark:bg-[#E05260]/12">
+              <div className="flex items-start gap-2 text-[11px] text-[#E11D48] dark:text-[#E05260]">
+                <ShieldAlert className="h-3.5 w-3.5 stroke-[2] shrink-0 mt-0.5" />
+                <div className="leading-snug space-y-0.5">
+                  {isRiskGuardrailBreached && (
+                    <p>
+                      <span className="font-bold">{tr('Guardrail Risiko:', 'Risk Guardrail:')}</span>{' '}
+                      {tr(
+                        `Risiko ${displayedRiskPercent.toFixed(2)}% melampaui batas maksimal ${maxTradeRiskLimit}% per transaksi.`,
+                        `Risk ${displayedRiskPercent.toFixed(2)}% exceeds your ${maxTradeRiskLimit}% max per trade.`
+                      )}
+                    </p>
+                  )}
+                  {isDailyLossGuardrailBreached && (
+                    <p>
+                      <span className="font-bold">{tr('Batas Rugi Harian:', 'Daily Loss Limit:')}</span>{' '}
+                      {tr(
+                        `Kerugian hari ini (${fmtMoney(dailyLossToday)}) telah menyentuh batas ${settings.maxDailyLossPercent}%.`,
+                        `Today's loss (${fmtMoney(dailyLossToday)}) has reached your ${settings.maxDailyLossPercent}% limit.`
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 1B. Scan Kilat Individual (MT5 / TradingView) — Accessible directly in Main View */}
+          <div className="px-5 py-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="block text-[10px] text-[#697586] dark:text-[#929BA9]">
+                  {tr('Scan Kilat Individual', 'Quick Individual Scan')}
+                </span>
+                <span className="block text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F4F7] truncate">
+                  {isScanningScreenshot
+                    ? tr('Memindai Entry, SL, TP & Lot...', 'Scanning Entry, SL, TP & Lot...')
+                    : tr('MT5 atau TradingView (Gambar / URL)', 'MT5 or TradingView (Image / URL)')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label
+                  data-testid="main-view-scan-upload-label"
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-[11px] font-bold transition-colors shrink-0 ${
+                    isScanningScreenshot
+                      ? 'bg-[#FAFAFA] dark:bg-[#12161D] text-[#697586] dark:text-[#929BA9] border border-[#E4E4E7] dark:border-[#1E232B] cursor-wait'
+                      : 'bg-[#151D2A] hover:bg-[#1E293B] dark:bg-[#F2F4F7] dark:hover:bg-white text-white dark:text-[#050607] cursor-pointer'
+                  }`}
+                  title={tr(
+                    'Unggah screenshot chart/order MT5 atau TradingView untuk isi otomatis',
+                    'Upload MT5 or TradingView chart/order screenshot to auto-fill'
+                  )}
+                >
+                  {isScanningScreenshot ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin stroke-[2]" />
+                      <span>{tr('Memindai...', 'Scanning...')}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-3.5 w-3.5 stroke-[2]" />
+                      <span>{tr('Scan Gambar', 'Scan Image')}</span>
+                    </>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    disabled={isScanningScreenshot}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  disabled={isScanningScreenshot}
+                  onClick={() => setIsQuickScanUrlOpen((prev) => !prev)}
+                  className={`inline-flex items-center justify-center h-8 px-2.5 rounded-full border text-[11px] font-semibold transition-colors cursor-pointer shrink-0 ${
+                    isQuickScanUrlOpen
+                      ? 'bg-[#151D2A] text-white border-[#151D2A] dark:bg-[#F2F4F7] dark:text-[#050607] dark:border-[#F2F4F7]'
+                      : 'bg-[#FAFAFA] dark:bg-[#12161D] border-[#E4E4E7] dark:border-[#1E232B] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                  }`}
+                  title={tr('Tempel tautan snapshot TradingView', 'Paste TradingView snapshot link')}
+                >
+                  URL
+                </button>
+
+                {screenshotUrl.trim() && !isScanningScreenshot && (
+                  <button
+                    type="button"
+                    onClick={() => handleScanScreenshotAI()}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-[#FAFAFA] dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#1E232B] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer shrink-0"
+                    title={tr('Pindai Ulang Screenshot', 'Rescan Screenshot')}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 stroke-[1.85]" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {isQuickScanUrlOpen && (
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <input
+                  type="text"
+                  value={screenshotUrl.startsWith('data:image/') ? '' : screenshotUrl}
+                  disabled={isScanningScreenshot}
+                  onChange={(e) => {
+                    setScreenshotUrl(e.target.value);
+                    setScanResultFeedback(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && screenshotUrl.trim()) {
+                      e.preventDefault();
+                      handleScanScreenshotAI();
+                    }
+                  }}
+                  placeholder={tr(
+                    'Tempel URL snapshot TradingView (https://www.tradingview.com/x/...)',
+                    'Paste TradingView snapshot URL (https://www.tradingview.com/x/...)'
+                  )}
+                  className="flex-1 bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] py-1 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                />
+                <button
+                  type="button"
+                  disabled={isScanningScreenshot || !screenshotUrl.trim()}
+                  onClick={() => handleScanScreenshotAI()}
+                  className="h-7 px-3 rounded-full bg-[#151D2A] dark:bg-[#F2F4F7] text-white dark:text-[#050607] text-[11px] font-bold disabled:opacity-40 cursor-pointer shrink-0"
+                >
+                  {tr('Scan', 'Scan')}
+                </button>
+              </div>
+            )}
+
+            {scanResultFeedback && (
+              <div
+                className={`px-3 py-2 rounded-xl border text-[11px] flex items-start justify-between gap-2 ${
+                  scanResultFeedback.type === 'success'
+                    ? 'bg-[#059669]/10 dark:bg-[#089981]/10 border-[#059669]/25 dark:border-[#089981]/25 text-[#059669] dark:text-[#089981]'
+                    : 'bg-[#E11D48]/10 dark:bg-[#E05260]/10 border-[#E11D48]/25 dark:border-[#E05260]/25 text-[#E11D48] dark:text-[#E05260]'
+                }`}
+              >
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    {scanResultFeedback.type === 'success' ? (
+                      <Check className="h-3.5 w-3.5 stroke-[2.25] shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5 stroke-[2] shrink-0" />
+                    )}
+                    <span className="truncate">{scanResultFeedback.message}</span>
+                  </div>
+                  {scanResultFeedback.details && (
+                    <div className="text-[10px] text-[#697586] dark:text-[#929BA9] tabular-nums flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-5">
+                      <span>
+                        {scanResultFeedback.details.source === 'MT5' ? 'MT5' : 'TradingView'} ·{' '}
+                        <b className="text-[#151D2A] dark:text-[#F2F4F7]">
+                          {scanResultFeedback.details.instrument} {scanResultFeedback.details.position}
+                        </b>
+                      </span>
+                      {scanResultFeedback.details.entryPrice !== null && (
+                        <span>Entry: <b>{scanResultFeedback.details.entryPrice}</b></span>
+                      )}
+                      {scanResultFeedback.details.stopLoss !== null && (
+                        <span>SL: <b>{scanResultFeedback.details.stopLoss}</b></span>
+                      )}
+                      {scanResultFeedback.details.takeProfit !== null && (
+                        <span>TP: <b>{scanResultFeedback.details.takeProfit}</b></span>
+                      )}
+                      {scanResultFeedback.details.lotSize !== null &&
+                        scanResultFeedback.details.lotSize !== undefined && (
+                          <span>Lot: <b>{scanResultFeedback.details.lotSize}</b></span>
+                        )}
+                      {scanResultFeedback.details.exitPrice !== null &&
+                        scanResultFeedback.details.exitPrice !== undefined && (
+                          <span>Exit: <b>{scanResultFeedback.details.exitPrice}</b></span>
+                        )}
+                    </div>
+                  )}
+                </div>
+                {scanResultFeedback.type === 'error' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleScanScreenshotAI()}
+                    disabled={isScanningScreenshot}
+                    className="px-2 py-0.5 rounded-full bg-[#E11D48]/15 dark:bg-[#E05260]/15 hover:bg-[#E11D48]/25 dark:hover:bg-[#E05260]/25 text-[#E11D48] dark:text-[#E05260] font-bold text-[10px] shrink-0 cursor-pointer"
+                  >
+                    {tr('Ulangi', 'Retry')}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setScanResultFeedback(null)}
+                    className="text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] p-0.5 shrink-0 cursor-pointer"
+                    aria-label="Dismiss"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* 2 & 3. Pair / Instrument Dropdown + Order Status Label (LIMIT / MARKET) */}
           <div className="px-5 py-2.5 flex items-center justify-between gap-3">
@@ -1598,8 +1917,8 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               </button>
 
               {isInstrumentDropdownOpen && (
-                <div className="absolute left-0 top-full mt-1.5 w-56 z-30 p-2 rounded-2xl bg-white dark:bg-[#12161D] border border-[#DDE3EA] dark:border-[#242A35] shadow-2xl space-y-1.5">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#F5F7FA] dark:bg-[#0B0D11] border border-[#DDE3EA] dark:border-[#1E232B]">
+                <div className="absolute left-0 top-full mt-1.5 w-56 z-30 p-2 rounded-2xl bg-white dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#242A35] shadow-2xl space-y-1.5">
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0D11] border border-[#E4E4E7] dark:border-[#1E232B]">
                     <Search className="h-3.5 w-3.5 text-[#697586] dark:text-[#929BA9] shrink-0" />
                     <input
                       type="text"
@@ -1634,7 +1953,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                           className={`w-full flex items-center justify-between text-left px-2.5 py-1.5 rounded-xl text-xs font-semibold uppercase tracking-wider transition-colors cursor-pointer ${
                             isSelected
                               ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607]'
-                              : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F5F7FA] dark:hover:bg-[#1A202A]'
+                              : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#1A202A]'
                           }`}
                         >
                           <span>{sym}</span>
@@ -1651,7 +1970,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                           setInstrumentSearch('');
                           setIsInstrumentDropdownOpen(false);
                         }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F5F7FA] dark:hover:bg-[#1A202A] cursor-pointer"
+                        className="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#1A202A] cursor-pointer"
                       >
                         {tr('Gunakan', 'Use')} &quot;{instrumentSearch.trim()}&quot;
                       </button>
@@ -1663,13 +1982,13 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
             {/* 3. Small Order Status Label (MARKET / LIMIT + Pending Order info) */}
             <div className="text-right shrink-0">
-              <div className="inline-flex items-center gap-1 rounded-full bg-[#F5F7FA] dark:bg-[#12161D] p-0.5 border border-[#DDE3EA] dark:border-[#1E232B]">
+              <div className="inline-flex items-center gap-1 rounded-full bg-[#F4F4F5] dark:bg-[#12161D] p-0.5 border border-[#E4E4E7] dark:border-[#1E232B]">
                 <button
                   type="button"
                   onClick={() => setOrderType('Market')}
                   className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
                     orderType === 'Market'
-                      ? 'bg-white dark:bg-[#202631] text-[#151D2A] dark:text-[#F2F4F7] shadow-2xs dark:shadow-none'
+                      ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] shadow-2xs dark:shadow-none'
                       : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
                   }`}
                 >
@@ -1685,7 +2004,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                   }}
                   className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase transition-all cursor-pointer ${
                     orderType === 'Pending'
-                      ? 'bg-white dark:bg-[#202631] text-[#151D2A] dark:text-[#F2F4F7] shadow-2xs dark:shadow-none'
+                      ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] shadow-2xs dark:shadow-none'
                       : 'text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
                   }`}
                 >
@@ -1702,7 +2021,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
           {/* 4. BUY and SELL Selector (Monochrome active indicator, smooth sliding animation) */}
           <div className="px-5 py-2.5">
-            <div className="relative grid grid-cols-2 rounded-full bg-[#F5F7FA] dark:bg-[#12161D] p-1 border border-[#DDE3EA] dark:border-[#1E232B]">
+            <div className="relative grid grid-cols-2 rounded-full bg-[#F4F4F5] dark:bg-[#12161D] p-1 border border-[#E4E4E7] dark:border-[#1E232B]">
               {/* Smooth Sliding Active Indicator */}
               <div
                 aria-hidden="true"
@@ -1766,7 +2085,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           </div>
 
           {/* 6. Stop Loss and Take Profit in One Row */}
-          <div className="grid grid-cols-2 divide-x divide-[#DDE3EA] dark:divide-[#1E232B]">
+          <div className="grid grid-cols-2 divide-x divide-[#E4E4E7] dark:divide-[#1E232B]">
             <div className="px-5 py-2.5">
               <div className="flex items-center justify-between mb-0.5">
                 <label
@@ -1825,7 +2144,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
           {/* Inline SL/TP Validation Feedback (only when invalid) */}
           {(!lotOrderMetrics.isSlValid || !lotOrderMetrics.isTpValid) && (
-            <div className="px-5 py-1.5 bg-[#E05260]/10 text-[11px] text-[#E11D48] dark:text-[#E05260] flex items-center gap-1.5">
+            <div className="px-5 py-1.5 bg-[#E11D48]/10 dark:bg-[#E05260]/10 text-[11px] text-[#E11D48] dark:text-[#E05260] flex items-center gap-1.5">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
                 {lotOrderMetrics.slErrorMessage || lotOrderMetrics.tpErrorMessage}
@@ -1834,7 +2153,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           )}
 
           {/* 7. Lot Size and Risk in One Row (Lot Size is primary input, Risk is automatic from lot) */}
-          <div className="grid grid-cols-2 divide-x divide-[#DDE3EA] dark:divide-[#1E232B]">
+          <div className="grid grid-cols-2 divide-x divide-[#E4E4E7] dark:divide-[#1E232B]">
             <div className="px-5 py-2.5">
               <div className="flex items-center justify-between mb-0.5">
                 <label
@@ -1923,7 +2242,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             </div>
 
             {/* 9. Risk / Reward */}
-            <div className="flex items-center justify-between pt-1 border-t border-[#DDE3EA]/70 dark:border-[#1E232B]/60">
+            <div className="flex items-center justify-between pt-1 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/60">
               <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
                 {tr('Risiko / Imbalan (R:R)', 'Risk / Reward')}
               </span>
@@ -1932,6 +2251,73 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               </span>
             </div>
           </div>
+
+          {/* 9B. Collapsible Pre-Trade SOP Checklist */}
+          {effectiveChecklist.length > 0 && (
+            <div className="px-5 py-2">
+              <button
+                type="button"
+                onClick={() => setIsChecklistExpanded((prev) => !prev)}
+                className="w-full flex items-center justify-between py-0.5 text-xs font-semibold text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <ClipboardCheck className="h-3.5 w-3.5 stroke-[1.85]" />
+                  <span>{tr('Checklist SOP', 'Pre-Trade SOP')}</span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-mono-numbers tabular-nums">
+                  <span
+                    className={
+                      checkedChecklistIds.length >= effectiveChecklist.length
+                        ? 'text-[#059669] dark:text-[#00A878] font-bold'
+                        : 'text-[#697586] dark:text-[#929BA9]'
+                    }
+                  >
+                    {checkedChecklistIds.length}/{effectiveChecklist.length}
+                  </span>
+                  <ChevronDown
+                    className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                      isChecklistExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </span>
+              </button>
+
+              {isChecklistExpanded && (
+                <div className="mt-2 pt-2 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/70 space-y-1.5">
+                  {effectiveChecklist.map((item) => {
+                    const checked = checkedChecklistIds.includes(item.id);
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => toggleChecklistItem(item.id)}
+                        className="w-full flex items-center gap-2 text-left text-[11px] py-0.5 cursor-pointer group"
+                      >
+                        <span
+                          className={`h-4 w-4 rounded-md border flex items-center justify-center shrink-0 transition-colors ${
+                            checked
+                              ? 'bg-[#0F172A] border-[#0F172A] text-white dark:bg-[#F2F4F7] dark:border-[#F2F4F7] dark:text-[#050607]'
+                              : 'border-[#CBD5E1] dark:border-[#323A46] bg-white dark:bg-[#0B0E13]'
+                          }`}
+                        >
+                          {checked && <Check className="h-2.5 w-2.5 stroke-[3]" />}
+                        </span>
+                        <span
+                          className={`leading-snug transition-colors ${
+                            checked
+                              ? 'text-[#0F172A] dark:text-[#F2F4F7] font-medium'
+                              : 'text-[#697586] dark:text-[#929BA9]'
+                          }`}
+                        >
+                          {isEn ? item.labelEn : item.labelId}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* 10. Button "Detail lainnya" */}
           <div className="px-5 py-2.5">
@@ -1958,12 +2344,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         </div>
 
         {/* 11. Footer Buttons: Batal & Simpan */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[#DDE3EA] dark:border-[#1E232B] bg-white dark:bg-[#0B0D11] shrink-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] shrink-0">
           <button
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="flex-1 py-2.5 rounded-full bg-[#F5F7FA] dark:bg-[#151921] hover:bg-[#EEF2F6] dark:hover:bg-[#1C222D] active:scale-[0.98] text-xs font-semibold text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] transition-all disabled:opacity-50 cursor-pointer"
+            className="flex-1 py-2.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#161A22] hover:bg-[#F4F4F5] dark:hover:bg-[#1E2430] active:scale-[0.98] text-xs font-semibold text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-all disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
           >
             {tr('Batal', 'Cancel')}
           </button>
@@ -1972,7 +2358,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             disabled={isSubmitting}
             aria-busy={isSubmitting}
             data-testid="save-trade-submit-button"
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#151D2A] hover:bg-[#1E293B] text-white dark:bg-[#F2F4F7] dark:hover:bg-white active:scale-[0.98] dark:text-[#050607] text-xs font-bold transition-all disabled:opacity-60 cursor-pointer"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-[#F2F4F7] dark:hover:bg-white active:scale-[0.98] dark:text-[#050607] text-xs font-bold transition-all disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
           >
             {isSubmitting ? (
               <>
@@ -1992,22 +2378,22 @@ export const TradeForm: React.FC<TradeFormProps> = ({
       <div
         data-testid="trade-detail-slide-panel"
         aria-hidden={!isDetailViewOpen}
-        className={`absolute inset-0 z-20 flex flex-col bg-white dark:bg-[#0B0D11] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+        className={`absolute inset-0 z-20 flex flex-col bg-white dark:bg-[#101318] transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
           isDetailViewOpen
             ? 'translate-y-0 pointer-events-auto'
             : 'translate-y-full pointer-events-none'
         }`}
       >
         {/* Detail View Header: "Detail Transaksi" & Close Button */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#DDE3EA] dark:border-[#1E232B] shrink-0">
-          <h2 className="text-[15px] font-bold tracking-tight text-[#151D2A] dark:text-[#F2F4F7]">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-[#E4E4E7] dark:border-[#20252D] shrink-0">
+          <h2 className="text-[15px] font-bold tracking-tight text-[#0F172A] dark:text-[#F2F4F7]">
             {tr('Detail Transaksi', 'Trade Details')}
           </h2>
           <button
             type="button"
             onClick={onCancel}
             disabled={isSubmitting}
-            className="rounded-full p-1.5 text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] hover:bg-[#F5F7FA] dark:hover:bg-[#151921] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+            className="rounded-full p-1.5 text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] active:scale-95 transition-all disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
             title={tr('Tutup Formulir', 'Close Form')}
             aria-label={tr('Tutup formulir transaksi', 'Close trade form')}
           >
@@ -2016,10 +2402,10 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         </div>
 
         {/* Detail View Scrollable Body (Hairline dividers, zero cards) */}
-        <div className="flex-1 overflow-y-auto divide-y divide-[#DDE3EA] dark:divide-[#1E232B] min-h-0">
+        <div className="flex-1 overflow-y-auto divide-y divide-[#E4E4E7] dark:divide-[#20252D] min-h-0">
           {/* Error Banner in Detail View */}
           {errorMsg && isDetailViewOpen && (
-            <div className="px-5 py-2.5 bg-[#E05260]/10">
+            <div className="px-5 py-2.5 bg-[#E11D48]/10 dark:bg-[#E05260]/10">
               <div className="flex items-center gap-2 text-[11px] text-[#E11D48] dark:text-[#E05260]">
                 <AlertCircle className="h-3.5 w-3.5 stroke-[2] shrink-0" />
                 <span className="leading-snug">{errorMsg}</span>
@@ -2033,7 +2419,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
                 {tr('Status Transaksi', 'Trade Status')}
               </span>
-              <div className="inline-flex items-center rounded-full bg-[#F5F7FA] dark:bg-[#12161D] p-0.5 border border-[#DDE3EA] dark:border-[#1E232B]">
+              <div className="inline-flex items-center rounded-full bg-[#F4F4F5] dark:bg-[#12161D] p-0.5 border border-[#E4E4E7] dark:border-[#1E232B]">
                 {(
                   [
                     { key: 'PLANNED', labelId: 'Rencana', labelEn: 'Planned' },
@@ -2078,7 +2464,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                       className={`px-2 py-0.5 rounded-full text-[10px] tabular-nums transition-colors cursor-pointer ${
                         isAutoLotActive && selectedRiskPercent === pct
                           ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] font-bold'
-                          : 'bg-[#F5F7FA] dark:bg-[#12161D] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                          : 'bg-[#FAFAFA] dark:bg-[#12161D] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
                       }`}
                     >
                       {pct}%
@@ -2122,14 +2508,14 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               </button>
 
               {isStrategyPickerOpen && (
-                <div className="mt-2 p-2.5 rounded-2xl bg-[#F5F7FA] dark:bg-[#12161D] border border-[#DDE3EA] dark:border-[#242A35] space-y-2">
+                <div className="mt-2 p-2.5 rounded-2xl bg-[#FAFAFA] dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#242A35] space-y-2">
                   <div className="flex items-center gap-1.5">
                     <input
                       type="text"
                       value={customStrategyInput}
                       onChange={(e) => setCustomStrategyInput(e.target.value)}
                       placeholder={tr('Ketik strategi kustom...', 'Type custom strategy...')}
-                      className="flex-1 rounded-xl bg-white dark:bg-[#0B0D11] border border-[#DDE3EA] dark:border-[#1E232B] px-2.5 py-1.5 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none"
+                      className="flex-1 rounded-xl bg-white dark:bg-[#0B0D11] border border-[#E4E4E7] dark:border-[#1E232B] px-2.5 py-1.5 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none"
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && customStrategyInput.trim()) {
                           e.preventDefault();
@@ -2148,26 +2534,63 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                           setIsStrategyPickerOpen(false);
                         }
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] text-xs font-bold cursor-pointer"
+                      className="px-3 py-1.5 rounded-full bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] text-xs font-bold cursor-pointer"
                     >
                       {tr('Pilih', 'Select')}
                     </button>
                   </div>
-                  <div className="max-h-36 overflow-y-auto space-y-0.5 pr-0.5">
+                  <div className="max-h-44 overflow-y-auto space-y-1 pr-0.5">
+                    {effectivePlaybooks.length > 0 && (
+                      <div className="pb-1 border-b border-[#E4E4E7] dark:border-[#242A35] space-y-0.5">
+                        <span className="block px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9]">
+                          {tr('Playbook Setup A+', 'A+ Setup Playbook')}
+                        </span>
+                        {effectivePlaybooks.map((pb) => {
+                          const isSelected = playbookId === pb.id || strategy === pb.name;
+                          return (
+                            <button
+                              key={pb.id}
+                              type="button"
+                              onClick={() => {
+                                setPlaybookId(pb.id);
+                                setStrategy(pb.name);
+                                if (pb.session) setSession(pb.session);
+                                if (pb.summary && !entryReason.trim()) {
+                                  setEntryReason(pb.summary);
+                                }
+                                setIsStrategyPickerOpen(false);
+                              }}
+                              className={`w-full flex items-center justify-between text-left px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] font-bold'
+                                  : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#1A202A]'
+                              }`}
+                            >
+                              <span className="inline-flex items-center gap-1.5 truncate">
+                                <BookOpen className="h-3 w-3 shrink-0 opacity-75" />
+                                <span className="truncate">{pb.name}</span>
+                              </span>
+                              {isSelected && <Check className="h-3.5 w-3.5 shrink-0" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                     {COMMON_STRATEGIES.map((strat) => {
-                      const isSelected = strategy === strat;
+                      const isSelected = strategy === strat && !playbookId;
                       return (
                         <button
                           key={strat}
                           type="button"
                           onClick={() => {
+                            setPlaybookId('');
                             setStrategy(strat);
                             setIsStrategyPickerOpen(false);
                           }}
                           className={`w-full flex items-center justify-between text-left px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
                             isSelected
                               ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] font-bold'
-                              : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-white dark:hover:bg-[#1A202A]'
+                              : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#1A202A]'
                           }`}
                         >
                           <span className="truncate">{strat}</span>
@@ -2177,6 +2600,14 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     })}
                   </div>
                 </div>
+              )}
+              {selectedPlaybookObj && (
+                <p className="mt-1 text-[10px] text-[#526071] dark:text-[#929BA9] leading-snug">
+                  <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                    Playbook (Min 1:{selectedPlaybookObj.minRR}):
+                  </span>{' '}
+                  {selectedPlaybookObj.summary}
+                </p>
               )}
             </div>
           </div>
@@ -2206,7 +2637,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               </button>
 
               {isSessionDropdownOpen && (
-                <div className="mt-1.5 p-1.5 rounded-2xl bg-[#F5F7FA] dark:bg-[#12161D] border border-[#DDE3EA] dark:border-[#242A35] space-y-0.5">
+                <div className="mt-1.5 p-1.5 rounded-2xl bg-[#FAFAFA] dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#242A35] space-y-0.5">
                   {PRIMARY_SESSIONS.map((s) => {
                     const isSelected = session === s.key;
                     return (
@@ -2220,7 +2651,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                         className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs transition-colors cursor-pointer ${
                           isSelected
                             ? 'bg-[#151D2A] text-white dark:bg-[#F2F4F7] dark:text-[#050607] font-bold'
-                            : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-white dark:hover:bg-[#1A202A]'
+                            : 'text-[#151D2A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#1A202A]'
                         }`}
                       >
                         <span>
@@ -2237,7 +2668,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
           </div>
 
           {/* 3 & 4. Date and Time */}
-          <div className="grid grid-cols-2 divide-x divide-[#DDE3EA] dark:divide-[#1E232B]">
+          <div className="grid grid-cols-2 divide-x divide-[#E4E4E7] dark:divide-[#1E232B]">
             <div className="px-5 py-2.5">
               <label className="block text-[11px] text-[#697586] dark:text-[#929BA9] mb-0.5">
                 {tr('Tanggal', 'Date')}
@@ -2271,7 +2702,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                 <span className="text-[11px] text-[#697586] dark:text-[#929BA9]">
                   {tr('Hasil', 'Outcome')}
                 </span>
-                <div className="inline-flex items-center gap-1 rounded-full bg-[#F5F7FA] dark:bg-[#12161D] p-0.5 border border-[#DDE3EA] dark:border-[#1E232B]">
+                <div className="inline-flex items-center gap-1 rounded-full bg-[#F4F4F5] dark:bg-[#12161D] p-0.5 border border-[#E4E4E7] dark:border-[#1E232B]">
                   {(['WIN', 'LOSS', 'BREAKEVEN'] as const).map((oc) => (
                     <button
                       key={oc}
@@ -2289,7 +2720,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-[#DDE3EA]/70 dark:border-[#1E232B]/60">
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/60">
                 <div>
                   <label className="block text-[10px] text-[#697586] dark:text-[#929BA9] mb-0.5">
                     {tr('Harga Exit', 'Exit Price')}
@@ -2301,7 +2732,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     value={exitPrice}
                     onChange={(e) => handleExitPriceChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                    className="w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
                   />
                 </div>
                 <div>
@@ -2315,7 +2746,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     value={grossProfit}
                     onChange={(e) => handleGrossProfitChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                    className="w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
                   />
                 </div>
                 <div>
@@ -2329,7 +2760,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     value={commission}
                     onChange={(e) => handleCommissionChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                    className="w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
                   />
                 </div>
                 <div>
@@ -2343,7 +2774,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     value={netProfit}
                     onChange={(e) => handleNetProfitChange(e.target.value)}
                     placeholder="0.00"
-                    className={`w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9] ${
+                    className={`w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9] ${
                       parseFloat(netProfit) > 0
                         ? 'text-[#059669] dark:text-[#00A878]'
                         : parseFloat(netProfit) < 0
@@ -2366,7 +2797,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     value={swap}
                     onChange={(e) => handleSwapChange(e.target.value)}
                     placeholder="0.00"
-                    className="w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                    className="w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-bold tabular-nums text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#4B525E] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
                   />
                 </div>
                 <div>
@@ -2376,7 +2807,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                   <select
                     value={closeType}
                     onChange={(e) => setCloseType(e.target.value as TradeCloseType)}
-                    className="w-full bg-white dark:bg-[#0B0D11] border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] focus:outline-none"
+                    className="w-full bg-white dark:bg-[#0B0D11] border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] focus:outline-none"
                   >
                     <option value="TP">Take Profit (TP)</option>
                     <option value="SL">Stop Loss (SL)</option>
@@ -2392,7 +2823,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                 <select
                   value={adherenceTag}
                   onChange={(e) => setAdherenceTag(e.target.value as ExecutionAdherenceTag)}
-                  className="w-full bg-white dark:bg-[#0B0D11] border-b border-[#DDE3EA] dark:border-[#1E232B] pb-1 text-[11px] text-[#151D2A] dark:text-[#F2F4F7] focus:outline-none"
+                  className="w-full bg-white dark:bg-[#0B0D11] border-b border-[#E4E4E7] dark:border-[#1E232B] pb-1 text-[11px] text-[#151D2A] dark:text-[#F2F4F7] focus:outline-none"
                 >
                   {EXECUTION_ADHERENCE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>
@@ -2424,7 +2855,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
             <div className="flex items-center gap-2">
               <label
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#F5F7FA] dark:bg-[#12161D] border border-[#DDE3EA] dark:border-[#1E232B] text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F4F7] shrink-0 ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAFAFA] dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#1E232B] text-[11px] font-semibold text-[#151D2A] dark:text-[#F2F4F7] shrink-0 ${
                   isScanningScreenshot
                     ? 'opacity-50 cursor-not-allowed'
                     : 'hover:border-[#697586] dark:hover:border-[#929BA9] cursor-pointer'
@@ -2448,10 +2879,10 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                 aria-busy={isScanningScreenshot}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all cursor-pointer shrink-0 ${
                   isScanningScreenshot
-                    ? 'bg-amber-500/20 text-amber-500 border border-amber-500/40 cursor-wait'
+                    ? 'bg-amber-500/15 dark:bg-amber-500/20 text-[#B45309] dark:text-amber-400 border border-[#D97706]/40 dark:border-amber-500/40 cursor-wait'
                     : screenshotUrl.trim()
-                    ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/30 shadow-xs'
-                    : 'bg-[#F5F7FA] dark:bg-[#12161D] border border-[#DDE3EA] dark:border-[#1E232B] text-[#94A3B8] dark:text-[#606875] opacity-50 cursor-not-allowed'
+                    ? 'bg-amber-500/12 dark:bg-amber-500/15 hover:bg-amber-500/20 dark:hover:bg-amber-500/25 text-[#B45309] dark:text-amber-400 border border-[#D97706]/30 dark:border-amber-500/30 shadow-xs'
+                    : 'bg-[#FAFAFA] dark:bg-[#12161D] border border-[#E4E4E7] dark:border-[#1E232B] text-[#697586] dark:text-[#606875] opacity-60 cursor-not-allowed'
                 }`}
                 title={tr(
                   'Ekstrak data posisi (Pair, BUY/SELL, Entry, SL, TP) otomatis dalam 1-2 detik',
@@ -2460,12 +2891,12 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               >
                 {isScanningScreenshot ? (
                   <>
-                    <Loader2 className="h-3 w-3 animate-spin text-amber-500" />
+                    <Loader2 className="h-3 w-3 animate-spin text-[#B45309] dark:text-amber-400" />
                     <span>{tr('Memindai...', 'Scanning...')}</span>
                   </>
                 ) : (
                   <>
-                    <Sparkles className="h-3 w-3 text-amber-500" />
+                    <Sparkles className="h-3 w-3 text-[#B45309] dark:text-amber-400" />
                     <span>{tr('Scan Cepat', 'Quick Scan')}</span>
                   </>
                 )}
@@ -2483,7 +2914,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                   'Tempel URL snapshot TradingView / tekan Ctrl+V gambar...',
                   'Paste TradingView snapshot URL / press Ctrl+V image...'
                 )}
-                className="flex-1 bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] py-1 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9] disabled:opacity-50"
+                className="flex-1 bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] py-1 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9] disabled:opacity-50"
               />
             </div>
 
@@ -2497,14 +2928,14 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     'URL Screenshot Sesudah-Trade (opsional)...',
                     'After-Trade Screenshot URL (optional)...'
                   )}
-                  className="w-full bg-transparent border-b border-[#DDE3EA] dark:border-[#1E232B] py-1 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
+                  className="w-full bg-transparent border-b border-[#E4E4E7] dark:border-[#1E232B] py-1 text-xs text-[#151D2A] dark:text-[#F2F4F7] placeholder-[#94A3B8] dark:placeholder-[#606875] focus:outline-none focus:border-[#697586] dark:focus:border-[#929BA9]"
                 />
               </div>
             )}
 
             {screenshotUrl && (
               <div className="space-y-2">
-                <div className="relative rounded-2xl overflow-hidden border border-[#DDE3EA] dark:border-[#1E232B] h-28 bg-[#F5F7FA] dark:bg-[#12161D] flex items-center justify-center">
+                <div className="relative rounded-2xl overflow-hidden border border-[#E4E4E7] dark:border-[#1E232B] h-28 bg-[#FAFAFA] dark:bg-[#12161D] flex items-center justify-center">
                   {isPreviewLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin text-[#697586] dark:text-[#929BA9]" />
                   ) : previewDisplayUrl ? (
@@ -2519,8 +2950,8 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                     </span>
                   )}
                   {isScanningScreenshot && (
-                    <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px] flex flex-col items-center justify-center gap-1.5 text-white px-3 text-center">
-                      <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-1.5 text-white px-3 text-center">
+                      <Loader2 className="h-4 w-4 animate-spin text-amber-300" />
                       <span className="text-[11px] font-semibold tracking-tight">
                         {tr('Memindai Entry, SL, TP & Lot...', 'Scanning Entry, SL, TP & Lot...')}
                       </span>
@@ -2534,7 +2965,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                       setPreviewDisplayUrl('');
                       setScanResultFeedback(null);
                     }}
-                    className="absolute top-1.5 right-1.5 rounded-full bg-white/90 dark:bg-[#0B0D11]/90 border border-[#DDE3EA] dark:border-[#1E232B] p-1 text-[#151D2A] dark:text-[#F2F4F7] cursor-pointer hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="absolute top-1.5 right-1.5 rounded-full bg-white/95 dark:bg-[#0B0D11]/90 border border-[#E4E4E7] dark:border-[#1E232B] p-1 text-[#151D2A] dark:text-[#F2F4F7] cursor-pointer hover:bg-[#F4F4F5] disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <X className="h-3 w-3 stroke-[2]" />
                   </button>
@@ -2544,24 +2975,24 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                   type="button"
                   disabled={isScanningScreenshot}
                   onClick={() => handleScanScreenshotAI()}
-                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl border text-xs font-semibold transition-colors ${
+                  className={`w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-full border text-xs font-semibold transition-colors ${
                     isScanningScreenshot
-                      ? 'bg-amber-500/15 border-amber-500/35 text-amber-600 dark:text-amber-300 cursor-wait'
-                      : 'bg-amber-500/10 hover:bg-amber-500/15 border-amber-500/25 text-amber-700 dark:text-amber-300 cursor-pointer'
+                      ? 'bg-amber-500/15 border-amber-500/35 text-[#B45309] dark:text-amber-300 cursor-wait'
+                      : 'bg-amber-500/10 hover:bg-amber-500/15 border-amber-500/25 text-[#B45309] dark:text-amber-300 cursor-pointer'
                   }`}
                 >
                   {isScanningScreenshot ? (
                     <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-[#B45309] dark:text-amber-400 shrink-0" />
                       <span>{tr('Sedang Memindai Screenshot...', 'Scanning Screenshot...')}</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <Sparkles className="h-3.5 w-3.5 text-[#B45309] dark:text-amber-400 shrink-0" />
                       <span>
                         {tr(
-                          '⚡ Scan Kilat & Isi Otomatis (AI Flash Lite)',
-                          '⚡ Instant Scan & Auto-Fill (AI Flash Lite)'
+                          '⚡ Scan Kilat & Isi Otomatis (AI Gemini Hydrogen)',
+                          '⚡ Instant Scan & Auto-Fill (AI Gemini Hydrogen)'
                         )}
                       </span>
                     </>
@@ -2574,16 +3005,16 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               <div
                 className={`p-2.5 rounded-xl border text-xs flex items-start justify-between gap-2 ${
                   scanResultFeedback.type === 'success'
-                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-800 dark:text-emerald-300'
-                    : 'bg-red-500/10 border-red-500/20 text-red-800 dark:text-red-300'
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-[#047857] dark:text-emerald-300'
+                    : 'bg-red-500/10 border-red-500/20 text-[#BE123C] dark:text-red-300'
                 }`}
               >
                 <div className="space-y-1.5 flex-1">
                   <div className="flex items-center gap-1.5 font-semibold">
                     {scanResultFeedback.type === 'success' ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <Check className="h-3.5 w-3.5 text-[#059669] dark:text-emerald-400 shrink-0" />
                     ) : (
-                      <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                      <AlertCircle className="h-3.5 w-3.5 text-[#E11D48] dark:text-red-400 shrink-0" />
                     )}
                     <span>{scanResultFeedback.message}</span>
                   </div>
@@ -2594,7 +3025,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                         type="button"
                         onClick={() => handleScanScreenshotAI()}
                         disabled={isScanningScreenshot}
-                        className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-700 dark:text-red-300 font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
+                        className="px-3 py-1 rounded-full bg-red-500/15 hover:bg-red-500/25 text-red-700 dark:text-red-300 font-semibold text-[11px] inline-flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <RefreshCw className={`h-3 w-3 ${isScanningScreenshot ? 'animate-spin' : ''}`} />
                         <span>{tr('Coba Scan Lagi', 'Try Scan Again')}</span>
@@ -2605,11 +3036,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                   {scanResultFeedback.details && (
                     <div className="text-[11px] opacity-90 pl-5 flex flex-wrap items-center gap-x-2 gap-y-1">
                       {scanResultFeedback.details.source && (
-                        <span className={`px-1.5 py-0.2 rounded font-bold text-[10px] ${
-                          scanResultFeedback.details.source === 'MT5'
-                            ? 'bg-blue-500/20 text-blue-700 dark:text-blue-300'
-                            : 'bg-sky-500/20 text-sky-700 dark:text-sky-300'
-                        }`}>
+                        <span className="px-2 py-0.5 rounded-full font-bold text-[10px] bg-[#0F172A]/10 dark:bg-white/15 text-[#0F172A] dark:text-[#F2F4F7]">
                           {scanResultFeedback.details.source === 'MT5' ? 'MetaTrader 5' : 'TradingView'}
                         </span>
                       )}
@@ -2644,6 +3071,20 @@ export const TradeForm: React.FC<TradeFormProps> = ({
                       {scanResultFeedback.details.plannedRiskReward !== null && (
                         <span>R:R: <b>1:{scanResultFeedback.details.plannedRiskReward}</b></span>
                       )}
+                      {scanResultFeedback.details.modelUsed && (
+                        <span className="text-[10px] opacity-75">
+                          Engine:{' '}
+                          <b>
+                            {scanResultFeedback.details.modelUsed === 'gemini-4-hydrogen'
+                              ? 'Gemini Hydrogen'
+                              : scanResultFeedback.details.modelUsed === 'gemini-3.1-flash-lite'
+                              ? 'Gemini Flash Lite'
+                              : scanResultFeedback.details.modelUsed === 'hybrid-apk-vision-v4'
+                              ? tr('OCR Lokal (Fallback)', 'Local OCR (Fallback)')
+                              : scanResultFeedback.details.modelUsed}
+                          </b>
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2658,7 +3099,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             )}
 
             {/* Panduan Screenshot MetaTrader 5 & TradingView */}
-            <div className="text-[11px] text-[#697586] dark:text-[#929BA9] bg-[#F5F7FA] dark:bg-[#12161D] rounded-xl p-2.5 border border-[#DDE3EA] dark:border-[#1E232B] space-y-1.5">
+            <div className="text-[11px] text-[#697586] dark:text-[#929BA9] bg-[#FAFAFA] dark:bg-[#12161D] rounded-xl p-2.5 border border-[#E4E4E7] dark:border-[#1E232B] space-y-1.5">
               <div className="font-semibold text-[#151D2A] dark:text-[#F2F4F7] flex items-center gap-1.5">
                 <span>💡</span>
                 <span>
@@ -2685,6 +3126,62 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             </div>
           </div>
 
+          {/* 6B. Emotion & Behavioral Mistake Tags */}
+          <div className="px-5 py-2.5 space-y-2.5">
+            <div>
+              <span className="block text-[11px] text-[#697586] dark:text-[#929BA9] mb-1.5">
+                {tr('Kondisi Emosi', 'Emotional State')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {EMOTION_TAGS_CATALOG.map((em) => {
+                  const active = emotionTag === em.id;
+                  return (
+                    <button
+                      key={em.id}
+                      type="button"
+                      onClick={() => setEmotionTag((prev) => (prev === em.id ? '' : em.id))}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
+                        active
+                          ? 'bg-[#0F172A] text-white border-[#0F172A] dark:bg-[#F2F4F7] dark:text-[#050607] dark:border-[#F2F4F7]'
+                          : 'bg-[#FAFAFA] dark:bg-[#12161D] border-[#E4E4E7] dark:border-[#1E232B] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                      }`}
+                    >
+                      {isEn ? em.labelEn : em.labelId}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/60">
+              <span className="block text-[11px] text-[#697586] dark:text-[#929BA9] mb-1.5">
+                {tr('Tag Disiplin & Kesalahan', 'Discipline & Mistake Tags')}
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {MISTAKE_TAGS_CATALOG.map((tag) => {
+                  const active = mistakeTags.includes(tag.id);
+                  const isPositive = tag.id === 'A_PLUS_SETUP';
+                  return (
+                    <button
+                      key={tag.id}
+                      type="button"
+                      onClick={() => toggleMistakeTag(tag.id)}
+                      className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
+                        active
+                          ? isPositive
+                            ? 'bg-[#059669] text-white border-[#059669] dark:bg-[#00A878] dark:border-[#00A878] dark:text-[#050607]'
+                            : 'bg-[#E11D48] text-white border-[#E11D48] dark:bg-[#E05260] dark:border-[#E05260]'
+                          : 'bg-[#FAFAFA] dark:bg-[#12161D] border-[#E4E4E7] dark:border-[#1E232B] text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7]'
+                      }`}
+                    >
+                      {isEn ? tag.labelEn : tag.labelId}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
           {/* 7 & 8. Notes / Reflection & Additional Fields */}
           <div className="px-5 py-2.5 space-y-2">
             <div>
@@ -2703,7 +3200,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
               />
             </div>
 
-            <div className="pt-1.5 border-t border-[#DDE3EA]/70 dark:border-[#1E232B]/60">
+            <div className="pt-1.5 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/60">
               <label className="block text-[11px] text-[#697586] dark:text-[#929BA9] mb-1">
                 {tr('Alasan Entry (Opsional)', 'Entry Reason (Optional)')}
               </label>
@@ -2720,7 +3217,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             </div>
 
             {lifecycleStatus === 'CLOSED' && (
-              <div className="pt-1.5 border-t border-[#DDE3EA]/70 dark:border-[#1E232B]/60">
+              <div className="pt-1.5 border-t border-[#E4E4E7]/70 dark:border-[#1E232B]/60">
                 <label className="block text-[11px] text-[#697586] dark:text-[#929BA9] mb-1">
                   {tr('Evaluasi Pasca-Trade', 'Post-Trade Evaluation')}
                 </label>
@@ -2740,13 +3237,13 @@ export const TradeForm: React.FC<TradeFormProps> = ({
         </div>
 
         {/* Detail View Footer: KEMBALI & SIMPAN */}
-        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[#DDE3EA] dark:border-[#1E232B] bg-white dark:bg-[#0B0D11] shrink-0">
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] shrink-0">
           <button
             type="button"
             onClick={() => setIsDetailViewOpen(false)}
             disabled={isSubmitting}
             data-testid="detail-view-back-button"
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#F5F7FA] dark:bg-[#151921] hover:bg-[#EEF2F6] dark:hover:bg-[#1C222D] active:scale-[0.98] text-xs font-semibold text-[#151D2A] dark:text-[#F2F4F7] transition-all disabled:opacity-50 cursor-pointer"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#161A22] hover:bg-[#F4F4F5] dark:hover:bg-[#1E2430] active:scale-[0.98] text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] transition-all disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>{tr('Kembali', 'Back')}</span>
@@ -2756,7 +3253,7 @@ export const TradeForm: React.FC<TradeFormProps> = ({
             disabled={isSubmitting || isScanningScreenshot}
             aria-busy={isSubmitting || isScanningScreenshot}
             data-testid="detail-view-save-button"
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#151D2A] hover:bg-[#1E293B] text-white dark:bg-[#F2F4F7] dark:hover:bg-white active:scale-[0.98] dark:text-[#050607] text-xs font-bold transition-all disabled:opacity-60 cursor-pointer"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-[#F2F4F7] dark:hover:bg-white active:scale-[0.98] dark:text-[#050607] text-xs font-bold transition-all disabled:opacity-60 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/40 dark:focus-visible:ring-white/40"
           >
             {isSubmitting ? (
               <>
@@ -2783,7 +3280,10 @@ export const TradeForm: React.FC<TradeFormProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] animate-in fade-in duration-150"
+      role="dialog"
+      aria-modal="true"
+      aria-label={initialTrade ? tr('Edit Transaksi', 'Edit Trade') : tr('Tambah Transaksi', 'Add Trade')}
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain flex flex-col items-center justify-center bg-black/60 dark:bg-black/75 p-3 sm:p-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] animate-in fade-in duration-150"
       onClick={() => !isSubmitting && onCancel()}
     >
       {formCardContent}

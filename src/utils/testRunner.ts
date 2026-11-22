@@ -451,10 +451,9 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
   // =========================================================================
   // TEST SUITE 5: Configurable XAUUSD Lot Sizing & Risk Scenarios
   // =========================================================================
-  // Standard Lot (100 oz, $10/pip per 1.00 lot):
-  // Equity $10,000, Risk 1% ($100), Entry 2720, SL 2715 (Distance 5 pips)
-  // Loss per lot = 5 pips * $10 = $50
-  // Lot = 100 / 50 = 2.00
+  // App Standard Mode A (1 pip = 0.10; 100 oz, $10/pip per 1.00 lot):
+  // Equity $10,000, Risk 1% ($100), Entry 2720, SL 2715 (Distance $5.00 = 50 pips)
+  // Loss per lot = 50 pips * $10 = $500 -> Lot = 100 / 500 = 0.20
   const lotStandard = calculateXauusdLot(
     {
       equity: 10000,
@@ -466,14 +465,15 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
     },
     testSettings
   );
-  assertEqual('Standard Lot (100 oz) Size = 2.00', 'Lot Sizing', lotStandard.recommendedLot, 2.0);
-  assertEqual('SL Distance $5.00 (5 pips)', 'Lot Sizing', lotStandard.slDistancePrice, 5.0);
+  assertEqual('Standard Lot (100 oz, 0.1 pip) Size = 0.20', 'Lot Sizing', lotStandard.recommendedLot, 0.2);
+  assertEqual('SL Distance $5.00 (50 pips)', 'Lot Sizing', lotStandard.slDistancePrice, 5.0);
+  assertEqual('SL Distance Pips = 50', 'Lot Sizing', lotStandard.slDistancePips, 50.0);
   assertEqual('TP 1:2 Price = 2730.00', 'Lot Sizing', lotStandard.tpScenarios[0]?.targetPrice, 2730.0);
   assertEqual('TP 1:3 Price = 2735.00', 'Lot Sizing', lotStandard.tpScenarios[1]?.targetPrice, 2735.0);
   assertEqual('TP 1:5 Price = 2745.00', 'Lot Sizing', lotStandard.tpScenarios[2]?.targetPrice, 2745.0);
 
   // Mini Lot (10 oz, $1/pip per 1.00 lot):
-  // Loss per lot = 5 pips * $1 = $5 -> Lot = 100 / 5 = 20.00
+  // Loss per lot = 50 pips * $1 = $50 -> Lot = 100 / 50 = 2.00
   const lotMini = calculateXauusdLot(
     {
       equity: 10000,
@@ -485,10 +485,10 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
     },
     testSettings
   );
-  assertEqual('Mini Lot (10 oz) Size = 20.00', 'Lot Sizing', lotMini.recommendedLot, 20.0);
+  assertEqual('Mini Lot (10 oz, 0.1 pip) Size = 2.00', 'Lot Sizing', lotMini.recommendedLot, 2.0);
 
   // Micro / Cent Lot (1 oz, $0.10/pip per 1.00 lot):
-  // Loss per lot = 5 pips * $0.10 = $0.50 -> Risk $10 / $0.50 = 20.00
+  // Loss per lot = 50 pips * $0.10 = $5.00 -> Risk $10 / $5.00 = 2.00
   const lotMicro = calculateXauusdLot(
     {
       equity: 1000,
@@ -500,7 +500,22 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
     },
     testSettings
   );
-  assertEqual('Micro Lot (1 oz) Size = 20.00', 'Lot Sizing', lotMicro.recommendedLot, 20.0);
+  assertEqual('Micro Lot (1 oz, 0.1 pip) Size = 2.00', 'Lot Sizing', lotMicro.recommendedLot, 2.0);
+
+  // Mode B (xauusdPipSize = 1.00) backward-compatibility check:
+  // Equity $10,000, Risk 1% ($100), Entry 4000, SL 3950 (50 pips * $10 = $500/lot -> 0.20 lot)
+  const lotModeB = calculateXauusdLot(
+    {
+      equity: 10000,
+      riskPercent: 1.0,
+      entryPrice: 4000,
+      stopLossPrice: 3950,
+      position: 'BUY',
+      contractSize: 100,
+    },
+    { ...testSettings, xauusdPipSize: 1.0 }
+  );
+  assertEqual('Mode B (1.00 pip): 4000 -> 3950 = 50 pips, Lot = 0.20', 'Lot Sizing', lotModeB.slDistancePips === 50 && lotModeB.recommendedLot === 0.2, true);
 
   // Inverted SL validation check (BUY with SL >= Entry)
   const lotInvalid = calculateXauusdLot(
@@ -965,15 +980,15 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
   // TEST SUITE 10: Tahap 9 Risk Management & Kalkulator Lot XAUUSD
   // =========================================================================
 
-  // Test 10.1: Perhitungan Lot XAUUSD Standar BUY
-  // Equity $10,000, Risk 1% = $100. Entry: 2720, SL: 2670 (Distance 50 pips), Contract: 100 oz ($10/pip per 1.00 lot)
+  // Test 10.1: Perhitungan Lot XAUUSD Standar BUY (Mode A: 1 pip = 0.10)
+  // Equity $10,000, Risk 1% = $100. Entry: 2720, SL: 2715 (Distance $5.00 = 50 pips), Contract: 100 oz ($10/pip per 1.00 lot)
   // Loss per lot = 50 pips * $10 = $500. Exact lot = $100 / $500 = 0.200 lot
   const standardBuyLot = calculateXauusdLot(
     {
       equity: 10000,
       riskPercent: 1.0,
       entryPrice: 2720.0,
-      stopLossPrice: 2670.0,
+      stopLossPrice: 2715.0,
       position: 'BUY',
       contractSize: 100,
       minLot: 0.01,
@@ -984,8 +999,8 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
   );
   assertEqual('Tahap 9 - Lot BUY: Validitas bernilai true', 'Risk Engine', standardBuyLot.isValid, true);
   assertEqual('Tahap 9 - Lot BUY: Nominal risiko $100', 'Risk Engine', standardBuyLot.riskAmount, 100.0);
-  assertEqual('Tahap 9 - Lot BUY: Jarak SL $50.00', 'Risk Engine', standardBuyLot.slDistancePrice, 50.0);
-  assertEqual('Tahap 9 - Lot BUY: Jarak SL pips = 50 pips (1 pip = 1.00)', 'Risk Engine', standardBuyLot.slDistancePips, 50.0);
+  assertEqual('Tahap 9 - Lot BUY: Jarak SL $5.00', 'Risk Engine', standardBuyLot.slDistancePrice, 5.0);
+  assertEqual('Tahap 9 - Lot BUY: Jarak SL pips = 50 pips (1 pip = 0.10)', 'Risk Engine', standardBuyLot.slDistancePips, 50.0);
   assertEqual('Tahap 9 - Lot BUY: Loss per 1 lot = $500', 'Risk Engine', standardBuyLot.lossPerLot, 500.0);
   assertEqual('Tahap 9 - Lot BUY: Lot rekomendasi = 0.20 lot', 'Risk Engine', standardBuyLot.recommendedLot, 0.2);
   assertEqual('Tahap 9 - Lot BUY: Estimasi kerugian pada SL = $100', 'Risk Engine', standardBuyLot.estimatedLossAtSL, 100.0);
@@ -993,15 +1008,15 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
   assertEqual('Tahap 9 - Lot BUY: Estimasi margin required = $108.80', 'Risk Engine', standardBuyLot.requiredMargin, 108.8);
 
   // Test 10.2: Perhitungan Lot XAUUSD SELL dengan Take Profit dan R:R
-  // Risk fixed $150. Entry: 2750, SL: 2800 (Dist 50 pips), TP: 2650 (Dist 100 pips). R:R = 2.0
+  // Risk fixed $150. Entry: 2750, SL: 2755 (Dist $5 = 50 pips), TP: 2740 (Dist $10 = 100 pips). R:R = 2.0
   const standardSellLot = calculateXauusdLot(
     {
       equity: 10000,
       riskPercent: 1.0,
       riskAmountManual: 150,
       entryPrice: 2750.0,
-      stopLossPrice: 2800.0,
-      takeProfitPrice: 2650.0,
+      stopLossPrice: 2755.0,
+      takeProfitPrice: 2740.0,
       position: 'SELL',
       contractSize: 100,
     },
@@ -1013,7 +1028,7 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
   assertEqual('Tahap 9 - Lot SELL: Estimasi profit TP = $300', 'Risk Engine', standardSellLot.estimatedProfitAtTP, 300.0);
 
   // Test 10.3: Pembulatan Lot ke Bawah (Rounding Down to Lot Step)
-  // Risk $100, Distance 43 pips * $10 = $430/lot. Exact lot = 100 / 430 = 0.23255... lot
+  // Risk $100, Distance $4.30 (43 pips) * $10 = $430/lot. Exact lot = 100 / 430 = 0.23255... lot
   // Floored to 0.01 step = 0.23 lot (bukan 0.24, agar risiko $98.90 tidak melampaui $100)
   const flooredLotCalc = calculateXauusdLot(
     {
@@ -1021,7 +1036,7 @@ export function runFinancialCalculationsTests(): TestSuiteSummary {
       riskPercent: 1.0,
       riskAmountManual: 100,
       entryPrice: 2743.0,
-      stopLossPrice: 2700.0,
+      stopLossPrice: 2738.7,
       position: 'BUY',
       contractSize: 100,
       lotStep: 0.01,
@@ -1622,13 +1637,15 @@ export function runXauusdLotStandardizationTests(): TestSuiteSummary {
     100
   );
   assertStd(
-    'A.6 Helper convertXauusdPriceToPips konsisten untuk kelima skenario wajib',
+    'A.6 Helper convertXauusdPriceToPips konsisten untuk standar app (0.1) dan Mode B (1.0)',
     'A. Konversi Pip',
-    convertXauusdPriceToPips(4000, 3950) === 50 &&
-      convertXauusdPriceToPips(4000, 3940) === 60 &&
-      convertXauusdPriceToPips(4000, 3990) === 10 &&
-      convertXauusdPriceToPips(4000, 3995) === 5 &&
-      convertXauusdPriceToPips(4000, 4100) === 100,
+    convertXauusdPriceToPips(4000, 3995) === 50 &&
+      convertXauusdPriceToPips(4000, 3990) === 100 &&
+      convertXauusdPriceToPips(4000, 4010) === 100 &&
+      convertXauusdPriceToPips(4000, 3950) === 500 &&
+      convertXauusdPriceToPips(4000, 3950, 1.0) === 50 &&
+      convertXauusdPriceToPips(4000, 3940, 1.0) === 60 &&
+      convertXauusdPriceToPips(4000, 4100, 1.0) === 100,
     true
   );
 
@@ -1822,7 +1839,7 @@ export function runXauusdLotStandardizationTests(): TestSuiteSummary {
       capitalBasis: sharedParams.equity,
       capitalBasisType: 'EQUITY',
       customSpecOverride: {
-        pipSize: XAUUSD_PIP_SIZE,
+        pipSize: stdSettings.xauusdPipSize ?? XAUUSD_PIP_SIZE,
         contractSize: stdSettings.xauusdContractSize,
         pipValuePerStandardLot: stdLotPipVal,
         pipValuePer001Lot: Number((stdLotPipVal / 100).toFixed(4)),
@@ -5399,52 +5416,53 @@ export async function runPhase1StorageAndMigrationTests(): Promise<Phase1TestSui
     // DI-08: XAUUSD BigInt Lot Calculator Boundary & Precision Suite
     // =========================================================================
     try {
-      // 1. balance=1000, risk=2.9% ($29), entry=2650, SL=2635 (15 pips -> $150/lot) -> 0.19, loss <= 29
+      // App Standard (0.10 pip): entry=2650, SL=2648.5 ($1.50 = 15 pips -> $150/lot)
+      // 1. balance=1000, risk=2.9% ($29), entry=2650, SL=2648.5 (15 pips -> $150/lot) -> 0.19, loss <= 29
       const c1 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 2.9,
         entryPrice: 2650,
-        stopLossPrice: 2635,
+        stopLossPrice: 2648.5,
         position: 'BUY',
       });
-      // 2. balance=1000, risk=3.0% ($30), entry=2650, SL=2635 (15 pips -> $150/lot) -> 0.20, loss = 30
+      // 2. balance=1000, risk=3.0% ($30), entry=2650, SL=2648.5 (15 pips -> $150/lot) -> 0.20, loss = 30
       const c2 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 3.0,
         entryPrice: 2650,
-        stopLossPrice: 2635,
+        stopLossPrice: 2648.5,
         position: 'BUY',
       });
-      // 3. balance=1000, risk=5.7% ($57), entry=2650, SL=2635 (15 pips -> $150/lot) -> 0.38, loss = 57
+      // 3. balance=1000, risk=5.7% ($57), entry=2650, SL=2648.5 (15 pips -> $150/lot) -> 0.38, loss = 57
       const c3 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 5.7,
         entryPrice: 2650,
-        stopLossPrice: 2635,
+        stopLossPrice: 2648.5,
         position: 'BUY',
       });
-      // 4. balance=1000, risk=2.999999% ($29.99999), entry=2650, SL=2635 -> 0.19
+      // 4. balance=1000, risk=2.999999% ($29.99999), entry=2650, SL=2648.5 -> 0.19
       const c4 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 2.999999,
         entryPrice: 2650,
-        stopLossPrice: 2635,
+        stopLossPrice: 2648.5,
         position: 'BUY',
       });
-      // 5. balance=1000, risk=3.00001% ($30.0001), entry=2650, SL=2635 -> 0.20
+      // 5. balance=1000, risk=3.00001% ($30.0001), entry=2650, SL=2648.5 -> 0.20
       const c5 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 3.00001,
         entryPrice: 2650,
-        stopLossPrice: 2635,
+        stopLossPrice: 2648.5,
         position: 'BUY',
       });
-      // 6. High-precision decimals: entry=2650.12345, SL=2635.12345, risk=3% ($30) -> 0.20
+      // 6. High-precision decimals: entry=2650.12345, SL=2648.62345, risk=3% ($30) -> 0.20
       const c6 = calculateXauusdLot({
         equity: 1000,
         riskPercent: 3.0,
         entryPrice: 2650.12345,
-        stopLossPrice: 2635.12345,
+        stopLossPrice: 2648.62345,
         position: 'BUY',
       });
 
@@ -7106,11 +7124,11 @@ export function runLayoutAndFixedHeaderAcceptanceTests(): TestSuiteSummary {
     'button aria-label="Buka menu navigasi" active'
   );
 
-  // FH-04: Logo and "TradeVault" brand text remain visible during/after scroll (no fade-out, no shrink)
+  // FH-04: Logo and "VLO" brand text remain visible during/after scroll (no fade-out, no shrink)
   // Verified: Removed scrollProgress opacity logic (was opacity: 1 - scrollProgress)
   record(
     'FH-04',
-    'Logo dan tulisan TRADEVAULT tetap 100% visible saat scrolling (tidak memudar/fade out)',
+    'Logo dan tulisan VLO tetap 100% visible saat scrolling (tidak memudar/fade out)',
     'Persistent Header',
     true,
     'opacity-100 permanent',
@@ -8080,9 +8098,35 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
   );
 
   // =========================================================================
-  // E. TVES RISK MANAGEMENT MULTI-INSTRUMENT & DISCIPLINE AUDIT (RM01 - RM06)
+  // E. TVES RISK MANAGEMENT MULTI-INSTRUMENT & DISCIPLINE AUDIT (RM01 - RM15)
   // =========================================================================
+  // Mode A (App Standard: 1 pip = 0.10 -> 4000 -> 3995 = 50 pips, TP 4010 = 100 pips)
   const rm01Xau = calculateUnifiedXauusdPosition(
+    {
+      symbol: 'XAUUSD',
+      equity: 2500,
+      riskPercent: 1,
+      entryPrice: 4000,
+      stopLossPrice: 3995,
+      takeProfitPrice: 4010,
+      position: 'BUY',
+    },
+    DEFAULT_SETTINGS
+  );
+  assertSim(
+    'RM01 Kalkulator Lot XAUUSD Standar App ($2.500, 1%, BUY 4000 SL 3995 TP 4010 -> 50 pips) -> 0.05 Lot, Risk $25, Profit $50, RR 1:2',
+    'E. Risk Management TVES',
+    rm01Xau.isValid &&
+      rm01Xau.recommendedLot === 0.05 &&
+      rm01Xau.slDistancePips === 50 &&
+      rm01Xau.estimatedLossAtSL === 25 &&
+      rm01Xau.estimatedProfitAtTP === 50 &&
+      rm01Xau.rewardRiskRatio === 2,
+    true
+  );
+
+  // Mode B (xauusdPipSize = 1.00 -> 4000 -> 3950 = 50 pips, TP 4100 = 100 pips)
+  const rm01XauModeB = calculateUnifiedXauusdPosition(
     {
       symbol: 'XAUUSD',
       equity: 2500,
@@ -8092,17 +8136,17 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       takeProfitPrice: 4100,
       position: 'BUY',
     },
-    DEFAULT_SETTINGS
+    { ...DEFAULT_SETTINGS, xauusdPipSize: 1.0 }
   );
   assertSim(
-    'RM01 Kalkulator Lot XAUUSD ($2.500, 1%, BUY 4000 SL 3950 TP 4100) -> 0.05 Lot, Risk $25, Profit $50, RR 1:2',
+    'RM01B Kalkulator Lot XAUUSD Mode B (1 pip = 1.00, BUY 4000 SL 3950 TP 4100 -> 50 pips) -> 0.05 Lot, Risk $25, Profit $50, RR 1:2',
     'E. Risk Management TVES',
-    rm01Xau.isValid &&
-      rm01Xau.recommendedLot === 0.05 &&
-      rm01Xau.slDistancePips === 50 &&
-      rm01Xau.estimatedLossAtSL === 25 &&
-      rm01Xau.estimatedProfitAtTP === 50 &&
-      rm01Xau.rewardRiskRatio === 2,
+    rm01XauModeB.isValid &&
+      rm01XauModeB.recommendedLot === 0.05 &&
+      rm01XauModeB.slDistancePips === 50 &&
+      rm01XauModeB.estimatedLossAtSL === 25 &&
+      rm01XauModeB.estimatedProfitAtTP === 50 &&
+      rm01XauModeB.rewardRiskRatio === 2,
     true
   );
 
@@ -8182,9 +8226,9 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
         instrument: 'XAUUSD',
         position: 'BUY',
         entryPrice: 4000,
-        stopLoss: 3950,
-        takeProfit: 4100,
-        exitPrice: 4100,
+        stopLoss: 3995,
+        takeProfit: 4010,
+        exitPrice: 4010,
         lotSize: 0.05,
         riskAmount: 25,
         riskPercentage: 1,
@@ -8203,9 +8247,9 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
         instrument: 'XAUUSD',
         position: 'BUY',
         entryPrice: 4000,
-        stopLoss: 3950,
-        takeProfit: 4100,
-        exitPrice: 3950,
+        stopLoss: 3995,
+        takeProfit: 4010,
+        exitPrice: 3995,
         lotSize: 0.05,
         riskAmount: 25,
         riskPercentage: 1,
@@ -8224,9 +8268,9 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
         instrument: 'XAUUSD',
         position: 'SELL',
         entryPrice: 4000,
-        stopLoss: 4050,
-        takeProfit: 3900,
-        exitPrice: 3900,
+        stopLoss: 4005,
+        takeProfit: 3990,
+        exitPrice: 3990,
         lotSize: 0.05,
         riskAmount: 25,
         riskPercentage: 1,
@@ -8307,13 +8351,13 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       slDistanceUnit: 'ENTRY_SL_PRICE',
       direction: 'BUY',
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
       lotSizes: [0.01],
     },
     DEFAULT_SETTINGS
   );
   assertSim(
-    'RM08 Lot Calculator (Entry & SL Price): XAUUSD BUY 4000 -> SL 3950 (50 pips) @ 0.01 lot -> Potential Loss $5.00 (10.00%)',
+    'RM08 Lot Calculator (Entry & SL Price): XAUUSD BUY 4000 -> SL 3995 (50 pips) @ 0.01 lot -> Potential Loss $5.00 (10.00%)',
     'E. Risk Management TVES',
     manualXauEntrySl.isValid &&
       manualXauEntrySl.slDistancePips === 50 &&
@@ -8351,7 +8395,7 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       riskPercent: 5, // Risk Amount = $13.50; SL 50 pips = $500/lot -> Raw Lot = 0.027 -> Floored to 0.02
       direction: 'BUY',
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
     },
     DEFAULT_SETTINGS
   );
@@ -8376,7 +8420,7 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       riskPercent: 1, // Risk Amount = $0.50; SL 50 pips requires $5.00 at 0.01 minLot -> Raw Lot 0.001 < 0.01
       direction: 'BUY',
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
     },
     DEFAULT_SETTINGS
   );
@@ -8402,13 +8446,13 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       direction: 'BUY',
       lotSize: 0.01,
       entryPrice: 4000,
-      stopLossPrice: 3950,
-      takeProfitPrice: 4100,
+      stopLossPrice: 3995,
+      takeProfitPrice: 4010,
     },
     DEFAULT_SETTINGS
   );
   assertSim(
-    'RM12 Lot Calculator (Skenario 1 & 4): Balance $3,000, XAUUSD BUY 0.01 Lot, Entry 4000, SL 3950 (50 pips), TP 4100 (100 pips) -> Loss $5.00 (0.17%), Profit $10.00, RR 1 : 2',
+    'RM12 Lot Calculator (Skenario 1 & 4): Balance $3,000, XAUUSD BUY 0.01 Lot, Entry 4000, SL 3995 (50 pips), TP 4010 (100 pips) -> Loss $5.00 (0.17%), Profit $10.00, RR 1 : 2',
     'E. Risk Management TVES',
     manualPlanScen1.isValid &&
       manualPlanScen1.slDistancePips === 50 &&
@@ -8428,7 +8472,7 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       direction: 'BUY',
       lotSize: 0.01,
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
     },
     DEFAULT_SETTINGS
   );
@@ -8450,7 +8494,7 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       direction: 'BUY',
       lotSize: 0.05,
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
     },
     DEFAULT_SETTINGS
   );
@@ -8472,7 +8516,7 @@ export function runRiskSimulatorsAuditTests(): TestSuiteSummary {
       direction: 'BUY',
       lotSize: 0.005, // below minLot 0.01
       entryPrice: 4000,
-      stopLossPrice: 3950,
+      stopLossPrice: 3995,
     },
     DEFAULT_SETTINGS
   );

@@ -7,14 +7,52 @@ import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { getSupabaseConfig, sanitizeSupabaseUrl } from './supabaseClient';
 
 export const STANDALONE_BACKEND_URL_STORAGE_KEY = 'tradevault_standalone_backend_url_v1';
+export const NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY = 'tradevault_news_cycle_offline_mode_v1';
+export const NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT = 'tradevault:news-cycle-offline-mode-change';
 export const SUPABASE_EDGE_FUNCTION_SLUG = 'tradevault-api';
 
 const SUPABASE_EDGE_SUPPORTED_PATHS = new Set([
   '/api/health',
   '/api/proxy',
   '/api/extract-trade-screenshot',
+  '/api/extract-mt5-history',
   '/api/macro-news/analyze',
+  '/api/macro-news/fundamental',
 ]);
+
+/**
+ * Returns whether Offline Mode is enabled specifically for Trade News & Cycle & Confluence.
+ * Scan Kilat AI (`tradeScreenshotScanner`) intentionally ignores this flag so users can still
+ * scan trade screenshots daily using Gemini Hydrogen.
+ */
+export function isNewsCycleOfflineMode(): boolean {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return false;
+  }
+  try {
+    return window.localStorage.getItem(NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function setNewsCycleOfflineMode(enabled: boolean): boolean {
+  const nextValue = Boolean(enabled);
+  if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY,
+        nextValue ? 'true' : 'false'
+      );
+      window.dispatchEvent(
+        new CustomEvent(NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT, { detail: { enabled: nextValue } })
+      );
+    } catch {
+      // ignore localStorage write failure
+    }
+  }
+  return nextValue;
+}
 
 /**
  * Normalizes a standalone backend URL (Node.js server OR Supabase Edge Function URL).
@@ -25,6 +63,11 @@ export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): strin
   if (!rawUrl || typeof rawUrl !== 'string') return '';
   let clean = rawUrl.trim().replace(/^['"]+|['"]+$/g, '');
   if (!clean) return '';
+
+  // Reject API keys or tokens accidentally placed in VITE_API_BASE_URL
+  if (/^(sb_publishable_|sb_secret_|eyJhbGci|AIza)/i.test(clean)) {
+    return '';
+  }
 
   const hasScheme = /^https?:\/\//i.test(clean);
   if (!hasScheme) {
@@ -41,14 +84,25 @@ export function sanitizeBackendBaseUrl(rawUrl: string | null | undefined): strin
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       return '';
     }
+    const host = parsed.hostname.toLowerCase();
+    // Reject hostnames without a dot unless localhost / loopback
+    if (host !== 'localhost' && host !== '127.0.0.1' && !host.includes('.')) {
+      return '';
+    }
+    if (
+      host === 'your-project-id.supabase.co' ||
+      host === 'your-project.supabase.co' ||
+      host === 'xxxx.supabase.co' ||
+      host === 'example.supabase.co'
+    ) {
+      return '';
+    }
     const cleanPath = parsed.pathname
       .replace(/\/api(?:\/.*)?$/i, '')
       .replace(/\/+$/, '');
     return `${parsed.origin}${cleanPath}`;
   } catch {
-    return clean
-      .replace(/\/api(?:\/.*)?$/i, '')
-      .replace(/\/+$/, '');
+    return '';
   }
 }
 
@@ -81,15 +135,17 @@ export function getStoredStandaloneBackendUrl(): string {
   return '';
 }
 
+export const DEFAULT_DEPLOYED_SUPABASE_ORIGIN = 'https://hhotzotsdhkgymgtwfdk.supabase.co';
+
 /**
  * Automatically derives the Supabase Edge Function endpoint URL from the active
- * Supabase project config (`https://<project>.supabase.co/functions/v1/tradevault-api`).
+ * Supabase project config (`https://<project>.supabase.co/functions/v1/tradevault-api`),
+ * with a fallback to the project's deployed public Edge Function for Guest/Local mode on APK/Web.
  */
 export function getSupabaseEdgeBackendUrl(): string {
   const cfg = getSupabaseConfig();
-  if (!cfg.url) return '';
-  const cleanOrigin = sanitizeSupabaseUrl(cfg.url);
-  if (!cleanOrigin) return '';
+  const cleanOrigin = cfg.url ? sanitizeSupabaseUrl(cfg.url) : DEFAULT_DEPLOYED_SUPABASE_ORIGIN;
+  if (!cleanOrigin) return `${DEFAULT_DEPLOYED_SUPABASE_ORIGIN}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`;
   return `${cleanOrigin}/functions/v1/${SUPABASE_EDGE_FUNCTION_SLUG}`;
 }
 
@@ -402,14 +458,14 @@ export async function nativeAwarePostJson(
   url: string,
   payload: unknown,
   timeoutMs = 18000
-): Promise<{ ok: boolean; json: any | null }> {
+): Promise<{ ok: boolean; json: any | null; status?: number; errorMessage?: string }> {
   const authHeaders = buildBackendAuthHeaders(url);
 
   if (isNativeAndroidOrIos() && /^https?:\/\//i.test(url)) {
     try {
       const response = await CapacitorHttp.post({
         url,
-        connectTimeout: timeoutMs,
+        connectTimeout: Math.min(timeoutMs, 20000),
         readTimeout: timeoutMs,
         headers: {
           'Content-Type': 'application/json',
@@ -420,17 +476,59 @@ export async function nativeAwarePostJson(
         data: payload,
       });
 
-      const ok = response.status >= 200 && response.status < 300;
+      const status = Number(response.status || 0);
+      const ok = status >= 200 && status < 300;
       if (typeof response.data === 'string') {
+        const trimmed = response.data.trim();
+        if (
+          trimmed.startsWith('<!doctype') ||
+          trimmed.startsWith('<!DOCTYPE') ||
+          trimmed.startsWith('<html') ||
+          trimmed.startsWith('<')
+        ) {
+          return {
+            ok: false,
+            json: null,
+            status,
+            errorMessage: `Backend mengembalikan halaman HTML (HTTP ${status || 'N/A'}).`,
+          };
+        }
         try {
-          return { ok, json: JSON.parse(response.data) };
+          const parsed = JSON.parse(response.data);
+          return {
+            ok,
+            json: parsed,
+            status,
+            errorMessage: ok ? undefined : String(parsed?.error || parsed?.message || `HTTP ${status}`),
+          };
         } catch {
-          return { ok: false, json: null };
+          return {
+            ok: false,
+            json: null,
+            status,
+            errorMessage: `Respon backend tidak valid (HTTP ${status || 'N/A'}).`,
+          };
         }
       }
-      return { ok, json: response.data ?? null };
-    } catch {
-      return { ok: false, json: null };
+      const obj = response.data ?? null;
+      return {
+        ok,
+        json: obj,
+        status,
+        errorMessage: ok
+          ? undefined
+          : String((obj as any)?.error || (obj as any)?.message || `HTTP ${status || 'Error'}`),
+      };
+    } catch (err: any) {
+      const rawMsg = String(err?.message || err || 'Network error');
+      const isTimeout = /timeout|timed out|abort/i.test(rawMsg);
+      return {
+        ok: false,
+        json: null,
+        errorMessage: isTimeout
+          ? `Waktu koneksi habis (${Math.round(timeoutMs / 1000)} dtk) ke server APK.`
+          : `Koneksi APK ke server gagal: ${rawMsg.slice(0, 120)}`,
+      };
     }
   }
 
@@ -459,15 +557,41 @@ export async function nativeAwarePostJson(
       trimmed.startsWith('<html') ||
       trimmed.startsWith('<')
     ) {
-      return { ok: false, json: null };
+      return {
+        ok: false,
+        json: null,
+        status: res.status,
+        errorMessage: `Backend mengembalikan halaman HTML (HTTP ${res.status}).`,
+      };
     }
     try {
-      return { ok: res.ok, json: JSON.parse(rawText) };
+      const parsed = JSON.parse(rawText);
+      return {
+        ok: res.ok,
+        json: parsed,
+        status: res.status,
+        errorMessage: res.ok
+          ? undefined
+          : String(parsed?.error || parsed?.message || `HTTP ${res.status}`),
+      };
     } catch {
-      return { ok: false, json: null };
+      return {
+        ok: false,
+        json: null,
+        status: res.status,
+        errorMessage: `Respon JSON tidak valid dari backend (HTTP ${res.status}).`,
+      };
     }
-  } catch {
-    return { ok: false, json: null };
+  } catch (err: any) {
+    const rawMsg = String(err?.message || err || 'Network error');
+    const isTimeout = err?.name === 'AbortError' || /timeout|abort/i.test(rawMsg);
+    return {
+      ok: false,
+      json: null,
+      errorMessage: isTimeout
+        ? `Waktu koneksi habis (${Math.round(timeoutMs / 1000)} dtk).`
+        : `Gagal menghubungi server: ${rawMsg.slice(0, 120)}`,
+    };
   } finally {
     clearTimeout(timer);
   }

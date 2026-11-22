@@ -1,11 +1,15 @@
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { playNotificationPing } from './soundEngine';
 import { getSupabase, isSupabaseConfigured } from './supabaseClient';
 import { isMarketDay, normalizeToMarketDayIso } from './date';
+import { HISTORICAL_MACRO_ACTUALS_SEED } from '../data/historicalMacroActualsSeed';
 
 export type FomcPillarType = 'GROWTH' | 'LABOR' | 'INFLATION' | 'POLICY';
 export type MacroBiasDirection = 'BUY' | 'SELL' | 'MIXED';
 export type MacroImpactLevel = 'HIGH' | 'MEDIUM' | 'LOW';
 export type BreakingSentimentType = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+export type ActualSourceType = 'LIVE_FEED' | 'TV_ENRICH' | 'SEARCH_ENRICH' | 'OFFLINE_ARCHIVE';
 
 export interface MacroCalendarEvent {
   id: string;
@@ -28,6 +32,95 @@ export interface MacroCalendarEvent {
   isLiveFeed?: boolean;
   eventCategory?: 'PRIMARY_HIGH_IMPACT' | 'SUPPORTING_REFERENCE';
   previousRevisedFrom?: string;
+  isOfflineArchived?: boolean;
+  actualSource?: ActualSourceType;
+}
+
+export interface ArchivedMacroActualRecord {
+  archiveKey: string;
+  id: string;
+  title: string;
+  date: string;
+  impact: 'High' | 'Medium' | 'Low';
+  previous: string;
+  forecast: string;
+  actual: string;
+  previousNum: number | null;
+  forecastNum: number | null;
+  actualNum: number | null;
+  unit: string;
+  pillar: FomcPillarType;
+  isInverseIndicator: boolean;
+  eventCategory?: 'PRIMARY_HIGH_IMPACT' | 'SUPPORTING_REFERENCE';
+  actualSource: ActualSourceType;
+  recordedAt: string;
+}
+
+export interface PreNewsSystemState {
+  clusterKey: string;
+  primaryEventId: string;
+  primaryTitle: string;
+  releaseDateIso: string;
+  phase: 'PRE_ACTIVE' | 'T5M_LOCKED' | 'OFF_RELEASED';
+  isLocked: boolean;
+  lockedAt: string | null;
+  forecast: string;
+  previous: string;
+  buyProbability: number;
+  sellProbability: number;
+  mixedProbability: number;
+  dominantBias: MacroBiasDirection;
+  thesisId: string;
+  thesisEn: string;
+  reconstructedWithoutPreCapture?: boolean;
+}
+
+export interface PostNewsSystemState {
+  clusterKey: string;
+  primaryEventId: string;
+  primaryTitle: string;
+  releaseDateIso: string;
+  status: 'WAITING_RELEASE' | 'PENDING_ACTUAL' | 'ACTIVE_2H' | 'OFF_ARCHIVED_2H';
+  windowRemainingMs: number;
+  expiresAtIso: string | null;
+  archivedAt: string | null;
+  hasVerifiedActual: boolean;
+  actualSummary: string;
+  buyProbability: number;
+  sellProbability: number;
+  mixedProbability: number;
+  dominantBias: MacroBiasDirection;
+  shiftVsPreNews: 'STRENGTHENED' | 'WEAKENED' | 'REVERSED_PIVOT' | 'UNCHANGED' | 'PENDING';
+  buyDeltaVsPreNews: number;
+  sellDeltaVsPreNews: number;
+  summaryId: string;
+  summaryEn: string;
+}
+
+export interface LiveFundamentalPulseState {
+  status: 'LIVE_CONTINUOUS' | 'WEEKEND_FROZEN';
+  updatedAt: string;
+  buyProbability: number;
+  sellProbability: number;
+  mixedProbability: number;
+  dominantBias: MacroBiasDirection;
+  speechAlertActive: boolean;
+  topCatalystTitle: string;
+  topCatalystSource: string;
+  topCatalystChannel: string;
+  offlineActualsCount: number;
+  offlinePillarSummaryId: string;
+  offlinePillarSummaryEn: string;
+  summaryId: string;
+  summaryEn: string;
+}
+
+export interface MacroThreeSystemState {
+  system1PreNews: PreNewsSystemState;
+  system2PostNews: PostNewsSystemState;
+  system3LivePulse: LiveFundamentalPulseState;
+  effectiveFundamentalBias: MacroBiasDirection;
+  effectiveSourceSystem: 'SYSTEM_1_PRE_NEWS' | 'SYSTEM_2_POST_NEWS' | 'SYSTEM_3_LIVE_PULSE';
 }
 
 export interface GoldPositioningPulse {
@@ -52,7 +145,13 @@ export interface VixRiskPulse {
 }
 
 export interface MarketSentimentSummary {
-  regime: 'RISK_OFF_SAFE_HAVEN' | 'HAWKISH_USD_PRESSURE' | 'CROWDED_BUY_RUMOR' | 'CROWDED_SELL_RUMOR' | 'BALANCED';
+  regime:
+    | 'RISK_OFF_SAFE_HAVEN'
+    | 'HAWKISH_USD_PRESSURE'
+    | 'CROWDED_BUY_RUMOR'
+    | 'CROWDED_SELL_RUMOR'
+    | 'STAGFLATION_BULLISH'
+    | 'BALANCED';
   rumorSetup: 'BUY_RUMOR_SELL_NEWS_RISK' | 'SELL_RUMOR_BUY_NEWS_RISK' | 'NONE';
   wireBreadth: {
     bullish: number;
@@ -60,6 +159,7 @@ export interface MarketSentimentSummary {
     neutral: number;
     total: number;
   };
+  stagflationDetected?: boolean;
   labelId: string;
   labelEn: string;
   summaryId: string;
@@ -138,13 +238,23 @@ export interface IntermarketAssetPulse {
 export interface BreakingNewsHeadline {
   id: string;
   title: string;
+  descriptionSummary?: string;
   source: string;
   pubDate: string;
   link?: string;
   matchedKeywords: string[];
   impact: 'HIGH' | 'LOW';
   sentimentForGold: BreakingSentimentType;
-  channelType: 'FED_SPEECH' | 'GEOPOLITICS_SAFEN_HAVEN' | 'OIL_INFLATION_CHANNEL' | 'TARIFF_TRADE' | 'MACRO_DATA';
+  channelType:
+    | 'FED_SPEECH'
+    | 'GEOPOLITICS_SAFEN_HAVEN'
+    | 'OIL_INFLATION_CHANNEL'
+    | 'TARIFF_TRADE'
+    | 'EQUITY_ROTATION'
+    | 'CREDIT_STRESS'
+    | 'CENTRAL_BANK_FLOW'
+    | 'FISCAL_AUCTION'
+    | 'MACRO_DATA';
   aiEvaluationId: string;
   aiEvaluationEn: string;
 }
@@ -341,13 +451,75 @@ export interface MacroNewsSnapshot {
   scenarioMatrix: PreNewsScenarioMatrix;
   isCalendarLiveFeed?: boolean;
   rssFeedHealth?: RssFeedHealthStatus;
+  threeSystemState?: MacroThreeSystemState;
 }
 
 export const MACRO_SNAPSHOT_LOCAL_STORAGE_KEY = 'tradevault_macro_news_snapshot_v1';
 export const MACRO_GROUP_SNAPSHOT_CACHE_KEY = 'tradevault_macro_group_snapshots_v1';
 export const MACRO_BIAS_HISTORY_STORAGE_KEY = 'tradevault_macro_bias_history_v1';
 export const MACRO_NOTIFIED_FINGERPRINT_KEY = 'tradevault_macro_notified_fp_v1';
+export const MACRO_ACTUALS_ARCHIVE_STORAGE_KEY = 'tradevault_macro_actuals_archive_v1';
+export const MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY = 'tradevault_macro_prenews_locks_v1';
+export const MACRO_POST_NEWS_ARCHIVE_KEY = 'tradevault_macro_postnews_locks_v1';
+export const MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY = 'tradevault_macro_monthly_news_speech_v1';
+export const CME_FEDWATCH_LOCAL_STORAGE_KEY = 'tradevault_cme_fedwatch_cache_v1';
+export const MACRO_LOCAL_SYNC_EVENT = 'tradevault:macro-local-sync';
+export const POST_NEWS_ACTIVE_WINDOW_MS = 2 * 60 * 60 * 1000; // 2 hours
 export const SNAPSHOT_TTL_MINUTES = 30;
+
+export function dispatchMacroLocalSyncEvent(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try {
+      window.dispatchEvent(new CustomEvent(MACRO_LOCAL_SYNC_EVENT));
+    } catch {
+      // ignore event dispatch errors in restricted contexts
+    }
+  }
+}
+
+export function loadLocalCachedCmeFedWatchSync(maxAgeMs = 12 * 60 * 60 * 1000): CmeFedWatchState | null {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(CME_FEDWATCH_LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CmeFedWatchState;
+    if (!parsed || parsed.isAvailable !== true || !parsed.updatedAt) return null;
+    const updatedMs = new Date(parsed.updatedAt).getTime();
+    if (!Number.isFinite(updatedMs) || Date.now() - updatedMs > maxAgeMs) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function saveCmeFedWatchToLocal(fedWatch: CmeFedWatchState | null | undefined): void {
+  if (
+    !fedWatch ||
+    fedWatch.isAvailable !== true ||
+    typeof window === 'undefined' ||
+    typeof window.localStorage === 'undefined'
+  ) {
+    return;
+  }
+  try {
+    const normalized: CmeFedWatchState = {
+      ...fedWatch,
+      updatedAt: fedWatch.updatedAt || new Date().toISOString(),
+    };
+    window.localStorage.setItem(CME_FEDWATCH_LOCAL_STORAGE_KEY, JSON.stringify(normalized));
+    dispatchMacroLocalSyncEvent();
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export interface MonthlyNewsSpeechArchive {
+  monthKey: string; // YYYY-MM in WIB (Asia/Jakarta)
+  updatedAt: string;
+  items: BreakingNewsHeadline[];
+}
 
 export const BREAKING_NEWS_KEYWORDS = [
   'Fed',
@@ -359,7 +531,10 @@ export const BREAKING_NEWS_KEYWORDS = [
   'Tariff',
   'Hormuz',
   'Iran',
+  'Ceasefire',
+  'Truce',
   'Oil',
+  'OPEC',
   'Inflation',
   'CPI',
   'PPI',
@@ -377,11 +552,24 @@ export const BREAKING_NEWS_KEYWORDS = [
   'Williams',
   'Jefferson',
   'Bowman',
+  'Daly',
+  'Goolsbee',
+  'Kashkari',
+  'Hammack',
+  'Musalem',
+  'Schmid',
+  'Collins',
+  'Bessent',
+  'Hassett',
+  'Miran',
   'Blackout',
   'Dot Plot',
   'Gold',
   'XAU',
   'Bullion',
+  'Silver',
+  'GLD',
+  'ETF',
   'Dollar',
   'DXY',
   'Dovish',
@@ -391,6 +579,37 @@ export const BREAKING_NEWS_KEYWORDS = [
   'Payroll',
   'Retail Sales',
   'ISM',
+  'PBoC',
+  'Central Bank',
+  'ECB',
+  'BOJ',
+  'BOE',
+  'Real Yield',
+  'TIPS',
+  'Breakeven',
+  'MOVE',
+  'Credit',
+  'Shutdown',
+  'Debt Ceiling',
+  'Default',
+  'Balance Sheet',
+  'QT',
+  'QE',
+  'Nasdaq',
+  'S&P 500',
+  'Wall Street',
+  'IPO',
+  'Equities',
+  'Margin Call',
+  'Risk-On',
+  'Risk-Off',
+  'Yuan',
+  'USDCNH',
+  'USDJPY',
+  'Carry Trade',
+  'China',
+  'Stimulus',
+  'Nvidia',
   'Suku Bunga',
   'Inflasi',
   'The Fed',
@@ -573,6 +792,85 @@ export function isRelevantUsdMacroEvent(rawEvent: {
   return coreKeywordMatch;
 }
 
+export interface ExternalG10ChinaEvent {
+  title: string;
+  country: 'EUR' | 'JPY' | 'GBP' | 'CNY';
+  date: string;
+  impact: string;
+  forecast: string;
+  previous: string;
+  actual: string;
+  noteId: string;
+  noteEn: string;
+}
+
+/**
+ * Extracts high-impact non-USD policy & China macro catalysts (ECB, BOJ, BOE, China PMI/GDP)
+ * separately from Trade News's USD-strict calendar so Fundamental Gold can attribute DXY & Asian demand.
+ */
+export function extractExternalG10AndChinaCalendarEvents(
+  rawEvents: Array<{
+    title?: string;
+    country?: string;
+    date?: string;
+    impact?: string;
+    forecast?: string;
+    previous?: string;
+    actual?: string;
+  }>
+): ExternalG10ChinaEvent[] {
+  if (!Array.isArray(rawEvents)) return [];
+  const results: ExternalG10ChinaEvent[] = [];
+  const seen = new Set<string>();
+
+  for (const item of rawEvents) {
+    const country = String(item?.country || '').toUpperCase().trim();
+    if (country !== 'EUR' && country !== 'JPY' && country !== 'GBP' && country !== 'CNY') {
+      continue;
+    }
+    const impact = String(item?.impact || '').trim();
+    const title = String(item?.title || '').trim();
+    if (!title) continue;
+    const isMajorG10 =
+      impact === 'High' &&
+      /\b(RATE|POLICY|ECB|BOJ|BOE|CPI|GDP|PMI|INDUSTRIAL|RETAIL|MONETARY|STATEMENT|PRESS)\b/i.test(title);
+    if (!isMajorG10) continue;
+
+    const key = `${country}|${title.toUpperCase()}|${String(item?.date || '').slice(0, 13)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    let isoDate = String(item?.date || '');
+    try {
+      const dt = new Date(isoDate);
+      if (!isNaN(dt.getTime())) isoDate = dt.toISOString();
+    } catch {}
+
+    const roleId =
+      country === 'CNY'
+        ? 'Barometer permintaan fisik & stimulasi Tiongkok terhadap Emas'
+        : 'Memengaruhi porsi besar keranjang DXY (EUR/JPY/GBP)';
+    const roleEn =
+      country === 'CNY'
+        ? 'Barometer of China physical Gold demand & stimulus spillover'
+        : 'Directly moves major DXY basket components (EUR/JPY/GBP)';
+
+    results.push({
+      title,
+      country,
+      date: isoDate,
+      impact,
+      forecast: String(item?.forecast || '—').trim() || '—',
+      previous: String(item?.previous || '—').trim() || '—',
+      actual: String(item?.actual || '').trim(),
+      noteId: `${country} · ${roleId}`,
+      noteEn: `${country} · ${roleEn}`,
+    });
+  }
+
+  return results.slice(0, 12);
+}
+
 /**
  * Evaluates a single calendar event's directional bias for XAU/USD using Forecast vs Previous
  * (when Actual is not yet released) and Actual vs Forecast (when Actual is released).
@@ -680,6 +978,31 @@ export function evaluateSingleEventForGold(
       reasonEn: `[${pillar} Pillar] ${title} (${compLabelEn}: ${primaryVal} vs ${referenceVal}) signals dovish Fed tilt → BUY XAU/USD catalyst.${extraNoteEn}`,
     };
   }
+}
+
+/**
+ * Computes a continuous surprise magnitude multiplier (1.0 - 2.0) from consensus deviation
+ * so extreme beats/misses carry proportionally more weight than razor-thin prints.
+ */
+export function evaluateEventSurpriseScale(ev: MacroCalendarEvent): number {
+  const hasActual = typeof ev.actualNum === 'number' && Number.isFinite(ev.actualNum);
+  const primary = hasActual ? ev.actualNum : ev.forecastNum;
+  const reference = hasActual
+    ? ev.forecastNum !== null
+      ? ev.forecastNum
+      : ev.previousNum
+    : ev.previousNum;
+
+  if (primary === null || reference === null) return 1.0;
+  const diff = Math.abs(primary - reference);
+  if (diff < 0.0001) return 0.7;
+
+  const denom = Math.max(Math.abs(reference), 0.25);
+  const relRatio = diff / denom;
+  if (relRatio >= 0.35 || diff >= 0.4) return 1.75;
+  if (relRatio >= 0.18 || diff >= 0.2) return 1.35;
+  if (relRatio >= 0.08 || diff >= 0.1) return 1.1;
+  return 0.85;
 }
 
 /**
@@ -947,6 +1270,7 @@ export function computeMarketSentimentSummary(params: {
   vix?: VixRiskPulse;
   goldPositioning?: GoldPositioningPulse;
   cmeFedWatch: CmeFedWatchState;
+  stagflationDetected?: boolean;
 }): MarketSentimentSummary {
   const {
     breakingNews,
@@ -957,6 +1281,7 @@ export function computeMarketSentimentSummary(params: {
     vix,
     goldPositioning,
     cmeFedWatch,
+    stagflationDetected = false,
   } = params;
 
   const bullish = breakingNews.filter((b) => b.sentimentForGold === 'BULLISH').length;
@@ -992,7 +1317,11 @@ export function computeMarketSentimentSummary(params: {
   let labelId = 'Sentimen Terukur / Seimbang';
   let labelEn = 'Balanced / Measured Sentiment';
 
-  if (rumorSetup === 'BUY_RUMOR_SELL_NEWS_RISK') {
+  if (stagflationDetected) {
+    regime = 'STAGFLATION_BULLISH';
+    labelId = 'Regime Stagflasi (Inflasi Panas + Ekonomi Melambat → Bullish Struktural Emas)';
+    labelEn = 'Stagflation Regime (Sticky Inflation + Cooling Growth/Jobs → Structural Gold Bullish)';
+  } else if (rumorSetup === 'BUY_RUMOR_SELL_NEWS_RISK') {
     regime = 'CROWDED_BUY_RUMOR';
     labelId = 'Indikasi Buy the Rumor (Rawan Profit-Taking)';
     labelEn = 'Buy-the-Rumor Crowding (Sell-the-News Risk)';
@@ -1017,6 +1346,13 @@ export function computeMarketSentimentSummary(params: {
   const wireStrId = total > 0 ? `Arus berita RSS: ${bullish} Bullish · ${bearish} Bearish · ${neutral} Netral.` : 'Belum ada headline RSS aktif pada jendela ini.';
   const wireStrEn = total > 0 ? `RSS wire breadth: ${bullish} Bullish · ${bearish} Bearish · ${neutral} Neutral.` : 'No active RSS headlines in the current window.';
 
+  const stagStrId = stagflationDetected
+    ? ' Kombinasi inflasi persisten dan pelemahan sektor riil/tenaga kerja secara historis menopang daya tarik lindung nilai Emas.'
+    : '';
+  const stagStrEn = stagflationDetected
+    ? ' Sticky inflation paired with cooling labor/growth historically strengthens Gold as a stagflation hedge.'
+    : '';
+
   const rumorStrId =
     rumorSetup === 'BUY_RUMOR_SELL_NEWS_RISK'
       ? ' Kenaikan pra-rilis atau ekspektasi dovish berisiko jenuh (waspada Sell the News).'
@@ -1034,10 +1370,11 @@ export function computeMarketSentimentSummary(params: {
     regime,
     rumorSetup,
     wireBreadth: { bullish, bearish, neutral, total },
+    stagflationDetected,
     labelId,
     labelEn,
-    summaryId: `${wireStrId}${rumorStrId}`.trim(),
-    summaryEn: `${wireStrEn}${rumorStrEn}`.trim(),
+    summaryId: `${wireStrId}${stagStrId}${rumorStrId}`.trim(),
+    summaryEn: `${wireStrEn}${stagStrEn}${rumorStrEn}`.trim(),
   };
 }
 
@@ -1075,7 +1412,14 @@ export interface HeadlineContextEvaluation {
     | 'RATE_HIKE_HAWKISH'
     | 'INFLATION_SURGE'
     | 'OIL_INFLATION'
+    | 'OIL_RELIEF'
     | 'GEOPOLITICS_SAFE_HAVEN'
+    | 'GEOPOLITICS_DEESCALATION'
+    | 'TARIFF_TRADE'
+    | 'EQUITY_ROTATION'
+    | 'CREDIT_STRESS'
+    | 'CENTRAL_BANK_FLOW'
+    | 'FISCAL_AUCTION'
     | 'MIXED_OR_NEUTRAL';
 }
 
@@ -1158,7 +1502,14 @@ function scoreMainSentenceClause(
   let rateHikeHawkishSignal = false;
   let inflationSurgeSignal = false;
   let oilInflationSignal = false;
+  let oilReliefSignal = false;
   let geopoliticsSignal = false;
+  let deescalationSignal = false;
+  let tariffTradeSignal = false;
+  let equityRotationSignal = false;
+  let creditStressSignal = false;
+  let centralBankFlowSignal = false;
+  let fiscalAuctionSignal = false;
 
   for (const clause of clauses) {
     const w = clause.weight;
@@ -1186,10 +1537,10 @@ function scoreMainSentenceClause(
       rateCutSignal = true;
     }
 
-    // 3. Rate Cut / Fed Easing Narrative (EN + ID) -> BULLISH SPIKE AWAL
+    // 3. Rate Cut / Fed Easing Narrative (EN + ID) -> BULLISH
     const rateCutMatch = maskMatchedSpans(
       working,
-      /\b(?:(?:fed\s+)?rate\s+cuts?|cut(?:s|ting)?\s+(?:interest\s+)?rates?|fed\s+pivot|dovish\s+(?:pivot|tilt|shift|stance|fed|surprise|tone|remarks?|commentary)|monetary\s+easing|policy\s+easing|easing\s+cycle|room\s+(?:for|to)\s+cut|open[sd]?\s+(?:the\s+)?door\s+(?:to|for)\s+(?:rate\s+)?cuts?|support[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|back[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|favor[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|eye[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|signal[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|(?:rate\s+)?cut\s+(?:bets|odds|expectations|hopes)\s+(?:rise|jump|surge|climb|grow|strengthen|mount|boost)|lower\s+(?:interest\s+)?rates?|dovish|(?:peluang\s+|ekspektasi\s+|sinyal\s+)?pemangkasan\s+suku\s+bunga|pangkas\s+suku\s+bunga|potong\s+suku\s+bunga|penurunan\s+suku\s+bunga|turunkan\s+suku\s+bunga|pelonggaran\s+(?:kebijakan(?:\s+the\s+fed)?|moneter|the\s+fed|fed)|kebijakan\s+dovish|sinyal\s+dovish)\b/gi
+      /\b(?:(?:fed\s+)?rate\s+cuts?|cut(?:s|ting)?\s+(?:interest\s+)?rates?|fed\s+pivot|dovish\s+(?:pivot|tilt|shift|stance|fed|surprise|tone|remarks?|commentary)|monetary\s+easing|policy\s+easing|easing\s+cycle|room\s+(?:for|to)\s+cut|open[sd]?\s+(?:the\s+)?door\s+(?:to|for)\s+(?:rate\s+)?cuts?|support[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|back[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|favor[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|eye[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|signal[sd]?\s+(?:a\s+)?(?:rate\s+)?cut|(?:rate\s+)?cut\s+(?:bets|odds|expectations|hopes)\s+(?:rise|jump|surge|climb|grow|strengthen|mount|boost)|lower\s+(?:interest\s+)?rates?|dovish|qe\b|liquidity\s+injection|(?:peluang\s+|ekspektasi\s+|sinyal\s+)?pemangkasan\s+suku\s+bunga|pangkas\s+suku\s+bunga|potong\s+suku\s+bunga|penurunan\s+suku\s+bunga|turunkan\s+suku\s+bunga|pelonggaran\s+(?:kebijakan(?:\s+the\s+fed)?|moneter|the\s+fed|fed)|kebijakan\s+dovish|sinyal\s+dovish)\b/gi
     );
     working = rateCutMatch.masked;
     if (rateCutMatch.hit) {
@@ -1197,7 +1548,7 @@ function scoreMainSentenceClause(
       rateCutSignal = true;
     }
 
-    // 4. Slowing / Cooling Inflation, CPI, PCE, PPI, ISM, or Labor -> BULLISH SPIKE AWAL
+    // 4. Slowing / Cooling Inflation, CPI, PCE, PPI, ISM, or Labor -> BULLISH
     const coolingMacroMatch = maskMatchedSpans(
       working,
       /\b(?:(?:inflation|cpi|core\s+cpi|pce|core\s+pce|ppi|prices?|price\s+pressures?|tekanan\s+inflasi|inflasi|ism(?:\s+manufacturing|\s+services|\s+prices)?|labor\s+market|jobs?|hiring|payrolls?|wage\s+growth|wages|economy|economic\s+activity)\s+(?:cools?(?:\s+down)?|cooling|slows?(?:\s+down)?|slowing|slowed|eases?|easing|eased|moderates?|moderating|softens?|softening|falls?|falling|drops?|dropping|dips?|slips?|retreats?|wanes?|tumbles?|subsides?|melambat|mereda|menurun|turun|melemah|melandai)|(?:cooling|cooler|softer|soft|slower|easing|moderating|subdued|benign|muted|lower|weaker|disinflationary|melambatnya|meredanya|turunnya|pelemahan)\s+(?:us\s+)?(?:inflation|cpi|core\s+cpi|pce|core\s+pce|ppi|price\s+pressures?|tekanan\s+inflasi|inflasi|ism(?:\s+manufacturing|\s+services|\s+prices)?|labor|jobs?|hiring|payrolls?|wages?)|disinflation|below\s+(?:forecast|estimate|consensus|expectations?)|misses?\s+(?:forecast|estimates?|expectations?)|(?:cooler|softer|weaker)[- ]than[- ]expected)\b/gi
@@ -1208,10 +1559,10 @@ function scoreMainSentenceClause(
       coolingMacroSignal = true;
     }
 
-    // 5. Rate Hike / Fresh Hawkish Tightening (EN + ID) -> BEARISH SPIKE AWAL
+    // 5. Rate Hike / Fresh Hawkish Tightening (EN + ID) -> BEARISH
     const rateHikeMatch = maskMatchedSpans(
       working,
-      /\b(?:(?:fed\s+)?rate\s+hikes?|hike[sd]?\s+(?:interest\s+)?rates?|hiking\s+(?:interest\s+)?rates?|raise[sd]?\s+(?:interest\s+)?rates?|raising\s+rates?|hawkish\s+(?:pivot|shift|turn|surprise|tightening|stance|tilt|fed|rhetoric|tone|bias|warning)|(?:fresh|new|monetary|policy|further)\s+tightening|tighten(?:s|ing)?\s+(?:policy|monetary)|higher\s+for\s+longer|restrictive\s+(?:policy|stance|for\s+longer)|more\s+(?:rate\s+)?hikes?|(?:25|50|75)[- ]?bps?\s+hike|kenaikan\s+suku\s+bunga|naikkan\s+suku\s+bunga|pengetatan\s+(?:hawkish(?:\s+baru)?|moneter|kebijakan)|kebijakan\s+hawkish|nada\s+hawkish|suku\s+bunga\s+tinggi\s+lebih\s+lama)\b/gi
+      /\b(?:(?:fed\s+)?rate\s+hikes?|hike[sd]?\s+(?:interest\s+)?rates?|hiking\s+(?:interest\s+)?rates?|raise[sd]?\s+(?:interest\s+)?rates?|raising\s+rates?|hawkish\s+(?:pivot|shift|turn|surprise|tightening|stance|tilt|fed|rhetoric|tone|bias|warning)|(?:fresh|new|monetary|policy|further)\s+tightening|tighten(?:s|ing)?\s+(?:policy|monetary)|higher\s+for\s+longer|restrictive\s+(?:policy|stance|for\s+longer)|more\s+(?:rate\s+)?hikes?|(?:25|50|75)[- ]?bps?\s+hike|quantitative\s+tightening|\bqt\b|kenaikan\s+suku\s+bunga|naikkan\s+suku\s+bunga|pengetatan\s+(?:hawkish(?:\s+baru)?|moneter|kebijakan)|kebijakan\s+hawkish|nada\s+hawkish|suku\s+bunga\s+tinggi\s+lebih\s+lama)\b/gi
     );
     working = rateHikeMatch.masked;
     if (rateHikeMatch.hit) {
@@ -1219,7 +1570,7 @@ function scoreMainSentenceClause(
       rateHikeHawkishSignal = true;
     }
 
-    // 6. Inflation / CPI / ISM Prices Surge / Hotter Macro -> BEARISH SPIKE AWAL
+    // 6. Inflation / CPI / ISM Prices Surge / Hotter Macro -> BEARISH
     const inflationSurgeMatch = maskMatchedSpans(
       working,
       /\b(?:(?:inflation|cpi|core\s+cpi|pce|core\s+pce|ppi|prices?|price\s+pressures?|tekanan\s+inflasi|inflasi|ism(?:\s+prices)?)\s+(?:surges?|surging|jumps?|jumping|spikes?|spiking|accelerates?|accelerating|reaccelerates?|heats?\s+up|rises?|rising|climbs?|climbing|runs?\s+hot|stays?\s+(?:hot|elevated|sticky)|rebounds?|persists?|melonjak|memanas|menguat|meningkat|naik\s+tajam)|(?:hotter|hot|surging|spiking|accelerating|rebounding|resurgent|elevated|sticky|persistent|stubborn|upside|lonjakan|memanasnya)\s+(?:us\s+)?(?:inflation|cpi|core\s+cpi|pce|core\s+pce|ppi|price\s+pressures?|tekanan\s+inflasi|inflasi|inflation\s+risks?|ism(?:\s+prices)?)|(?:hotter|stronger)[- ]than[- ]expected|beats?\s+(?:forecast|estimates?|expectations?)|above\s+(?:forecast|estimate|consensus|expectations?)|upside\s+inflation\s+risk)\b/gi
@@ -1230,18 +1581,119 @@ function scoreMainSentenceClause(
       inflationSurgeSignal = true;
     }
 
-    // 7. Energy / Hormuz / Iran / Tariff Inflation Channel
+    // 7A. Geopolitics De-escalation / Ceasefire / Truce & Tariff Rollback -> Safe-Haven Unwind (BEARISH)
+    const deescalationMatch = maskMatchedSpans(
+      working,
+      /\b(?:ceasefire|truce|peace\s+(?:deal|talks?|agreement)|de[- ]?escalat(?:e|es|ion)|hormuz\s+reopen(?:s|ing)?|tariff\s+(?:deal|pause|rollback|truce|exemption|cut)|trade\s+(?:deal|truce|accord)|gencatan\s+senjata|kesepakatan\s+damai|penundaan\s+tarif)\b/gi
+    );
+    working = deescalationMatch.masked;
+    if (deescalationMatch.hit) {
+      bearScore += 2.5 * w;
+      deescalationSignal = true;
+    }
+
+    // 7B. Oil & Energy Relief (OPEC output hike / crude plunge / easing supply) -> BULLISH (lowers inflation)
+    const oilReliefMatch = maskMatchedSpans(
+      working,
+      /\b(?:oil|crude|wti|brent)\b[^.;,]{0,48}\b(?:falls?|drops?|plunges?|tumbles?|slides?|eases?|cools?|retreats?|sinks?|turun|anjlok|merosot)\b|\b(?:opec|opec\+)\b[^.;,]{0,48}\b(?:boost|increase|raise|hike|add)(?:s|ing)?\s+(?:output|supply|production)\b/gi
+    );
+    working = oilReliefMatch.masked;
+    if (oilReliefMatch.hit) {
+      bullScore += 2.0 * w;
+      oilReliefSignal = true;
+    }
+
+    // 7C. Energy / Hormuz / Iran / OPEC Cut Inflation Channel -> BEARISH (Inflation Channel)
     const isOilEnergySurge =
-      /\b(OIL|CRUDE|WTI|BRENT|HORMUZ|IRAN|TARIFF)\b/i.test(working) &&
-      /\b(SURGE|SURGES|SURGING|SPIKE|SPIKES|SPIKING|JUMP|JUMPS|RALLY|HIGHER|INFLATION|BLOCKADE|SUPPLY|DISRUPTION|CLIMBS|MELONJAK)\b/i.test(
+      /\b(OIL|CRUDE|WTI|BRENT|HORMUZ|OPEC)\b/i.test(working) &&
+      /\b(SURGE|SURGES|SURGING|SPIKE|SPIKES|SPIKING|JUMP|JUMPS|RALLY|HIGHER|INFLATION|BLOCKADE|CLOSURE|DISRUPTION|OUTPUT\s+CUT|CLIMBS|MELONJAK|TIGHTEN)\b/i.test(
         working
       );
     if (isOilEnergySurge) {
       bearScore += 2.4 * w;
       oilInflationSignal = true;
-    } else if (/\b(HORMUZ|IRAN|MIDDLE EAST|TARIFF|GEOPOLITIC|SAFE[- ]HAVEN)\b/i.test(working)) {
-      bullScore += 1.0 * w;
+    }
+
+    // 7D. Tariff & Trade Conflict (assigns TARIFF_TRADE channel distinctly)
+    const tariffConflictMatch = maskMatchedSpans(
+      working,
+      /\b(?:tariffs?|trade\s+war|import\s+dut(?:y|ies)|levies|retaliat(?:e|ion|ory)\s+tariffs?|perang\s+dagang|tarif\s+impor)\b/gi
+    );
+    working = tariffConflictMatch.masked;
+    if (tariffConflictMatch.hit) {
+      bullScore += 1.4 * w;
+      tariffTradeSignal = true;
+    }
+
+    // 7E. Kinetic Geopolitics Safe-Haven Escalation (Hormuz / Iran / Middle East)
+    // Strip explicit official denials/refutations first so e.g. "US Centcom: Iran did not strike..." doesn't inflate false safe-haven score
+    const deniedGeoCleaned = working.replace(
+      /(?:\b(?:iran|israel|russia|hormuz|us|military)\s+)?\b(?:did\s+not|didn't|does\s+not|has\s+not|denies?|denied|refutes?|no\s+evidence\s+of|not\s+true\s+that|falsely\s+claim(?:s|ed)?)\b[^.;,]{0,60}/gi,
+      ' '
+    );
+    const geoEscalationMatch = maskMatchedSpans(
+      deniedGeoCleaned,
+      /\b(?:hormuz|iran|middle\s+east|israel|strike[sd]?|sanctions?|escalation|missile|nuclear|geopolitic(?:al)?\s+(?:risk|tension|crisis)|safe[- ]haven\s+(?:bid|demand|surge))\b/gi
+    );
+    if (geoEscalationMatch.hit) {
+      bullScore += 2.0 * w;
       geopoliticsSignal = true;
+    }
+
+    // 7F. US Equity / Mega-IPO Capital Rotation vs Risk-Off Equity Selloff
+    const equityRiskOnDrain = maskMatchedSpans(
+      working,
+      /\b(?:mega[- ]?ipo|blockbuster\s+ipo|ipo\s+(?:boom|frenzy|surge|debut|draws?\s+liquidity)|risk[- ]on\s+(?:rally|rotation|appetite)|(?:s&p\s*500|nasdaq|dow|wall\s+street|us\s+equities|stocks?)\s+(?:hit(?:s)?\s+(?:record|all[- ]time)\s+high|surges?|rall(?:y|ies)|rallied|booms?|rotates?\s+into\s+risk)|rotation\s+(?:out\s+of\s+(?:gold|safe[- ]havens?)|into\s+(?:equities|stocks|tech|ai)))\b/gi
+    );
+    working = equityRiskOnDrain.masked;
+    if (equityRiskOnDrain.hit) {
+      bearScore += 1.9 * w;
+      equityRotationSignal = true;
+    }
+
+    const equitySelloffMatch = maskMatchedSpans(
+      working,
+      /\b(?:(?:s&p\s*500|nasdaq|wall\s+street|stocks?|equities)\s+(?:tumbles?|plunges?|selloff|sells?\s+off|drops?|crashes?|slides?)|risk[- ]off\s+(?:selloff|panic|rout)|margin\s+call\s+selloff|flight\s+to\s+safety)\b/gi
+    );
+    working = equitySelloffMatch.masked;
+    if (equitySelloffMatch.hit) {
+      bullScore += 1.8 * w;
+      equityRotationSignal = true;
+    }
+
+    // 7G. Central Bank Physical Buying / China PBoC / Gold ETF Flows
+    const cbBullMatch = maskMatchedSpans(
+      working,
+      /\b(?:central\s+banks?\s+(?:buy(?:s|ing)?|add(?:s|ed|ing)?|boost(?:s|ing)?|accumulat(?:e|es|ing))\s+gold|pboc\s+(?:buys?|adds?|boosts?|reserves?|gold)|china\s+(?:gold\s+(?:buying|reserves?|demand)|stimulus|pboc\s+(?:easing|cut))|(?:gld|gold\s+etf)\s+(?:inflows?|buying|adds?))\b/gi
+    );
+    working = cbBullMatch.masked;
+    if (cbBullMatch.hit) {
+      bullScore += 2.2 * w;
+      centralBankFlowSignal = true;
+    }
+    const cbBearMatch = maskMatchedSpans(
+      working,
+      /\b(?:pboc\s+(?:pauses?|halts?|stops?)\s+gold|(?:gld|gold\s+etf)\s+(?:outflows?|redemptions?)|central\s+bank\s+gold\s+sales?)\b/gi
+    );
+    working = cbBearMatch.masked;
+    if (cbBearMatch.hit) {
+      bearScore += 1.9 * w;
+      centralBankFlowSignal = true;
+    }
+
+    // 7H. Credit / Banking Stress & Treasury Auction / US Fiscal Stress
+    const creditOrFiscalMatch = maskMatchedSpans(
+      working,
+      /\b(?:weak\s+(?:treasury|bond)\s+auction|auction\s+(?:tail|slump)|poor\s+bid[- ]to[- ]cover|government\s+shutdown|debt\s+ceiling\s+(?:standoff|crisis)|sovereign\s+(?:debt|downgrade)|banking\s+(?:stress|crisis|turmoil)|credit\s+(?:crunch|stress|default)|regional\s+bank\s+(?:loss|trouble))\b/gi
+    );
+    working = creditOrFiscalMatch.masked;
+    if (creditOrFiscalMatch.hit) {
+      bullScore += 2.2 * w;
+      if (/auction|shutdown|debt\s+ceiling/i.test(clause.text)) {
+        fiscalAuctionSignal = true;
+      } else {
+        creditStressSignal = true;
+      }
     }
 
     // 8. Direct DXY / Yield / Gold Market Reaction Signals
@@ -1284,9 +1736,27 @@ function scoreMainSentenceClause(
     } else if (coolingMacroSignal) {
       channelType = 'MACRO_DATA';
       catalystCategory = 'COOLING_MACRO';
+    } else if (centralBankFlowSignal) {
+      channelType = 'CENTRAL_BANK_FLOW';
+      catalystCategory = 'CENTRAL_BANK_FLOW';
+    } else if (creditStressSignal) {
+      channelType = 'CREDIT_STRESS';
+      catalystCategory = 'CREDIT_STRESS';
+    } else if (fiscalAuctionSignal) {
+      channelType = 'FISCAL_AUCTION';
+      catalystCategory = 'FISCAL_AUCTION';
+    } else if (oilReliefSignal) {
+      channelType = 'OIL_INFLATION_CHANNEL';
+      catalystCategory = 'OIL_RELIEF';
+    } else if (tariffTradeSignal) {
+      channelType = 'TARIFF_TRADE';
+      catalystCategory = 'TARIFF_TRADE';
     } else if (geopoliticsSignal) {
       channelType = 'GEOPOLITICS_SAFEN_HAVEN';
       catalystCategory = 'GEOPOLITICS_SAFE_HAVEN';
+    } else if (equityRotationSignal) {
+      channelType = 'EQUITY_ROTATION';
+      catalystCategory = 'EQUITY_ROTATION';
     }
   } else if (sentimentForGold === 'BEARISH') {
     if (oilInflationSignal) {
@@ -1298,6 +1768,15 @@ function scoreMainSentenceClause(
     } else if (inflationSurgeSignal) {
       channelType = 'MACRO_DATA';
       catalystCategory = 'INFLATION_SURGE';
+    } else if (deescalationSignal) {
+      channelType = 'GEOPOLITICS_SAFEN_HAVEN';
+      catalystCategory = 'GEOPOLITICS_DEESCALATION';
+    } else if (equityRotationSignal) {
+      channelType = 'EQUITY_ROTATION';
+      catalystCategory = 'EQUITY_ROTATION';
+    } else if (centralBankFlowSignal) {
+      channelType = 'CENTRAL_BANK_FLOW';
+      catalystCategory = 'CENTRAL_BANK_FLOW';
     }
   }
 
@@ -1307,6 +1786,10 @@ function scoreMainSentenceClause(
     oilInflationSignal ||
     inflationSurgeSignal ||
     coolingMacroSignal ||
+    deescalationSignal ||
+    centralBankFlowSignal ||
+    creditStressSignal ||
+    fiscalAuctionSignal ||
     matchedKeywords.some((k) =>
       [
         'Fed',
@@ -1316,6 +1799,7 @@ function scoreMainSentenceClause(
         'Powell',
         'Hormuz',
         'Iran',
+        'Ceasefire',
         'CPI',
         'PPI',
         'NFP',
@@ -1327,6 +1811,13 @@ function scoreMainSentenceClause(
         'Tariff',
         'Gold',
         'XAU',
+        'PBoC',
+        'Central Bank',
+        'GLD',
+        'Shutdown',
+        'IPO',
+        'Nasdaq',
+        'S&P 500',
         'Suku Bunga',
         'Inflasi',
       ].includes(k)
@@ -1340,46 +1831,81 @@ function scoreMainSentenceClause(
   if (sentimentForGold === 'BULLISH') {
     if (catalystCategory === 'RATE_CUT_EASING') {
       aiEvaluationId =
-        'Konteks kalimat utama: peluang pemangkasan suku bunga / pelonggaran kebijakan The Fed → Katalis BULLISH SPIKE AWAL pada XAU/USD.';
+        'Konteks kalimat utama: peluang pemangkasan suku bunga / pelonggaran kebijakan The Fed → Katalis BULLISH pada XAU/USD.';
       aiEvaluationEn =
-        'Main clause context: Fed rate-cut odds / policy easing narrative → BULLISH INITIAL SPIKE catalyst for XAU/USD.';
+        'Main clause context: Fed rate-cut odds / policy easing narrative → BULLISH catalyst for XAU/USD.';
     } else if (catalystCategory === 'COOLING_MACRO') {
       aiEvaluationId =
-        'Konteks kalimat utama: komponen inflasi/CPI/ISM melambat → Katalis BULLISH SPIKE AWAL (tekanan ke DXY & yield).';
+        'Konteks kalimat utama: komponen inflasi/CPI/ISM atau tenaga kerja melambat → Katalis BULLISH (menekan DXY & yield).';
       aiEvaluationEn =
-        'Main clause context: cooling inflation/CPI/ISM components → BULLISH INITIAL SPIKE catalyst (weighs on DXY & yields).';
-    } else if (catalystCategory === 'GEOPOLITICS_SAFE_HAVEN') {
+        'Main clause context: cooling inflation/CPI/ISM or labor components → BULLISH catalyst (weighs on DXY & yields).';
+    } else if (catalystCategory === 'CENTRAL_BANK_FLOW') {
       aiEvaluationId =
-        'Sentimen geopolitik / tarif memicu permintaan Safe-Haven jangka pendek pada XAU/USD (BULLISH SPIKE AWAL).';
+        'Arus akumulasi Bank Sentral (PBoC/global) atau aliran dana masuk ETF Emas (GLD) → Penopang struktural BULLISH pada XAU/USD.';
       aiEvaluationEn =
-        'Geopolitical / tariff headline sparks short-term Safe-Haven demand for XAU/USD (BULLISH INITIAL SPIKE).';
+        'Central bank accumulation (PBoC/global) or Gold ETF (GLD) inflows → Structural BULLISH tailwind for XAU/USD.';
+    } else if (catalystCategory === 'CREDIT_STRESS' || catalystCategory === 'FISCAL_AUCTION') {
+      aiEvaluationId =
+        'Tekanan fiskal AS / lelang obligasi lemah / stres kredit perbankan → Aliran dana lindung nilai masuk ke XAU/USD (BULLISH).';
+      aiEvaluationEn =
+        'US fiscal/debt stress, weak Treasury auction, or credit turmoil → Flight-to-safety inflows into XAU/USD (BULLISH).';
+    } else if (catalystCategory === 'OIL_RELIEF') {
+      aiEvaluationId =
+        'Harga minyak melemah / tambahan pasokan OPEC meredakan kecemasan inflasi energi → Mengurangi beban suku bunga tinggi bagi Emas (BULLISH).';
+      aiEvaluationEn =
+        'Oil pullback / OPEC supply boost eases energy inflation worries → Reduces hawkish rate pressure on Gold (BULLISH).';
+    } else if (catalystCategory === 'TARIFF_TRADE' || catalystCategory === 'GEOPOLITICS_SAFE_HAVEN') {
+      aiEvaluationId =
+        'Sentimen geopolitik / konflik dagang memicu permintaan Safe-Haven pada XAU/USD (BULLISH).';
+      aiEvaluationEn =
+        'Geopolitical / trade-tariff tension sparks Safe-Haven demand for XAU/USD (BULLISH).';
+    } else if (catalystCategory === 'EQUITY_ROTATION') {
+      aiEvaluationId =
+        'Aksi jual saham AS (Risk-Off) mengalihkan dana ke aset aman termasuk XAU/USD (BULLISH).';
+      aiEvaluationEn =
+        'US equity risk-off selloff rotates capital toward defensive Safe-Haven assets like XAU/USD (BULLISH).';
     } else {
       aiEvaluationId =
-        'Konteks narasi makro mendukung dorongan naik XAU/USD (BULLISH SPIKE AWAL).';
+        'Konteks narasi makro mendukung dorongan naik XAU/USD (BULLISH).';
       aiEvaluationEn =
-        'Macro narrative context supports upward XAU/USD momentum (BULLISH INITIAL SPIKE).';
+        'Macro narrative context supports upward XAU/USD momentum (BULLISH).';
     }
   } else if (sentimentForGold === 'BEARISH') {
     if (catalystCategory === 'OIL_INFLATION') {
       aiEvaluationId =
-        'Lonjakan energi (Hormuz/Iran/Tarif) mengaktifkan Inflation Channel → Memaksa Fed Hawkish & katalis BEARISH SPIKE AWAL pada XAU/USD.';
+        'Lonjakan energi (Hormuz/OPEC/Minyak) mengaktifkan Inflation Channel → Memicu risiko Fed tetap ketat (BEARISH pada XAU/USD).';
       aiEvaluationEn =
-        'Energy spike (Hormuz/Iran/Tariffs) activates the Inflation Channel → Forces Hawkish Fed & BEARISH INITIAL SPIKE pressure on XAU/USD.';
+        'Energy spike (Hormuz/OPEC/Oil) activates the Inflation Channel → Increases risk of tighter Fed policy (BEARISH pressure on XAU/USD).';
     } else if (catalystCategory === 'RATE_HIKE_HAWKISH') {
       aiEvaluationId =
-        'Konteks kalimat utama: kenaikan suku bunga / pengetatan hawkish The Fed → Repricing US10Y & DXY naik (BEARISH SPIKE AWAL pada XAU/USD).';
+        'Konteks kalimat utama: sinyal kenaikan suku bunga / pengetatan hawkish The Fed → Yield & DXY menguat menekan XAU/USD (BEARISH).';
       aiEvaluationEn =
-        'Main clause context: rate-hike / fresh hawkish tightening rhetoric → US10Y & DXY reprice higher (BEARISH INITIAL SPIKE on XAU/USD).';
+        'Main clause context: rate-hike / fresh hawkish tightening rhetoric → US10Y & DXY reprice higher (BEARISH pressure on XAU/USD).';
     } else if (catalystCategory === 'INFLATION_SURGE') {
       aiEvaluationId =
-        'Konteks kalimat utama: lonjakan inflasi / data AS lebih panas → Katalis BEARISH SPIKE AWAL pada XAU/USD.';
+        'Konteks kalimat utama: lonjakan inflasi / data AS lebih panas → Tekanan BEARISH pada XAU/USD.';
       aiEvaluationEn =
-        'Main clause context: inflation surge / hotter US print → BEARISH INITIAL SPIKE catalyst on XAU/USD.';
+        'Main clause context: inflation surge / hotter US print → BEARISH pressure on XAU/USD.';
+    } else if (catalystCategory === 'GEOPOLITICS_DEESCALATION') {
+      aiEvaluationId =
+        'Merdekanya tensi geopolitik / gencatan senjata / kesepakatan tarif mengurangi kebutuhan lindung nilai → Premi Safe-Haven Emas tergerus (BEARISH).';
+      aiEvaluationEn =
+        'Geopolitical de-escalation / ceasefire / trade truce unwinds Safe-Haven risk premium → Near-term BEARISH pressure on XAU/USD.';
+    } else if (catalystCategory === 'EQUITY_ROTATION') {
+      aiEvaluationId =
+        'Reli saham AS / daya tarik IPO besar menyedot likuiditas (Risk-On Rotation) keluar sementara dari Emas → Tekanan BEARISH jangka pendek.';
+      aiEvaluationEn =
+        'US equity rally / mega-IPO liquidity rotation draws speculative capital into Risk-On stocks → Near-term BEARISH headwind on Gold.';
+    } else if (catalystCategory === 'CENTRAL_BANK_FLOW') {
+      aiEvaluationId =
+        'Jeda pembelian Bank Sentral atau arus keluar ETF Emas (GLD outflows) → Melemahkan dukungan aliran fisik (BEARISH).';
+      aiEvaluationEn =
+        'Central bank purchase pause or Gold ETF (GLD) outflows → Softens institutional physical support (BEARISH).';
     } else {
       aiEvaluationId =
-        'Konteks narasi makro mengindikasikan penguatan USD & yield → Tekanan BEARISH SPIKE AWAL pada XAU/USD.';
+        'Konteks narasi makro mengindikasikan penguatan USD & yield → Tekanan BEARISH pada XAU/USD.';
       aiEvaluationEn =
-        'Macro narrative context points to firmer USD & yields → BEARISH INITIAL SPIKE pressure on XAU/USD.';
+        'Macro narrative context points to firmer USD & yields → BEARISH pressure on XAU/USD.';
     }
   } else {
     aiEvaluationId =
@@ -1517,6 +2043,7 @@ export function filterAndScoreBreakingHeadlines(
     results.push({
       id: `news-${results.length + 1}-${Date.now()}`,
       title: cleanTitle,
+      descriptionSummary: cleanDescription ? cleanDescription.slice(0, 220) : undefined,
       source: item.source,
       pubDate: item.pubDateIso,
       link: item.link,
@@ -1661,13 +2188,28 @@ export function getSupportingContextEvents(
 }
 
 /**
+ * Verifies whether a headline explicitly references an FOMC official or central bank policy remark
+ * so generic tariff/equity/commodity stories do not falsely trigger Dynamic Pivot.
+ */
+export function isFedOfficialSpeechOrPolicyHeadline(text: string): boolean {
+  if (!text) return false;
+  return /\b(?:fed(?:'s)?\s+(?:chair|governor|vice\s+chair|president|officials?|policymakers?|minutes|statement)|fomc|powell|waller|warsh|williams|jefferson|bowman|daly|goolsbee|kashkari|hammack|musalem|schmid|collins|miran|the\s+fed)\b/i.test(
+    text
+  );
+}
+
+/**
  * Analyzes the tone of a Fed speech statement or breaking news headline.
  */
 export function analyzeStatementTone(statement: string): 'HAWKISH' | 'DOVISH' | 'NEUTRAL' {
   if (!statement || !statement.trim()) return 'NEUTRAL';
   const contextEval = scoreMainSentenceClause(statement);
   if (contextEval.sentimentForGold === 'BEARISH') return 'HAWKISH';
-  if (contextEval.sentimentForGold === 'BULLISH' && contextEval.catalystCategory !== 'GEOPOLITICS_SAFE_HAVEN') {
+  if (
+    contextEval.sentimentForGold === 'BULLISH' &&
+    contextEval.catalystCategory !== 'GEOPOLITICS_SAFE_HAVEN' &&
+    contextEval.catalystCategory !== 'TARIFF_TRADE'
+  ) {
     return 'DOVISH';
   }
   return 'NEUTRAL';
@@ -1786,9 +2328,13 @@ export function computeDualHorizonAnalysis(params: {
     intradayContext,
   } = params;
 
-  // Re-evaluate narrative RSS headlines using main-sentence context (prevents naive opposing-keyword neutralization even on cached snapshots)
+  // Re-evaluate narrative RSS headlines using main-sentence context (preserving descriptionSummary when title is neutral)
   const evaluatedHeadlines = breakingNews.map((item) => {
-    const ctx = evaluateBreakingHeadlineContext(item.title, undefined, item.matchedKeywords || []);
+    const ctx = evaluateBreakingHeadlineContext(
+      item.title,
+      item.descriptionSummary,
+      item.matchedKeywords || []
+    );
     return {
       item,
       sentiment: ctx.sentimentForGold !== 'NEUTRAL' ? ctx.sentimentForGold : item.sentimentForGold,
@@ -2429,6 +2975,61 @@ export function createUnavailableFedWatchState(): CmeFedWatchState {
   };
 }
 
+export interface UpcomingFomcMeetingInfo {
+  labelId: string;
+  labelEn: string;
+  shortId: string;
+  shortEn: string;
+  searchPhraseEn: string;
+}
+
+const FOMC_MEETING_DATES_SCHEDULE: Array<{
+  cutoffIso: string;
+  labelId: string;
+  labelEn: string;
+  shortId: string;
+  shortEn: string;
+  searchPhraseEn: string;
+}> = [
+  { cutoffIso: '2026-12-17T00:00:00Z', labelId: 'FOMC Desember 2026', labelEn: 'December 2026 FOMC', shortId: 'Des 2026', shortEn: 'Dec 2026', searchPhraseEn: 'December 2026 FOMC meeting' },
+  { cutoffIso: '2027-01-28T00:00:00Z', labelId: 'FOMC Januari 2027', labelEn: 'January 2027 FOMC', shortId: 'Jan 2027', shortEn: 'Jan 2027', searchPhraseEn: 'January 2027 FOMC meeting' },
+  { cutoffIso: '2027-03-18T00:00:00Z', labelId: 'FOMC Maret 2027', labelEn: 'March 2027 FOMC', shortId: 'Mar 2027', shortEn: 'Mar 2027', searchPhraseEn: 'March 2027 FOMC meeting' },
+  { cutoffIso: '2027-04-29T00:00:00Z', labelId: 'FOMC April 2027', labelEn: 'April 2027 FOMC', shortId: 'Apr 2027', shortEn: 'Apr 2027', searchPhraseEn: 'April 2027 FOMC meeting' },
+  { cutoffIso: '2027-06-10T00:00:00Z', labelId: 'FOMC Juni 2027', labelEn: 'June 2027 FOMC', shortId: 'Jun 2027', shortEn: 'Jun 2027', searchPhraseEn: 'June 2027 FOMC meeting' },
+  { cutoffIso: '2027-07-29T00:00:00Z', labelId: 'FOMC Juli 2027', labelEn: 'July 2027 FOMC', shortId: 'Jul 2027', shortEn: 'Jul 2027', searchPhraseEn: 'July 2027 FOMC meeting' },
+  { cutoffIso: '2027-09-16T00:00:00Z', labelId: 'FOMC September 2027', labelEn: 'September 2027 FOMC', shortId: 'Sep 2027', shortEn: 'Sep 2027', searchPhraseEn: 'September 2027 FOMC meeting' },
+  { cutoffIso: '2027-11-04T00:00:00Z', labelId: 'FOMC November 2027', labelEn: 'November 2027 FOMC', shortId: 'Nov 2027', shortEn: 'Nov 2027', searchPhraseEn: 'November 2027 FOMC meeting' },
+  { cutoffIso: '2027-12-16T00:00:00Z', labelId: 'FOMC Desember 2027', labelEn: 'December 2027 FOMC', shortId: 'Des 2027', shortEn: 'Dec 2027', searchPhraseEn: 'December 2027 FOMC meeting' },
+];
+
+export function getUpcomingFomcMeetingInfo(nowMs: number = Date.now()): UpcomingFomcMeetingInfo {
+  const match = FOMC_MEETING_DATES_SCHEDULE.find((item) => nowMs < new Date(item.cutoffIso).getTime());
+  if (match) {
+    return {
+      labelId: match.labelId,
+      labelEn: match.labelEn,
+      shortId: match.shortId,
+      shortEn: match.shortEn,
+      searchPhraseEn: match.searchPhraseEn,
+    };
+  }
+  const dt = new Date(nowMs);
+  const target = new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 1));
+  const monthsId = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  const shortMonthsId = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  const monthsEn = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const shortMonthsEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mIdx = target.getUTCMonth();
+  const yr = target.getUTCFullYear();
+  return {
+    labelId: `FOMC ${monthsId[mIdx]} ${yr}`,
+    labelEn: `${monthsEn[mIdx]} ${yr} FOMC`,
+    shortId: `${shortMonthsId[mIdx]} ${yr}`,
+    shortEn: `${shortMonthsEn[mIdx]} ${yr}`,
+    searchPhraseEn: `${monthsEn[mIdx]} ${yr} FOMC meeting`,
+  };
+}
+
 /**
  * Evaluates and normalizes live CME FedWatch probabilities according to Hukum Bang Nael & Market Pricing Saturation:
  * - Preserves 1-decimal precision (XX.X%)
@@ -2494,10 +3095,11 @@ export function evaluateCmeFedWatchScoring(
     saturationScenario = 'HOLD';
   }
 
+  const upcomingFomc = getUpcomingFomcMeetingInfo();
   const fomcMeetingDate =
     raw.fomcMeetingDate && raw.fomcMeetingDate.trim()
       ? raw.fomcMeetingDate.trim()
-      : 'FOMC Desember 2026';
+      : upcomingFomc.labelId;
 
   const hawkishShiftDetected = Boolean(raw.hawkishShiftDetected) || hikeProbability >= 25;
 
@@ -2506,9 +3108,9 @@ export function evaluateCmeFedWatchScoring(
 
   if (!summaryNoteId) {
     if (saturationScenario === 'HIKE') {
-      summaryNoteId = `Pasar sudah ${hikeProbability}% priced-in Rate Hike Desember — jika PPI rilis lebih rendah dari Forecast, waspadai kejutan repricing BUY XAU/USD yang eksplosif; jika PPI rilis panas, penguatan USD cenderung terbatas karena sudah priced-in.`;
+      summaryNoteId = `Pasar sudah ${hikeProbability}% priced-in Rate Hike (${fomcMeetingDate}) — jika data inflasi/tenaga kerja AS rilis lebih rendah dari Forecast, waspadai kejutan repricing BUY XAU/USD yang eksplosif; jika rilis panas, penguatan USD cenderung terbatas karena sudah priced-in.`;
     } else if (saturationScenario === 'CUT') {
-      summaryNoteId = `Pasar sudah ${cutProbability}% priced-in Rate Cut Desember — jika PPI/inflasi rilis lebih panas dari Forecast, waspadai kejutan repricing SELL XAU/USD yang tajam; jika rilis melandai, pelemahan USD cenderung terbatas karena sudah priced-in.`;
+      summaryNoteId = `Pasar sudah ${cutProbability}% priced-in Rate Cut (${fomcMeetingDate}) — jika data inflasi/tenaga kerja AS rilis lebih panas dari Forecast, waspadai kejutan repricing SELL XAU/USD yang tajam; jika rilis melandai, pelemahan USD cenderung terbatas karena sudah priced-in.`;
     } else if (saturationScenario === 'HOLD') {
       summaryNoteId = `Pasar sudah ${holdProbability}% priced-in Hold (${fomcMeetingDate}) — jika data rilis berlawanan konsensus, waspadai kejutan repricing tajam pada XAU/USD.`;
     } else if (dominantOutcome === 'CUT') {
@@ -2520,9 +3122,9 @@ export function evaluateCmeFedWatchScoring(
 
   if (!summaryNoteEn) {
     if (saturationScenario === 'HIKE') {
-      summaryNoteEn = `Market is already ${hikeProbability}% priced-in for a December Rate Hike — if PPI releases lower than Forecast, watch for an explosive BUY XAU/USD repricing surprise; if PPI prints hot, USD upside is likely capped as it is already priced-in.`;
+      summaryNoteEn = `Market is already ${hikeProbability}% priced-in for a Rate Hike (${fomcMeetingDate}) — if US inflation/jobs print softer than Forecast, watch for an explosive BUY XAU/USD repricing surprise; if data prints hot, USD upside is likely capped as it is already priced-in.`;
     } else if (saturationScenario === 'CUT') {
-      summaryNoteEn = `Market is already ${cutProbability}% priced-in for a December Rate Cut — if PPI/inflation prints hotter than Forecast, watch for a sharp SELL XAU/USD repricing surprise; if data cools, USD downside is likely capped as it is already priced-in.`;
+      summaryNoteEn = `Market is already ${cutProbability}% priced-in for a Rate Cut (${fomcMeetingDate}) — if US inflation/jobs print hotter than Forecast, watch for a sharp SELL XAU/USD repricing surprise; if data cools, USD downside is likely capped as it is already priced-in.`;
     } else if (saturationScenario === 'HOLD') {
       summaryNoteEn = `Market is already ${holdProbability}% priced-in for a Hold (${fomcMeetingDate}) — if actual data contradicts consensus, watch for sharp repricing volatility on XAU/USD.`;
     } else if (dominantOutcome === 'CUT') {
@@ -2545,7 +3147,7 @@ export function evaluateCmeFedWatchScoring(
     hawkishShiftDetected,
     summaryNoteId,
     summaryNoteEn,
-    sourceLabel: raw.sourceLabel || 'Sumber: CME FedWatch Grounding (Des 2026)',
+    sourceLabel: raw.sourceLabel || `Sumber: CME FedWatch Grounding (${upcomingFomc.shortId})`,
     impliedFedFundsRate:
       raw.impliedFedFundsRate !== undefined ? raw.impliedFedFundsRate : null,
     zqFuturesPrice: raw.zqFuturesPrice !== undefined ? raw.zqFuturesPrice : null,
@@ -2556,9 +3158,8 @@ export function evaluateCmeFedWatchScoring(
 }
 
 /**
- * Automatic Real-Time Bond & Futures Backup Calculator for CME FedWatch (FOMC Desember 2026):
- * When Google Search Grounding is rate-limited or web search snippets omit exact FedWatch numbers,
- * computes market-implied rate probabilities directly from live Yahoo Finance quotes:
+ * Automatic Real-Time Bond & Futures Backup Calculator for CME FedWatch:
+ * Computes market-implied rate probabilities directly from live Yahoo Finance quotes:
  * - 30-Day Fed Funds Futures (`ZQ=F`) -> Implied Fed Funds Rate = `100 - harga ZQ=F`
  * - US 13-Week T-Bill (`^IRX`) & US 2Y/10Y Treasury Yield (`2YY=F` / `^TNX`) as Market Rate Pricing proxy
  */
@@ -2629,19 +3230,16 @@ export function computeImpliedFedWatchFromMarketQuotes(params: {
   let cutRaw = 0;
 
   if (irxSpreadBps >= 18 || (impliedRate >= 4.45 && (us10yChangePercent || 0) >= 0)) {
-    // High hawkish rate pricing (e.g. ~88% - 91.2% Rate Hike / Tightening expectation for Dec 2026 FOMC)
     const clampedHike = Math.min(94.5, Math.max(82.4, 88.6 + Math.min(5.5, irxSpreadBps * 0.15)));
     hikeRaw = Number(clampedHike.toFixed(1));
     holdRaw = Number(Math.max(4.5, 100 - hikeRaw - 1.2).toFixed(1));
     cutRaw = Number(Math.max(0, 100 - hikeRaw - holdRaw).toFixed(1));
   } else if (irxSpreadBps <= -18) {
-    // Dovish rate cut pricing
     const clampedCut = Math.min(92.0, Math.max(68.0, 75.0 + Math.abs(irxSpreadBps) * 0.3));
     cutRaw = Number(clampedCut.toFixed(1));
     holdRaw = Number((100 - cutRaw).toFixed(1));
     hikeRaw = 0;
   } else {
-    // Balanced / Hold-leaning pricing with hike/cut tails
     if (irxSpreadBps >= 0) {
       hikeRaw = Number(Math.min(89.5, Math.max(25.0, 55.0 + irxSpreadBps * 1.8)).toFixed(1));
       holdRaw = Number(Math.max(8.5, 96.0 - hikeRaw).toFixed(1));
@@ -2655,10 +3253,11 @@ export function computeImpliedFedWatchFromMarketQuotes(params: {
 
   const targetLow = Math.floor(impliedRate * 4) * 25;
   const targetHigh = targetLow + 25;
+  const upcomingFomc = getUpcomingFomcMeetingInfo();
 
   return evaluateCmeFedWatchScoring({
     isAvailable: true,
-    fomcMeetingDate: 'FOMC Desember 2026',
+    fomcMeetingDate: upcomingFomc.labelId,
     targetRateRange: `${targetLow}-${targetHigh} bps (Implied ${impliedRate.toFixed(2)}%)`,
     cutProbability: cutRaw,
     holdProbability: holdRaw,
@@ -2844,9 +3443,11 @@ export function computeDeterministicMacroSnapshot(params: {
   let clusterMixedCount = 0;
 
   for (const ev of allClusterEvents) {
-    // Mode A: Focus primary weight (35) strictly on the releasing indicator's specific pillar
-    // Mode B: Standard balanced weighting (28) across FOMC policy components
-    const weight = evaluationMode === 'INDIVIDUAL_RELEASE' ? 35 : (ev.impact === 'High' ? 28 : 16);
+    // Mode A: Focus primary weight strictly on the releasing indicator's specific pillar scaled by surprise magnitude
+    // Mode B: Standard balanced weighting across FOMC policy components
+    const baseWeight = evaluationMode === 'INDIVIDUAL_RELEASE' ? 32 : ev.impact === 'High' ? 26 : 15;
+    const surpriseScale = evaluateEventSurpriseScale(ev);
+    const weight = Math.round(baseWeight * surpriseScale);
     if (ev.eventBiasForGold === 'BUY') {
       buyScore += weight;
       clusterBuyCount += 1;
@@ -2871,22 +3472,33 @@ export function computeDeterministicMacroSnapshot(params: {
     }
   }
 
-  // Calculate 3 FOMC Pillars Recap (Inflation, Labor, Growth) across all calendar events
+  // Calculate 3 FOMC Pillars Recap (Inflation, Labor, Growth) with recency priority
+  // so fresh current-month (e.g. November) releases carry stronger authority than 60-90 day old prints.
   let inflBuy = 0, inflSell = 0;
   let laborBuy = 0, laborSell = 0;
   let growthBuy = 0, growthSell = 0;
+  const TWENTY_ONE_DAYS_MS = 21 * 24 * 60 * 60 * 1000;
+  const FORTY_FIVE_DAYS_MS = 45 * 24 * 60 * 60 * 1000;
 
   for (const ev of workingCalendarEvents) {
     if (isFedSpeechEvent(ev.title)) continue;
+    const evMs = new Date(ev.date).getTime();
+    const ageMs = Number.isFinite(evMs) ? Math.max(0, nowMs - evMs) : 0;
+    const pillarVoteWeight =
+      evMs > nowMs || ageMs <= TWENTY_ONE_DAYS_MS
+        ? 3
+        : ageMs <= FORTY_FIVE_DAYS_MS
+        ? 2
+        : 1;
     if (ev.pillar === 'INFLATION') {
-      if (ev.eventBiasForGold === 'BUY') inflBuy++;
-      else if (ev.eventBiasForGold === 'SELL') inflSell++;
+      if (ev.eventBiasForGold === 'BUY') inflBuy += pillarVoteWeight;
+      else if (ev.eventBiasForGold === 'SELL') inflSell += pillarVoteWeight;
     } else if (ev.pillar === 'LABOR') {
-      if (ev.eventBiasForGold === 'BUY') laborBuy++;
-      else if (ev.eventBiasForGold === 'SELL') laborSell++;
+      if (ev.eventBiasForGold === 'BUY') laborBuy += pillarVoteWeight;
+      else if (ev.eventBiasForGold === 'SELL') laborSell += pillarVoteWeight;
     } else if (ev.pillar === 'GROWTH') {
-      if (ev.eventBiasForGold === 'BUY') growthBuy++;
-      else if (ev.eventBiasForGold === 'SELL') growthSell++;
+      if (ev.eventBiasForGold === 'BUY') growthBuy += pillarVoteWeight;
+      else if (ev.eventBiasForGold === 'SELL') growthSell += pillarVoteWeight;
     }
   }
 
@@ -2899,6 +3511,11 @@ export function computeDeterministicMacroSnapshot(params: {
 
   const sellPillars = [inflationPillarBias, laborPillarBias, growthPillarBias].filter((b) => b === 'SELL').length;
   const buyPillars = [inflationPillarBias, laborPillarBias, growthPillarBias].filter((b) => b === 'BUY').length;
+  const stagflationDetected =
+    inflationPillarBias === 'SELL' && (laborPillarBias === 'BUY' || growthPillarBias === 'BUY');
+  if (stagflationDetected) {
+    buyScore += 12;
+  }
   const overallThreePillarsBias: MacroBiasDirection =
     sellPillars >= 2 ? 'SELL' : buyPillars >= 2 ? 'BUY' : 'MIXED';
 
@@ -2965,10 +3582,31 @@ export function computeDeterministicMacroSnapshot(params: {
       });
     }
   } else {
-    // Mode A (Individual Release): Add background context with smaller weight (8-10)
-    for (const ev of workingCalendarEvents) {
-      if (allClusterEvents.some((c) => c.id === ev.id)) continue;
-      if (isFedSpeechEvent(ev.title)) continue;
+    // Mode A (Individual Release): Add background context prioritizing newest actual releases
+    // (e.g., November data before older September/October prints) and near-term scheduled events.
+    const THIRTY_FIVE_DAYS_MS = 35 * 24 * 60 * 60 * 1000;
+    const backgroundCandidates = workingCalendarEvents
+      .filter((ev) => !allClusterEvents.some((c) => c.id === ev.id) && !isFedSpeechEvent(ev.title))
+      .sort((a, b) => {
+        const aMs = new Date(a.date).getTime();
+        const bMs = new Date(b.date).getTime();
+        const aValid = Number.isFinite(aMs);
+        const bValid = Number.isFinite(bMs);
+        const aIsRecentReleased = aValid && aMs <= nowMs && nowMs - aMs <= THIRTY_FIVE_DAYS_MS && !isPlaceholderMacroValue(a.actual);
+        const bIsRecentReleased = bValid && bMs <= nowMs && nowMs - bMs <= THIRTY_FIVE_DAYS_MS && !isPlaceholderMacroValue(b.actual);
+        if (aIsRecentReleased !== bIsRecentReleased) return aIsRecentReleased ? -1 : 1;
+        if (aIsRecentReleased && bIsRecentReleased) return bMs - aMs;
+
+        const aIsUpcoming = aValid && aMs > nowMs;
+        const bIsUpcoming = bValid && bMs > nowMs;
+        if (aIsUpcoming !== bIsUpcoming) return aIsUpcoming ? -1 : 1;
+        if (aIsUpcoming && bIsUpcoming) return aMs - bMs;
+
+        if (aValid && bValid) return bMs - aMs;
+        return 0;
+      });
+
+    for (const ev of backgroundCandidates) {
       const isSupporting = isSupportingReferenceEvent(ev);
       const contextWeight = isSupporting ? 6 : 8;
       const tagPrefix = `KONTEKS LATAR BELAKANG (${ev.pillar})`;
@@ -2989,6 +3627,7 @@ export function computeDeterministicMacroSnapshot(params: {
           textEn: ev.biasReasonEn,
         });
       }
+      if (buyArguments.length >= 4 && sellArguments.length >= 4) break;
     }
   }
 
@@ -3112,12 +3751,19 @@ export function computeDeterministicMacroSnapshot(params: {
     whipsawScore += 10;
   }
 
-  // Dual-Channel Oil & Geopolitics Evaluation
+  // Dual-Channel Oil & Geopolitics Evaluation (require bearish inflation channel rather than mere keyword match)
   let oilChannelDominance: PreNewsScenarioMatrix['oilChannelDominance'] = 'NEUTRAL';
-  const hasOilHeadline = workingBreakingNews.some(
-    (b) => b.channelType === 'OIL_INFLATION_CHANNEL' || b.matchedKeywords.includes('Hormuz') || b.matchedKeywords.includes('Oil')
+  const hasBearishOilInflationHeadline = workingBreakingNews.some(
+    (b) =>
+      (b.channelType === 'OIL_INFLATION_CHANNEL' && b.sentimentForGold === 'BEARISH') ||
+      (b.sentimentForGold === 'BEARISH' &&
+        b.matchedKeywords.some((k) => ['Hormuz', 'Oil', 'OPEC'].includes(k)))
   );
-  if ((isUsoilAvailable && usoil.changePercent >= 1.25) || hasOilHeadline) {
+  const hasBullishOilReliefHeadline = workingBreakingNews.some(
+    (b) => b.channelType === 'OIL_INFLATION_CHANNEL' && b.sentimentForGold === 'BULLISH'
+  );
+
+  if ((isUsoilAvailable && usoil.changePercent >= 1.25) || hasBearishOilInflationHeadline) {
     oilChannelDominance = 'INFLATION_CHANNEL_SELL_GOLD';
     sellScore += 18;
     const oilRateLabel = isUsoilAvailable
@@ -3126,16 +3772,17 @@ export function computeDeterministicMacroSnapshot(params: {
     sellArguments.push({
       pillar: 'GEOPOLITICS',
       tag: 'DUAL-CHANNEL • USOIL INFLATION',
-      textId: `Dominasi Inflation Channel (US Oil WTI ${oilRateLabel}): Kenaikan minyak saat inflasi > 2% memicu transmisi ke Producer Energy PPI & CPI (time-lag), memaksa Fed tetap Hawkish → SELL Gold.`,
-      textEn: `Inflation Channel Dominance (US Oil WTI ${oilRateLabel}): Oil surge while inflation > 2% transmits into Producer Energy PPI & CPI (with time-lag), forcing a Hawkish Fed → SELL Gold.`,
+      textId: `Dominasi Inflation Channel (US Oil WTI ${oilRateLabel}): Kenaikan minyak memicu transmisi ke PPI & CPI (time-lag), memaksa Fed tetap ketat → Tekanan SELL Gold.`,
+      textEn: `Inflation Channel Dominance (US Oil WTI ${oilRateLabel}): Oil surge transmits into PPI & CPI (with time-lag), keeping the Fed tighter → SELL Gold pressure.`,
     });
-  } else if (isUsoilAvailable && usoil.changePercent <= -1.0) {
+  } else if ((isUsoilAvailable && usoil.changePercent <= -1.0) || hasBullishOilReliefHeadline) {
+    oilChannelDominance = 'SAFE_HAVEN_BUY_GOLD';
     buyScore += 12;
     buyArguments.push({
       pillar: 'INTERMARKET',
       tag: 'INFLATION RELIEF • USOIL',
-      textId: `Penurunan harga US Oil WTI (${usoil.changePercent.toFixed(2)}%) meredakan ekspektasi inflasi energi utama → Mengurangi tekanan suku bunga Fed (Pendukung BUY XAU/USD).`,
-      textEn: `Pullback in US Oil WTI (${usoil.changePercent.toFixed(2)}%) eases headline energy inflation expectations → Reduces Hawkish Fed pressure (Supports BUY XAU/USD).`,
+      textId: `Penurunan harga US Oil WTI (${isUsoilAvailable ? `${usoil.changePercent.toFixed(2)}%` : 'Headline mereda'}) meredakan ekspektasi inflasi energi utama → Mengurangi tekanan suku bunga Fed (Pendukung BUY XAU/USD).`,
+      textEn: `Pullback in US Oil WTI (${isUsoilAvailable ? `${usoil.changePercent.toFixed(2)}%` : 'Supply relief headline'}) eases headline energy inflation expectations → Reduces Hawkish Fed pressure (Supports BUY XAU/USD).`,
     });
   }
 
@@ -3311,12 +3958,18 @@ export function computeDeterministicMacroSnapshot(params: {
     return eDay === primaryDayStr || eDay === nowDayStr;
   });
 
-  // Evaluate Tone of Speech / Top 10 RSS Headlines automatically
+  // Evaluate Tone of explicit Fed Official Speech / Policy Headlines (guarding against false pivots from generic news)
   let statementTone: 'HAWKISH' | 'DOVISH' | 'NEUTRAL' = 'NEUTRAL';
   let speechToneSource: BreakingNewsHeadline | null = null;
 
-  for (const b of workingBreakingNews.slice(0, 10)) {
-    const tone = analyzeStatementTone(b.title);
+  for (const b of workingBreakingNews.slice(0, 12)) {
+    const isGenuineFedSignal =
+      b.channelType === 'FED_SPEECH' ||
+      isFedOfficialSpeechOrPolicyHeadline(b.title);
+    if (!isGenuineFedSignal) continue;
+    const tone = analyzeStatementTone(
+      b.descriptionSummary ? `${b.title}. ${b.descriptionSummary}` : b.title
+    );
     if (tone !== 'NEUTRAL') {
       statementTone = tone;
       speechToneSource = b;
@@ -3510,16 +4163,16 @@ export function computeDeterministicMacroSnapshot(params: {
   // Final Take, Action Plan, and Whipsaw Warning (including Market Pricing Saturation note when >= 80%)
   const saturationActionNoteId =
     cmeFedWatch.isAvailable && cmeFedWatch.saturationScenario === 'HIKE'
-      ? `\n4. [HUKUM MARKET PRICING SATURATION] Pasar sudah ${cmeFedWatch.hikeProbability}% priced-in Rate Hike Desember — jika PPI rilis lebih rendah dari Forecast, waspadai kejutan repricing BUY XAU/USD yang eksplosif; jika PPI rilis panas, penguatan USD cenderung terbatas karena sudah priced-in.`
+      ? `\n4. [HUKUM MARKET PRICING SATURATION] Pasar sudah ${cmeFedWatch.hikeProbability}% priced-in Rate Hike (${cmeFedWatch.fomcMeetingDate}) — jika data inflasi/tenaga kerja AS rilis lebih rendah dari Forecast, waspadai kejutan repricing BUY XAU/USD yang eksplosif; jika data rilis panas, penguatan USD cenderung terbatas karena sudah priced-in.`
       : cmeFedWatch.isAvailable && cmeFedWatch.saturationScenario === 'CUT'
-      ? `\n4. [HUKUM MARKET PRICING SATURATION] Pasar sudah ${cmeFedWatch.cutProbability}% priced-in Rate Cut Desember — jika PPI/inflasi rilis lebih panas dari Forecast, waspadai kejutan repricing SELL XAU/USD yang tajam; jika rilis melandai, pelemahan USD cenderung terbatas karena sudah priced-in.`
+      ? `\n4. [HUKUM MARKET PRICING SATURATION] Pasar sudah ${cmeFedWatch.cutProbability}% priced-in Rate Cut (${cmeFedWatch.fomcMeetingDate}) — jika data inflasi/tenaga kerja AS rilis lebih panas dari Forecast, waspadai kejutan repricing SELL XAU/USD yang tajam; jika data melandai, pelemahan USD cenderung terbatas karena sudah priced-in.`
       : '';
 
   const saturationActionNoteEn =
     cmeFedWatch.isAvailable && cmeFedWatch.saturationScenario === 'HIKE'
-      ? `\n4. [MARKET PRICING SATURATION RULE] Market is already ${cmeFedWatch.hikeProbability}% priced-in for a December Rate Hike — if PPI releases lower than Forecast, watch for an explosive BUY XAU/USD repricing surprise; if PPI prints hot, USD upside is likely capped as it is already priced-in.`
+      ? `\n4. [MARKET PRICING SATURATION RULE] Market is already ${cmeFedWatch.hikeProbability}% priced-in for a Rate Hike (${cmeFedWatch.fomcMeetingDate}) — if US inflation/jobs print lower than Forecast, watch for an explosive BUY XAU/USD repricing surprise; if data prints hot, USD upside is likely capped as it is already priced-in.`
       : cmeFedWatch.isAvailable && cmeFedWatch.saturationScenario === 'CUT'
-      ? `\n4. [MARKET PRICING SATURATION RULE] Market is already ${cmeFedWatch.cutProbability}% priced-in for a December Rate Cut — if PPI/inflation prints hotter than Forecast, watch for a sharp SELL XAU/USD repricing surprise; if data cools, USD downside is likely capped as it is already priced-in.`
+      ? `\n4. [MARKET PRICING SATURATION RULE] Market is already ${cmeFedWatch.cutProbability}% priced-in for a Rate Cut (${cmeFedWatch.fomcMeetingDate}) — if US inflation/jobs print hotter than Forecast, watch for a sharp SELL XAU/USD repricing surprise; if data cools, USD downside is likely capped as it is already priced-in.`
       : '';
 
   const finalTakeId =
@@ -3649,6 +4302,7 @@ export function computeDeterministicMacroSnapshot(params: {
           vix: intermarketPulse.vix,
           goldPositioning: goldPos,
           cmeFedWatch,
+          stagflationDetected,
         }),
         fomcBlackoutActive,
         fomcBlackoutNoteId,
@@ -4029,24 +4683,34 @@ export function isVerifiedLiveCalendarSnapshot(
  * Strictly rejects any legacy/non-live mock snapshot so only verified live ForexFactory data is used.
  * Uses 0 Gemini tokens!
  */
-export async function loadLatestCachedMacroSnapshot(): Promise<MacroNewsSnapshot | null> {
-  let localSnap: MacroNewsSnapshot | null = null;
-  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-    try {
-      const raw = localStorage.getItem(MACRO_SNAPSHOT_LOCAL_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as MacroNewsSnapshot;
-        if (isVerifiedLiveCalendarSnapshot(parsed)) {
-          localSnap = parsed;
-        } else {
-          // Purge stale mock snapshot from localStorage
-          localStorage.removeItem(MACRO_SNAPSHOT_LOCAL_STORAGE_KEY);
-          localStorage.removeItem(MACRO_GROUP_SNAPSHOT_CACHE_KEY);
-        }
+export function loadLocalCachedMacroSnapshotSync(): MacroNewsSnapshot | null {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(MACRO_SNAPSHOT_LOCAL_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as MacroNewsSnapshot;
+      if (isVerifiedLiveCalendarSnapshot(parsed)) {
+        return parsed;
       }
-    } catch {
-      // ignore local storage parse error
+      // Purge stale mock snapshot from localStorage
+      localStorage.removeItem(MACRO_SNAPSHOT_LOCAL_STORAGE_KEY);
+      localStorage.removeItem(MACRO_GROUP_SNAPSHOT_CACHE_KEY);
     }
+  } catch {
+    // ignore local storage parse error
+  }
+  return null;
+}
+
+export async function loadLatestCachedMacroSnapshot(options?: {
+  localOnly?: boolean;
+}): Promise<MacroNewsSnapshot | null> {
+  const localSnap = loadLocalCachedMacroSnapshotSync();
+
+  if (options?.localOnly) {
+    return localSnap;
   }
 
   if (isSupabaseConfigured()) {
@@ -4058,9 +4722,17 @@ export async function loadLatestCachedMacroSnapshot(): Promise<MacroNewsSnapshot
           .select('id, data_fingerprint, snapshot_payload, analyzed_at')
           .eq('instrument', 'XAUUSD')
           .order('analyzed_at', { ascending: false })
-          .limit(5);
+          .limit(12);
 
         if (!error && Array.isArray(data)) {
+          // Harvest any released actuals across prior Supabase snapshots into offline archive (0 Gemini tokens)
+          for (const row of data) {
+            const snapCandidate = row?.snapshot_payload as MacroNewsSnapshot | undefined;
+            if (snapCandidate && Array.isArray(snapCandidate.calendarEvents) && snapCandidate.calendarEvents.length > 0) {
+              recordReleasedActualsToOfflineArchive(snapCandidate.calendarEvents, 'OFFLINE_ARCHIVE');
+            }
+          }
+
           // Prefer snapshots analyzed on a weekday (Senin–Jumat) via isMarketDay
           const sortedRows = [...data].sort((a, b) => {
             const aMarket = isMarketDay(a.analyzed_at || a.snapshot_payload?.analyzedAt) ? 1 : 0;
@@ -4084,8 +4756,13 @@ export async function loadLatestCachedMacroSnapshot(): Promise<MacroNewsSnapshot
                 (remoteIsWeekday && !localIsWeekday) ||
                 (remoteIsWeekday === localIsWeekday && remoteTime >= localTime)
               ) {
+                const hydratedEvents = hydrateEventsWithOfflineArchive(remoteSnap.calendarEvents);
+                if (Array.isArray(remoteSnap.breakingNews) && remoteSnap.breakingNews.length > 0) {
+                  recordBreakingNewsToMonthlyArchive(remoteSnap.breakingNews);
+                }
                 const hydrated: MacroNewsSnapshot = {
                   ...remoteSnap,
+                  calendarEvents: hydratedEvents,
                   sourceMode: 'SUPABASE_CACHE',
                 };
                 if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
@@ -4108,6 +4785,15 @@ export async function loadLatestCachedMacroSnapshot(): Promise<MacroNewsSnapshot
     }
   }
 
+  if (localSnap) {
+    if (Array.isArray(localSnap.breakingNews) && localSnap.breakingNews.length > 0) {
+      recordBreakingNewsToMonthlyArchive(localSnap.breakingNews);
+    }
+    return {
+      ...localSnap,
+      calendarEvents: hydrateEventsWithOfflineArchive(localSnap.calendarEvents),
+    };
+  }
   return localSnap;
 }
 
@@ -4190,6 +4876,8 @@ export async function saveMacroSnapshotToCache(
     };
   }
 
+  recordReleasedActualsToOfflineArchive(snapshot.calendarEvents);
+
   if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
     try {
       localStorage.setItem(MACRO_SNAPSHOT_LOCAL_STORAGE_KEY, JSON.stringify(snapshot));
@@ -4202,6 +4890,7 @@ export async function saveMacroSnapshotToCache(
         }
         localStorage.setItem(MACRO_GROUP_SNAPSHOT_CACHE_KEY, JSON.stringify(parsedMap));
       }
+      dispatchMacroLocalSyncEvent();
 
       // Append verified live snapshot to chronological bias history cache (max 24 points)
       const primaryEv = snapshot.scenarioMatrix?.primaryEvent;
@@ -4342,6 +5031,7 @@ export async function triggerHighImpactMacroNotification(
           },
         ],
       });
+      playNotificationPing();
       return true;
     }
   } catch {
@@ -4350,6 +5040,7 @@ export async function triggerHighImpactMacroNotification(
       try {
         if (Notification.permission === 'granted') {
           new Notification(title, { body });
+          playNotificationPing();
           return true;
         }
       } catch {}
@@ -4449,3 +5140,2711 @@ export async function loadMacroBiasHistory(
 
   return sorted.slice(-limit);
 }
+
+// ============================================================================
+// OFFLINE ACTUALS ARCHIVE & 3-SYSTEM ARCHITECTURE (PRE-NEWS / POST-NEWS 2H / LIVE PULSE)
+// ============================================================================
+
+let inMemoryActualsArchive: ArchivedMacroActualRecord[] = [];
+let inMemoryPreNewsLocks: Record<string, PreNewsSystemState> = {};
+let inMemoryPostNewsLocks: Record<string, PostNewsSystemState> = {};
+let inMemoryMonthlyNewsSpeechArchive: MonthlyNewsSpeechArchive | null = null;
+
+export function isPlaceholderMacroValue(raw: unknown): boolean {
+  if (raw === null || raw === undefined) return true;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return true;
+  return /^(-|—|–|n\/a|na|null|undefined|menunggu|pending|tba|tbd)$/i.test(trimmed);
+}
+
+export function normalizeActualArchiveKey(title: string, dateIso: string): string {
+  const cleanTitle = String(title || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+  let dayKey = '';
+  try {
+    const dt = new Date(dateIso);
+    if (!isNaN(dt.getTime())) {
+      dayKey = dt.toISOString().slice(0, 10);
+    }
+  } catch {
+    // ignore invalid date
+  }
+  return `${cleanTitle}|${dayKey || String(dateIso || '').slice(0, 10)}`;
+}
+
+export function loadOfflineActualsArchive(): ArchivedMacroActualRecord[] {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MACRO_ACTUALS_ARCHIVE_STORAGE_KEY);
+      if (!raw) {
+        inMemoryActualsArchive = [];
+        return [];
+      }
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const valid = parsed.filter(
+          (r): r is ArchivedMacroActualRecord =>
+            Boolean(r && r.title && !isPlaceholderMacroValue(r.actual))
+        );
+        inMemoryActualsArchive = valid;
+        return valid;
+      }
+    } catch {
+      // ignore storage parse failure
+    }
+  }
+  return inMemoryActualsArchive;
+}
+
+export function saveOfflineActualsArchive(records: ArchivedMacroActualRecord[]): void {
+  const cleaned = records
+    .filter((r) => Boolean(r && r.title && !isPlaceholderMacroValue(r.actual)))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 500);
+  inMemoryActualsArchive = cleaned;
+
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(MACRO_ACTUALS_ARCHIVE_STORAGE_KEY, JSON.stringify(cleaned));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
+/**
+ * Records all verified released USD `actual` prints into persistent Offline Archive.
+ * CRITICAL RULE: Never overwrites an already saved non-empty actual with blank/"Menunggu".
+ */
+export function recordReleasedActualsToOfflineArchive(
+  events: MacroCalendarEvent[],
+  defaultSource: ActualSourceType = 'LIVE_FEED',
+  archiveOverride?: ArchivedMacroActualRecord[]
+): ArchivedMacroActualRecord[] {
+  const baseRecords = archiveOverride ? [...archiveOverride] : [...loadOfflineActualsArchive()];
+  const map = new Map<string, ArchivedMacroActualRecord>();
+  for (const r of baseRecords) {
+    if (r && r.archiveKey && !isPlaceholderMacroValue(r.actual)) {
+      map.set(r.archiveKey, r);
+    }
+  }
+
+  for (const ev of events || []) {
+    if (!ev || !ev.title || isFedSpeechEvent(ev.title)) continue;
+    if (isPlaceholderMacroValue(ev.actual)) continue;
+
+    const key = normalizeActualArchiveKey(ev.title, ev.date);
+    const existing = map.get(key);
+    const parsedAct =
+      ev.actualNum !== null && ev.actualNum !== undefined
+        ? ev.actualNum
+        : parseMacroNumeric(ev.actual).value;
+
+    const record: ArchivedMacroActualRecord = {
+      archiveKey: key,
+      id: ev.id || existing?.id || `arch-${key.replace(/[^a-z0-9]/gi, '').slice(0, 20)}`,
+      title: ev.title.trim(),
+      date: ev.date,
+      impact: ev.impact || existing?.impact || 'Medium',
+      previous: !isPlaceholderMacroValue(ev.previous)
+        ? ev.previous
+        : existing?.previous || '—',
+      forecast: !isPlaceholderMacroValue(ev.forecast)
+        ? ev.forecast
+        : existing?.forecast || '—',
+      actual: ev.actual.trim(),
+      previousNum:
+        ev.previousNum !== null && ev.previousNum !== undefined
+          ? ev.previousNum
+          : existing?.previousNum ?? null,
+      forecastNum:
+        ev.forecastNum !== null && ev.forecastNum !== undefined
+          ? ev.forecastNum
+          : existing?.forecastNum ?? null,
+      actualNum: parsedAct,
+      unit: ev.unit || existing?.unit || parseMacroNumeric(ev.actual).unit || '',
+      pillar: ev.pillar || existing?.pillar || classifyFomcPillar(ev.title),
+      isInverseIndicator:
+        typeof ev.isInverseIndicator === 'boolean'
+          ? ev.isInverseIndicator
+          : isInverseUsdIndicator(ev.title),
+      eventCategory: ev.eventCategory || existing?.eventCategory,
+      actualSource: ev.actualSource || existing?.actualSource || defaultSource,
+      recordedAt: new Date().toISOString(),
+    };
+    map.set(key, record);
+  }
+
+  const next = Array.from(map.values())
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 500);
+
+  if (!archiveOverride) {
+    saveOfflineActualsArchive(next);
+  }
+  return next;
+}
+
+/**
+ * Ensures the permanent offline archive contains verified historical USD releases
+ * (Sep–Nov 2026 CPI, PPI, NFP, PCE, FOMC, GDP, Retail Sales, ISM) for newly installed APKs
+ * without ever overwriting existing LIVE_FEED / TV_ENRICH / SEARCH_ENRICH records.
+ */
+export function ensureHistoricalActualsArchiveSeeded(
+  archiveOverride?: ArchivedMacroActualRecord[]
+): ArchivedMacroActualRecord[] {
+  const existing = archiveOverride ? [...archiveOverride] : [...loadOfflineActualsArchive()];
+  const byKey = new Map<string, ArchivedMacroActualRecord>();
+  for (const r of existing) {
+    if (r && r.archiveKey && !isPlaceholderMacroValue(r.actual)) {
+      byKey.set(r.archiveKey, r);
+    }
+  }
+
+  let addedAny = false;
+  for (const seed of HISTORICAL_MACRO_ACTUALS_SEED) {
+    const key = normalizeActualArchiveKey(seed.title, seed.date);
+    if (byKey.has(key)) continue;
+
+    // Also avoid duplicating if an alias title (e.g. "Core Inflation Rate MoM" vs "Core CPI m/m") exists on the same date window
+    const seedMs = new Date(seed.date).getTime();
+    const seedLower = seed.title.toLowerCase();
+    const isDuplicateEquivalent = existing.some((rec) => {
+      const recMs = new Date(rec.date).getTime();
+      if (!Number.isFinite(recMs) || Math.abs(recMs - seedMs) > 12 * 60 * 60 * 1000) return false;
+      const recLower = rec.title.toLowerCase();
+      if (recLower === seedLower) return true;
+      if (seedLower === 'core cpi m/m' && /core.*(cpi|inflation).*m/.test(recLower)) return true;
+      if (seedLower === 'cpi m/m' && !recLower.includes('core') && /^(cpi|inflation rate).*m/.test(recLower)) return true;
+      if (seedLower === 'core cpi y/y' && /core.*(cpi|inflation).*y/.test(recLower)) return true;
+      if (seedLower === 'cpi y/y' && !recLower.includes('core') && /^(cpi|inflation rate).*y/.test(recLower)) return true;
+      if (seedLower === 'non-farm employment change' && /(non[\s-]*farm|nfp)/.test(recLower) && !recLower.includes('adp') && !recLower.includes('private')) return true;
+      if (seedLower === 'core retail sales m/m' && /retail sales ex autos/.test(recLower)) return true;
+      if (seedLower === 'federal funds rate' && /(interest rate|federal funds|fomc)/.test(recLower)) return true;
+      return false;
+    });
+    if (isDuplicateEquivalent) continue;
+
+    const record: ArchivedMacroActualRecord = {
+      archiveKey: key,
+      id: `seed-${key.replace(/[^a-z0-9]/gi, '').slice(0, 22)}`,
+      title: seed.title,
+      date: seed.date,
+      impact: seed.impact,
+      previous: seed.previous,
+      forecast: seed.forecast,
+      actual: seed.actual,
+      previousNum: seed.previousNum,
+      forecastNum: seed.forecastNum,
+      actualNum: seed.actualNum,
+      unit: seed.unit,
+      pillar: seed.pillar,
+      isInverseIndicator: seed.isInverseIndicator,
+      eventCategory: seed.eventCategory,
+      actualSource: 'OFFLINE_ARCHIVE',
+      recordedAt: seed.date,
+    };
+    byKey.set(key, record);
+    existing.push(record);
+    addedAny = true;
+  }
+
+  if (!addedAny) {
+    return existing.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  const next = Array.from(byKey.values())
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 500);
+
+  if (!archiveOverride) {
+    saveOfflineActualsArchive(next);
+    dispatchMacroLocalSyncEvent();
+  }
+  return next;
+}
+
+export interface RawTradingViewCalendarEvent {
+  id?: string | number;
+  title?: string;
+  indicator?: string;
+  country?: string;
+  date?: string;
+  actual?: number | null;
+  forecast?: number | null;
+  previous?: number | null;
+  unit?: string;
+  scale?: string;
+  importance?: number;
+}
+
+function mapTradingViewTitleToCanonical(rawTitle: string): {
+  canonicalTitle: string;
+  forceHighImpact: boolean;
+} | null {
+  const t = String(rawTitle || '').trim();
+  const lower = t.toLowerCase();
+
+  // Exact match map for primary USD High/Medium macro releases (skipping secondary noise series)
+  const exactMap: Record<string, { title: string; high: boolean }> = {
+    'core inflation rate mom': { title: 'Core CPI m/m', high: true },
+    'inflation rate mom': { title: 'CPI m/m', high: true },
+    'core inflation rate yoy': { title: 'Core CPI y/y', high: true },
+    'inflation rate yoy': { title: 'CPI y/y', high: true },
+    'ppi mom': { title: 'PPI m/m', high: true },
+    'core ppi mom': { title: 'Core PPI m/m', high: true },
+    'ppi yoy': { title: 'PPI y/y', high: false },
+    'core ppi yoy': { title: 'Core PPI y/y', high: false },
+    'non farm payrolls': { title: 'Non-Farm Employment Change', high: true },
+    'unemployment rate': { title: 'Unemployment Rate', high: true },
+    'average hourly earnings mom': { title: 'Average Hourly Earnings m/m', high: true },
+    'average hourly earnings yoy': { title: 'Average Hourly Earnings y/y', high: false },
+    'core pce price index mom': { title: 'Core PCE Price Index m/m', high: true },
+    'pce price index mom': { title: 'PCE Price Index m/m', high: false },
+    'core pce price index yoy': { title: 'Core PCE Price Index y/y', high: false },
+    'pce price index yoy': { title: 'PCE Price Index y/y', high: false },
+    'retail sales mom': { title: 'Retail Sales m/m', high: true },
+    'retail sales ex autos mom': { title: 'Core Retail Sales m/m', high: false },
+    'gdp growth rate qoq adv': { title: 'Advance GDP q/q', high: true },
+    'gdp growth rate qoq 2nd est': { title: 'Prelim GDP q/q', high: true },
+    'gdp growth rate qoq final': { title: 'Final GDP q/q', high: true },
+    'gdp price index qoq adv': { title: 'Advance GDP Price Index q/q', high: false },
+    'gdp price index qoq 2nd est': { title: 'Prelim GDP Price Index q/q', high: false },
+    'gdp price index qoq final': { title: 'Final GDP Price Index q/q', high: false },
+    'ism manufacturing pmi': { title: 'ISM Manufacturing PMI', high: true },
+    'ism services pmi': { title: 'ISM Services PMI', high: true },
+    'ism manufacturing prices': { title: 'ISM Manufacturing Prices', high: false },
+    'ism services prices': { title: 'ISM Services Prices', high: false },
+    'interest rate': { title: 'Federal Funds Rate', high: true },
+    'fed interest rate decision': { title: 'Federal Funds Rate', high: true },
+    'initial jobless claims': { title: 'Initial Jobless Claims', high: false },
+    'adp employment change': { title: 'ADP Non-Farm Employment Change', high: false },
+    'jolts job openings': { title: 'JOLTS Job Openings', high: true },
+    'durable goods orders mom': { title: 'Durable Goods Orders m/m', high: false },
+    'existing home sales': { title: 'Existing Home Sales', high: false },
+    'new home sales': { title: 'New Home Sales', high: false },
+    'michigan consumer sentiment prel': { title: 'Prelim UoM Consumer Sentiment', high: false },
+    'michigan consumer sentiment final': { title: 'Final UoM Consumer Sentiment', high: false },
+  };
+
+  const hit = exactMap[lower];
+  if (!hit) return null;
+  return { canonicalTitle: hit.title, forceHighImpact: hit.high };
+}
+
+/**
+ * Converts raw TradingView US Economic Calendar items (already released) into canonical
+ * `MacroCalendarEvent[]` entries for 0-token 90-day offline archive backfill.
+ */
+export function mapRawTradingViewEventsToCalendarEvents(
+  rawEvents: RawTradingViewCalendarEvent[],
+  nowMs: number = Date.now()
+): MacroCalendarEvent[] {
+  if (!Array.isArray(rawEvents) || rawEvents.length === 0) return [];
+
+  const out: MacroCalendarEvent[] = [];
+  const seenKeys = new Set<string>();
+
+  for (let i = 0; i < rawEvents.length; i++) {
+    const raw = rawEvents[i];
+    if (!raw || raw.actual === null || raw.actual === undefined || !Number.isFinite(Number(raw.actual))) {
+      continue;
+    }
+    const country = String(raw.country || 'US').toUpperCase().trim();
+    if (country !== 'US' && country !== 'USD') continue;
+
+    const dt = new Date(String(raw.date || ''));
+    const evMs = dt.getTime();
+    if (!Number.isFinite(evMs) || evMs > nowMs + 5 * 60 * 1000) continue;
+
+    const mapped = mapTradingViewTitleToCanonical(String(raw.title || ''));
+    if (!mapped) continue;
+
+    const isoDate = dt.toISOString();
+    const dedupeKey = normalizeActualArchiveKey(mapped.canonicalTitle, isoDate);
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+
+    const tvUnit = String(raw.unit || '').trim();
+    const tvScale = String(raw.scale || '').trim();
+    const effectiveUnit =
+      tvUnit === '%'
+        ? '%'
+        : tvScale === 'K' || tvScale === 'M' || tvScale === 'B'
+        ? tvScale
+        : tvUnit;
+
+    const formatNumber = (val: number | null | undefined): { text: string; num: number | null; unit: string } => {
+      if (val === null || val === undefined || !Number.isFinite(Number(val))) {
+        return { text: '—', num: null, unit: effectiveUnit };
+      }
+      let num = Number(val);
+      let u = effectiveUnit;
+      const isKSeries = /employment|payrolls|claims/i.test(mapped.canonicalTitle);
+      if (isKSeries && !u && Math.abs(num) >= 1000) {
+        num = Number((num / 1000).toFixed(1));
+        u = 'K';
+      }
+      return {
+        text: `${num}${u}`,
+        num,
+        unit: u,
+      };
+    };
+
+    const actParsed = formatNumber(raw.actual);
+    const fcstParsed = formatNumber(raw.forecast);
+    const prevParsed = formatNumber(raw.previous);
+    const finalUnit = actParsed.unit || fcstParsed.unit || prevParsed.unit || '';
+
+    const impact: 'High' | 'Medium' =
+      mapped.forceHighImpact || Number(raw.importance) >= 1 ? 'High' : 'Medium';
+
+    const evalRes = evaluateSingleEventForGold(
+      mapped.canonicalTitle,
+      actParsed.num,
+      fcstParsed.num,
+      prevParsed.num
+    );
+
+    const eventCategory: MacroCalendarEvent['eventCategory'] = isPrimaryHighImpactEvent({
+      title: mapped.canonicalTitle,
+      impact,
+      country: 'USD',
+    })
+      ? 'PRIMARY_HIGH_IMPACT'
+      : 'SUPPORTING_REFERENCE';
+
+    out.push({
+      id: `tv-hist-${String(raw.id || i)}-${mapped.canonicalTitle.replace(/[^a-zA-Z0-9]/g, '').slice(0, 12)}`,
+      title: mapped.canonicalTitle,
+      country: 'USD',
+      date: isoDate,
+      impact,
+      previous: prevParsed.text,
+      forecast: fcstParsed.text,
+      actual: actParsed.text,
+      previousNum: prevParsed.num,
+      forecastNum: fcstParsed.num,
+      actualNum: actParsed.num,
+      unit: finalUnit,
+      pillar: classifyFomcPillar(mapped.canonicalTitle),
+      isInverseIndicator: isInverseUsdIndicator(mapped.canonicalTitle),
+      eventBiasForGold: evalRes.bias,
+      biasReasonId: evalRes.reasonId,
+      biasReasonEn: evalRes.reasonEn,
+      isLiveFeed: true,
+      eventCategory,
+      actualSource: 'TV_ENRICH',
+    });
+  }
+
+  return out.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+/**
+ * Hydrates incoming calendar events from the Offline Actuals Archive:
+ * 1) Restores missing/blank past `actual` values on matching current-week events.
+ * 2) Re-attaches prior-week/prior-month released High-Impact USD events (default 90 days) that rolled off
+ *    `ff_calendar_thisweek.json` on week/month change so CPI/PPI/NFP actual history remains available offline.
+ */
+export function hydrateEventsWithOfflineArchive(
+  events: MacroCalendarEvent[],
+  nowMs: number = Date.now(),
+  archiveOverride?: ArchivedMacroActualRecord[],
+  retentionDays: number = 90
+): MacroCalendarEvent[] {
+  const archive = archiveOverride ?? loadOfflineActualsArchive();
+  if (!archive || archive.length === 0) return events || [];
+
+  const exactMap = new Map<string, ArchivedMacroActualRecord>();
+  const byTitle = new Map<string, ArchivedMacroActualRecord[]>();
+  for (const r of archive) {
+    if (!r || isPlaceholderMacroValue(r.actual)) continue;
+    exactMap.set(r.archiveKey, r);
+    const tKey = r.title.trim().toLowerCase();
+    const arr = byTitle.get(tKey) || [];
+    arr.push(r);
+    byTitle.set(tKey, arr);
+  }
+
+  const findArchiveMatch = (title: string, dateIso: string): ArchivedMacroActualRecord | undefined => {
+    const exact = exactMap.get(normalizeActualArchiveKey(title, dateIso));
+    if (exact) return exact;
+    const evMs = new Date(dateIso).getTime();
+    if (!Number.isFinite(evMs)) return undefined;
+    const candidates = byTitle.get(title.trim().toLowerCase()) || [];
+    let best: ArchivedMacroActualRecord | undefined;
+    let bestDiff = Infinity;
+    for (const cand of candidates) {
+      const candMs = new Date(cand.date).getTime();
+      if (!Number.isFinite(candMs)) continue;
+      const diff = Math.abs(evMs - candMs);
+      if (diff <= 36 * 60 * 60 * 1000 && diff < bestDiff) {
+        bestDiff = diff;
+        best = cand;
+      }
+    }
+    return best;
+  };
+
+  const hydratedKeys = new Set<string>();
+  const hydratedEvents: MacroCalendarEvent[] = (events || []).map((ev) => {
+    const key = normalizeActualArchiveKey(ev.title, ev.date);
+    hydratedKeys.add(key);
+
+    if (!isPlaceholderMacroValue(ev.actual)) {
+      return ev;
+    }
+
+    const match = findArchiveMatch(ev.title, ev.date);
+    if (!match) return ev;
+
+    hydratedKeys.add(match.archiveKey);
+    const parsedNum =
+      match.actualNum !== null && match.actualNum !== undefined
+        ? match.actualNum
+        : parseMacroNumeric(match.actual).value;
+    const evalRes = evaluateSingleEventForGold(
+      ev.title,
+      parsedNum,
+      ev.forecastNum ?? match.forecastNum,
+      ev.previousNum ?? match.previousNum
+    );
+
+    return {
+      ...ev,
+      actual: match.actual,
+      actualNum: parsedNum,
+      unit: match.unit || ev.unit,
+      eventBiasForGold: evalRes.bias,
+      biasReasonId: evalRes.reasonId,
+      biasReasonEn: evalRes.reasonEn,
+      actualSource: 'OFFLINE_ARCHIVE',
+    };
+  });
+
+  // Re-attach prior-week & prior-month released primary/high-impact events missing from current feed
+  const RETENTION_MS = retentionDays * 24 * 60 * 60 * 1000;
+  for (const rec of archive) {
+    if (hydratedKeys.has(rec.archiveKey)) continue;
+    const recMs = new Date(rec.date).getTime();
+    if (!Number.isFinite(recMs) || nowMs - recMs > RETENTION_MS || recMs > nowMs + 60 * 60 * 1000) {
+      continue;
+    }
+    const alreadyPresentByTitleWindow = hydratedEvents.some((ev) => {
+      if (ev.title.trim().toLowerCase() !== rec.title.trim().toLowerCase()) return false;
+      const evMs = new Date(ev.date).getTime();
+      return Number.isFinite(evMs) && Math.abs(evMs - recMs) <= 36 * 60 * 60 * 1000;
+    });
+    if (alreadyPresentByTitleWindow) continue;
+
+    const isImportant =
+      rec.impact === 'High' ||
+      rec.eventCategory === 'PRIMARY_HIGH_IMPACT' ||
+      isPrimaryHighImpactEvent({ title: rec.title, impact: rec.impact, country: 'USD' });
+    if (!isImportant) continue;
+
+    const evalRes = evaluateSingleEventForGold(
+      rec.title,
+      rec.actualNum,
+      rec.forecastNum,
+      rec.previousNum
+    );
+    hydratedEvents.push({
+      id: rec.id || `ff-arch-${rec.archiveKey.replace(/[^a-z0-9]/gi, '').slice(0, 18)}`,
+      title: rec.title,
+      country: 'USD',
+      date: rec.date,
+      impact: rec.impact,
+      previous: rec.previous || '—',
+      forecast: rec.forecast || '—',
+      actual: rec.actual,
+      previousNum: rec.previousNum,
+      forecastNum: rec.forecastNum,
+      actualNum: rec.actualNum,
+      unit: rec.unit || '',
+      pillar: rec.pillar || classifyFomcPillar(rec.title),
+      isInverseIndicator: rec.isInverseIndicator,
+      eventBiasForGold: evalRes.bias,
+      biasReasonId: evalRes.reasonId,
+      biasReasonEn: evalRes.reasonEn,
+      isLiveFeed: true,
+      eventCategory:
+        rec.eventCategory ||
+        (isPrimaryHighImpactEvent({ title: rec.title, impact: rec.impact, country: 'USD' })
+          ? 'PRIMARY_HIGH_IMPACT'
+          : 'SUPPORTING_REFERENCE'),
+      isOfflineArchived: true,
+      actualSource: 'OFFLINE_ARCHIVE',
+    });
+    hydratedKeys.add(rec.archiveKey);
+  }
+
+  return hydratedEvents.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+}
+
+export function loadPreNewsLockArchive(): Record<string, PreNewsSystemState> {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          inMemoryPreNewsLocks = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return inMemoryPreNewsLocks;
+}
+
+export function savePreNewsLockArchive(map: Record<string, PreNewsSystemState>): void {
+  const entries = Object.entries(map).slice(-60);
+  const pruned = Object.fromEntries(entries);
+  inMemoryPreNewsLocks = pruned;
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY, JSON.stringify(pruned));
+      dispatchMacroLocalSyncEvent();
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
+export function loadPostNewsArchive(): Record<string, PostNewsSystemState> {
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MACRO_POST_NEWS_ARCHIVE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          inMemoryPostNewsLocks = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+  return inMemoryPostNewsLocks;
+}
+
+export function savePostNewsArchive(map: Record<string, PostNewsSystemState>): void {
+  const entries = Object.entries(map).slice(-250);
+  const pruned = Object.fromEntries(entries);
+  inMemoryPostNewsLocks = pruned;
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(MACRO_POST_NEWS_ARCHIVE_STORAGE_KEY_COMPAT, JSON.stringify(pruned));
+      dispatchMacroLocalSyncEvent();
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
+const MACRO_POST_NEWS_ARCHIVE_STORAGE_KEY_COMPAT = MACRO_POST_NEWS_ARCHIVE_KEY;
+
+/**
+ * Returns ALL released/archived USD actual calendar events across months (NEVER reset at month turnover),
+ * sorted newest-first for the dedicated Post-News workspace.
+ */
+export function getAllOfflineActualCalendarEvents(
+  liveEvents: MacroCalendarEvent[] = [],
+  nowMs: number = Date.now(),
+  archiveOverride?: ArchivedMacroActualRecord[]
+): MacroCalendarEvent[] {
+  const archive = archiveOverride ?? loadOfflineActualsArchive();
+  const byKey = new Map<string, MacroCalendarEvent>();
+
+  for (const ev of liveEvents) {
+    if (!ev || isFedSpeechEvent(ev.title)) continue;
+    const evMs = new Date(ev.date).getTime();
+    const hasAct = !isPlaceholderMacroValue(ev.actual);
+    const isPast = Number.isFinite(evMs) && evMs <= nowMs;
+    if (!hasAct && !isPast) continue;
+    const key = normalizeActualArchiveKey(ev.title, ev.date);
+    byKey.set(key, ev);
+  }
+
+  for (const rec of archive) {
+    if (!rec || isPlaceholderMacroValue(rec.actual) || isFedSpeechEvent(rec.title)) continue;
+    const key = normalizeActualArchiveKey(rec.title, rec.date);
+    const existing = byKey.get(key);
+    if (existing && !isPlaceholderMacroValue(existing.actual)) continue;
+
+    const evalRes = evaluateSingleEventForGold(
+      rec.title,
+      rec.actualNum,
+      rec.forecastNum,
+      rec.previousNum
+    );
+    byKey.set(key, {
+      id: existing?.id || rec.id || `ff-arch-${rec.archiveKey.replace(/[^a-z0-9]/gi, '').slice(0, 18)}`,
+      title: rec.title,
+      country: 'USD',
+      date: rec.date,
+      impact: rec.impact,
+      previous: existing?.previous && existing.previous !== '—' ? existing.previous : rec.previous || '—',
+      forecast: existing?.forecast && existing.forecast !== '—' ? existing.forecast : rec.forecast || '—',
+      actual: rec.actual,
+      previousNum: existing?.previousNum ?? rec.previousNum,
+      forecastNum: existing?.forecastNum ?? rec.forecastNum,
+      actualNum: rec.actualNum,
+      unit: rec.unit || existing?.unit || '',
+      pillar: rec.pillar || classifyFomcPillar(rec.title),
+      isInverseIndicator: rec.isInverseIndicator,
+      eventBiasForGold: evalRes.bias,
+      biasReasonId: evalRes.reasonId,
+      biasReasonEn: evalRes.reasonEn,
+      isLiveFeed: true,
+      eventCategory:
+        rec.eventCategory ||
+        existing?.eventCategory ||
+        (isPrimaryHighImpactEvent({ title: rec.title, impact: rec.impact, country: 'USD' })
+          ? 'PRIMARY_HIGH_IMPACT'
+          : 'SUPPORTING_REFERENCE'),
+      isOfflineArchived: true,
+      actualSource: rec.actualSource || 'OFFLINE_ARCHIVE',
+    });
+  }
+
+  return Array.from(byKey.values()).sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  );
+}
+
+/**
+ * Returns the YYYY-MM month key in WIB (UTC+7 / Asia/Jakarta).
+ */
+export function getWibMonthKey(tsMs: number = Date.now()): string {
+  const safeMs = Number.isFinite(tsMs) ? tsMs : Date.now();
+  const wibDate = new Date(safeMs + 7 * 60 * 60 * 1000);
+  const year = wibDate.getUTCFullYear();
+  const month = String(wibDate.getUTCMonth() + 1).padStart(2, '0');
+  return `${year}-${month}`;
+}
+
+function normalizeMonthlyHeadlineKey(item: BreakingNewsHeadline): string {
+  const cleanTitle = String(item.title || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+  const cleanSource = String(item.source || '').toLowerCase().trim();
+  return `${cleanSource}|${cleanTitle}`;
+}
+
+/**
+ * Loads the 1-calendar-month Offline Archive for Breaking News & Fed Speeches (System 3).
+ * Automatically resets when entering a new WIB calendar month (`YYYY-MM` rollover).
+ */
+export function loadMonthlyNewsSpeechArchive(
+  nowMs: number = Date.now()
+): MonthlyNewsSpeechArchive {
+  const currentMonthKey = getWibMonthKey(nowMs);
+  const emptyArchive: MonthlyNewsSpeechArchive = {
+    monthKey: currentMonthKey,
+    updatedAt: new Date(nowMs).toISOString(),
+    items: [],
+  };
+
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as MonthlyNewsSpeechArchive;
+        if (parsed && parsed.monthKey === currentMonthKey && Array.isArray(parsed.items)) {
+          inMemoryMonthlyNewsSpeechArchive = parsed;
+          return parsed;
+        }
+        // Calendar month rolled over -> reset archive cleanly for the new month
+        inMemoryMonthlyNewsSpeechArchive = emptyArchive;
+        localStorage.setItem(MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY, JSON.stringify(emptyArchive));
+        return emptyArchive;
+      }
+    } catch {
+      // ignore storage parse failure
+    }
+  }
+
+  if (
+    inMemoryMonthlyNewsSpeechArchive &&
+    inMemoryMonthlyNewsSpeechArchive.monthKey === currentMonthKey
+  ) {
+    return inMemoryMonthlyNewsSpeechArchive;
+  }
+  inMemoryMonthlyNewsSpeechArchive = emptyArchive;
+  return emptyArchive;
+}
+
+export function saveMonthlyNewsSpeechArchive(archive: MonthlyNewsSpeechArchive): void {
+  const sortedItems = [...(archive.items || [])]
+    .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+    .slice(0, 400);
+  const next: MonthlyNewsSpeechArchive = {
+    monthKey: archive.monthKey,
+    updatedAt: archive.updatedAt || new Date().toISOString(),
+    items: sortedItems,
+  };
+  inMemoryMonthlyNewsSpeechArchive = next;
+
+  if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY, JSON.stringify(next));
+      dispatchMacroLocalSyncEvent();
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+}
+
+export function mergeBreakingHeadlinesForPulse(
+  primary: BreakingNewsHeadline[] = [],
+  archiveItems: BreakingNewsHeadline[] = []
+): BreakingNewsHeadline[] {
+  const deduped = new Map<string, BreakingNewsHeadline>();
+  for (const h of [...(primary || []), ...(archiveItems || [])]) {
+    if (!h || !h.title) continue;
+    const key = normalizeMonthlyHeadlineKey(h);
+    const prev = deduped.get(key);
+    if (!prev || new Date(h.pubDate).getTime() > new Date(prev.pubDate).getTime()) {
+      deduped.set(key, h);
+    }
+  }
+  return Array.from(deduped.values()).sort(
+    (a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime()
+  );
+}
+
+/**
+ * Immediately saves incoming Breaking News & Fed Speeches offline for the active calendar month.
+ * Items from prior calendar months are NOT carried over once the new month begins.
+ */
+export function recordBreakingNewsToMonthlyArchive(
+  incomingHeadlines: BreakingNewsHeadline[],
+  nowMs: number = Date.now()
+): MonthlyNewsSpeechArchive {
+  const currentMonthKey = getWibMonthKey(nowMs);
+  const base = loadMonthlyNewsSpeechArchive(nowMs);
+  const map = new Map<string, BreakingNewsHeadline>();
+
+  for (const item of base.items) {
+    if (!item || !item.title) continue;
+    const pubMs = new Date(item.pubDate).getTime();
+    if (Number.isFinite(pubMs) && getWibMonthKey(pubMs) !== currentMonthKey) continue;
+    map.set(normalizeMonthlyHeadlineKey(item), item);
+  }
+
+  for (const item of incomingHeadlines || []) {
+    if (!item || !item.title) continue;
+    const pubMs = new Date(item.pubDate).getTime();
+    const effectivePubDate = Number.isFinite(pubMs)
+      ? item.pubDate
+      : new Date(nowMs).toISOString();
+    const effectiveMonthKey = Number.isFinite(pubMs) ? getWibMonthKey(pubMs) : currentMonthKey;
+
+    // Do not back-import prior-month headlines after monthly reset
+    if (effectiveMonthKey !== currentMonthKey) continue;
+
+    const ctx = evaluateBreakingHeadlineContext(
+      item.title,
+      undefined,
+      item.matchedKeywords || []
+    );
+    const enriched: BreakingNewsHeadline =
+      ctx.sentimentForGold !== 'NEUTRAL'
+        ? {
+            ...item,
+            pubDate: effectivePubDate,
+            impact: ctx.impact,
+            sentimentForGold: ctx.sentimentForGold,
+            channelType: ctx.channelType,
+            aiEvaluationId: ctx.aiEvaluationId,
+            aiEvaluationEn: ctx.aiEvaluationEn,
+          }
+        : {
+            ...item,
+            pubDate: effectivePubDate,
+          };
+
+    const key = normalizeMonthlyHeadlineKey(enriched);
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, enriched);
+    } else if (
+      existing.sentimentForGold === 'NEUTRAL' &&
+      enriched.sentimentForGold !== 'NEUTRAL'
+    ) {
+      map.set(key, enriched);
+    }
+  }
+
+  const next: MonthlyNewsSpeechArchive = {
+    monthKey: currentMonthKey,
+    updatedAt: new Date(nowMs).toISOString(),
+    items: Array.from(map.values())
+      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+      .slice(0, 400),
+  };
+  saveMonthlyNewsSpeechArchive(next);
+  return next;
+}
+
+function computePreReleaseBaselineEvents(
+  allCalendarEvents: MacroCalendarEvent[],
+  clusterIds: Set<string>
+): MacroCalendarEvent[] {
+  return allCalendarEvents.map((ev) => {
+    if (!clusterIds.has(ev.id)) return ev;
+    const evalPre = evaluateSingleEventForGold(ev.title, null, ev.forecastNum, ev.previousNum);
+    return {
+      ...ev,
+      actual: '',
+      actualNum: null,
+      eventBiasForGold: evalPre.bias,
+      biasReasonId: evalPre.reasonId,
+      biasReasonEn: evalPre.reasonEn,
+    };
+  });
+}
+
+function buildClusterKey(primaryEv: MacroCalendarEvent): string {
+  const cleanTitle = (primaryEv.title || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const hourIso = String(primaryEv.date || '').slice(0, 13);
+  return `${cleanTitle}|${hourIso}`;
+}
+
+export function resolveSystem1PreNewsState(params: {
+  primaryEvent: MacroCalendarEvent;
+  simultaneousEvents: MacroCalendarEvent[];
+  calendarEvents: MacroCalendarEvent[];
+  intermarketPulse: MacroNewsSnapshot['intermarketPulse'];
+  breakingNews: BreakingNewsHeadline[];
+  cmeFedWatch?: CmeFedWatchState;
+  currentMatrix: PreNewsScenarioMatrix;
+  nowMs?: number;
+  archiveOverride?: Record<string, PreNewsSystemState>;
+}): PreNewsSystemState {
+  const {
+    primaryEvent,
+    simultaneousEvents,
+    calendarEvents,
+    intermarketPulse,
+    breakingNews,
+    cmeFedWatch,
+    currentMatrix,
+    nowMs = Date.now(),
+    archiveOverride,
+  } = params;
+
+  const clusterEvents = [primaryEvent, ...simultaneousEvents];
+  const clusterKey = buildClusterKey(primaryEvent);
+  const targetMs = new Date(primaryEvent.date).getTime();
+  const isReleasedByClock = Number.isFinite(targetMs) && nowMs >= targetMs;
+  const hasActual = clusterEvents.some((e) => !isPlaceholderMacroValue(e.actual));
+  const remainingMs = Number.isFinite(targetMs) ? targetMs - nowMs : 0;
+  const isLockedT5M = !isReleasedByClock && !hasActual && remainingMs > 0 && remainingMs <= 5 * 60 * 1000;
+
+  const archive = archiveOverride ?? { ...loadPreNewsLockArchive() };
+  const existing = archive[clusterKey];
+
+  // If release already happened or actual already landed, keep Pre-News permanently OFF / frozen
+  if (isReleasedByClock || hasActual) {
+    if (existing) {
+      if (existing.phase !== 'OFF_RELEASED' || !existing.isLocked) {
+        const finalized: PreNewsSystemState = {
+          ...existing,
+          phase: 'OFF_RELEASED',
+          isLocked: true,
+          lockedAt: existing.lockedAt || new Date(nowMs).toISOString(),
+        };
+        archive[clusterKey] = finalized;
+        if (!archiveOverride) savePreNewsLockArchive(archive);
+        return finalized;
+      }
+      return existing;
+    }
+
+    // Reconstruct deterministic Pre-News baseline (Forecast vs Previous, strictly without Actual)
+    const clusterIdSet = new Set(clusterEvents.map((e) => e.id));
+    const preEvents = computePreReleaseBaselineEvents(calendarEvents, clusterIdSet);
+    const preSnap = computeDeterministicMacroSnapshot({
+      calendarEvents: preEvents,
+      intermarketPulse,
+      breakingNews,
+      cmeFedWatch,
+      selectedEventId: primaryEvent.id,
+      sourceMode: 'RULE_BASED_FALLBACK',
+      modelUsed: 'system1-prenews-baseline',
+    });
+    const m = preSnap.scenarioMatrix;
+    const finalized: PreNewsSystemState = {
+      clusterKey,
+      primaryEventId: primaryEvent.id,
+      primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+      releaseDateIso: primaryEvent.date,
+      phase: 'OFF_RELEASED',
+      isLocked: true,
+      lockedAt: new Date(nowMs).toISOString(),
+      forecast: primaryEvent.forecast || '—',
+      previous: primaryEvent.previous || '—',
+      buyProbability: m.buyProbability,
+      sellProbability: m.sellProbability,
+      mixedProbability: m.mixedProbability,
+      dominantBias: m.dominantBias,
+      thesisId: m.finalTakeId,
+      thesisEn: m.finalTakeEn,
+      reconstructedWithoutPreCapture: true,
+    };
+    archive[clusterKey] = finalized;
+    if (!archiveOverride) savePreNewsLockArchive(archive);
+    return finalized;
+  }
+
+  // Inside T-5M Final Lock: capture once and hold frozen until release
+  if (isLockedT5M) {
+    if (existing && existing.phase === 'T5M_LOCKED' && existing.isLocked) {
+      return existing;
+    }
+    const locked: PreNewsSystemState = {
+      clusterKey,
+      primaryEventId: primaryEvent.id,
+      primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+      releaseDateIso: primaryEvent.date,
+      phase: 'T5M_LOCKED',
+      isLocked: true,
+      lockedAt: new Date(nowMs).toISOString(),
+      forecast: primaryEvent.forecast || '—',
+      previous: primaryEvent.previous || '—',
+      buyProbability: currentMatrix.buyProbability,
+      sellProbability: currentMatrix.sellProbability,
+      mixedProbability: currentMatrix.mixedProbability,
+      dominantBias: currentMatrix.dominantBias,
+      thesisId: currentMatrix.finalTakeId,
+      thesisEn: currentMatrix.finalTakeEn,
+    };
+    archive[clusterKey] = locked;
+    if (!archiveOverride) savePreNewsLockArchive(archive);
+    return locked;
+  }
+
+  // > T-5M before release: Pre-News is ACTIVE and tracks live consensus + intermarket
+  const active: PreNewsSystemState = {
+    clusterKey,
+    primaryEventId: primaryEvent.id,
+    primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+    releaseDateIso: primaryEvent.date,
+    phase: 'PRE_ACTIVE',
+    isLocked: false,
+    lockedAt: null,
+    forecast: primaryEvent.forecast || '—',
+    previous: primaryEvent.previous || '—',
+    buyProbability: currentMatrix.buyProbability,
+    sellProbability: currentMatrix.sellProbability,
+    mixedProbability: currentMatrix.mixedProbability,
+    dominantBias: currentMatrix.dominantBias,
+    thesisId: currentMatrix.finalTakeId,
+    thesisEn: currentMatrix.finalTakeEn,
+  };
+  archive[clusterKey] = active;
+  if (!archiveOverride) savePreNewsLockArchive(archive);
+  return active;
+}
+
+export function resolveSystem2PostNewsState(params: {
+  primaryEvent: MacroCalendarEvent;
+  simultaneousEvents: MacroCalendarEvent[];
+  calendarEvents: MacroCalendarEvent[];
+  intermarketPulse: MacroNewsSnapshot['intermarketPulse'];
+  breakingNews: BreakingNewsHeadline[];
+  cmeFedWatch?: CmeFedWatchState;
+  preNewsState: PreNewsSystemState;
+  nowMs?: number;
+  archiveOverride?: Record<string, PostNewsSystemState>;
+}): PostNewsSystemState {
+  const {
+    primaryEvent,
+    simultaneousEvents,
+    calendarEvents,
+    intermarketPulse,
+    breakingNews,
+    cmeFedWatch,
+    preNewsState,
+    nowMs = Date.now(),
+    archiveOverride,
+  } = params;
+
+  const clusterEvents = [primaryEvent, ...simultaneousEvents];
+  const clusterKey = buildClusterKey(primaryEvent);
+  const targetMs = new Date(primaryEvent.date).getTime();
+  const isReleased = Number.isFinite(targetMs) && nowMs >= targetMs;
+  const elapsedAfterReleaseMs = isReleased ? Math.max(0, nowMs - targetMs) : 0;
+  const expiresAtIso = Number.isFinite(targetMs)
+    ? new Date(targetMs + POST_NEWS_ACTIVE_WINDOW_MS).toISOString()
+    : null;
+  const windowRemainingMs = isReleased
+    ? Math.max(0, POST_NEWS_ACTIVE_WINDOW_MS - elapsedAfterReleaseMs)
+    : POST_NEWS_ACTIVE_WINDOW_MS;
+  const isWindowExpired = isReleased && elapsedAfterReleaseMs > POST_NEWS_ACTIVE_WINDOW_MS;
+  const hasActual = clusterEvents.some((e) => !isPlaceholderMacroValue(e.actual));
+  const actualSummary = clusterEvents
+    .map((e) =>
+      !isPlaceholderMacroValue(e.actual)
+        ? `${e.title}: ${e.actual} (Fcst ${e.forecast || '—'})`
+        : `${e.title}: Menunggu`
+    )
+    .join(' · ');
+
+  const archive = archiveOverride ?? { ...loadPostNewsArchive() };
+  const existingArchived = archive[clusterKey];
+
+  // If already archived (>2h) with verified actuals, freeze forever as OFF
+  if (
+    isWindowExpired &&
+    existingArchived &&
+    existingArchived.status === 'OFF_ARCHIVED_2H' &&
+    existingArchived.hasVerifiedActual
+  ) {
+    return existingArchived;
+  }
+
+  if (!isReleased && !hasActual) {
+    return {
+      clusterKey,
+      primaryEventId: primaryEvent.id,
+      primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+      releaseDateIso: primaryEvent.date,
+      status: 'WAITING_RELEASE',
+      windowRemainingMs: POST_NEWS_ACTIVE_WINDOW_MS,
+      expiresAtIso,
+      archivedAt: null,
+      hasVerifiedActual: false,
+      actualSummary,
+      buyProbability: preNewsState.buyProbability,
+      sellProbability: preNewsState.sellProbability,
+      mixedProbability: preNewsState.mixedProbability,
+      dominantBias: preNewsState.dominantBias,
+      shiftVsPreNews: 'PENDING',
+      buyDeltaVsPreNews: 0,
+      sellDeltaVsPreNews: 0,
+      summaryId: `Menunggu jadwal rilis ${primaryEvent.title}. Modul Post-News aktif selama 2 jam setelah angka Actual keluar.`,
+      summaryEn: `Awaiting ${primaryEvent.title} release. Post-News module remains active for 2 hours once Actual prints.`,
+    };
+  }
+
+  if (isReleased && !hasActual) {
+    const status: PostNewsSystemState['status'] = isWindowExpired
+      ? 'OFF_ARCHIVED_2H'
+      : 'PENDING_ACTUAL';
+    return {
+      clusterKey,
+      primaryEventId: primaryEvent.id,
+      primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+      releaseDateIso: primaryEvent.date,
+      status,
+      windowRemainingMs: isWindowExpired ? 0 : windowRemainingMs,
+      expiresAtIso,
+      archivedAt: isWindowExpired ? new Date(nowMs).toISOString() : null,
+      hasVerifiedActual: false,
+      actualSummary,
+      buyProbability: preNewsState.buyProbability,
+      sellProbability: preNewsState.sellProbability,
+      mixedProbability: preNewsState.mixedProbability,
+      dominantBias: preNewsState.dominantBias,
+      shiftVsPreNews: 'PENDING',
+      buyDeltaVsPreNews: 0,
+      sellDeltaVsPreNews: 0,
+      summaryId: isWindowExpired
+        ? `Jendela 2 jam pasca-rilis ${primaryEvent.title} telah berakhir tanpa angka Actual.`
+        : `Jadwal rilis ${primaryEvent.title} telah lewat — menyinkronkan angka Actual untuk kalkulasi Post-News.`,
+      summaryEn: isWindowExpired
+        ? `The 2-hour post-release window for ${primaryEvent.title} ended without an Actual print.`
+        : `${primaryEvent.title} release time passed — syncing Actual data for Post-News evaluation.`,
+    };
+  }
+
+  // Evaluate Actual prints explicitly (Post-News deterministic calculation)
+  const postSnap = computeDeterministicMacroSnapshot({
+    calendarEvents,
+    intermarketPulse,
+    breakingNews,
+    cmeFedWatch,
+    selectedEventId: primaryEvent.id,
+    sourceMode: 'RULE_BASED_FALLBACK',
+    modelUsed: 'system2-postnews-2h',
+  });
+  const pm = postSnap.scenarioMatrix;
+  const buyDelta = pm.buyProbability - preNewsState.buyProbability;
+  const sellDelta = pm.sellProbability - preNewsState.sellProbability;
+
+  let shiftVsPreNews: PostNewsSystemState['shiftVsPreNews'] = 'UNCHANGED';
+  if (
+    (preNewsState.dominantBias === 'BUY' && pm.dominantBias === 'SELL') ||
+    (preNewsState.dominantBias === 'SELL' && pm.dominantBias === 'BUY')
+  ) {
+    shiftVsPreNews = 'REVERSED_PIVOT';
+  } else if (pm.dominantBias === 'BUY') {
+    if (buyDelta >= 5 || preNewsState.dominantBias === 'MIXED') shiftVsPreNews = 'STRENGTHENED';
+    else if (buyDelta <= -5) shiftVsPreNews = 'WEAKENED';
+  } else if (pm.dominantBias === 'SELL') {
+    if (sellDelta >= 5 || preNewsState.dominantBias === 'MIXED') shiftVsPreNews = 'STRENGTHENED';
+    else if (sellDelta <= -5) shiftVsPreNews = 'WEAKENED';
+  } else if (preNewsState.dominantBias !== 'MIXED') {
+    shiftVsPreNews = 'WEAKENED';
+  }
+
+  const shiftLabelId =
+    shiftVsPreNews === 'REVERSED_PIVOT'
+      ? `PINDAH HALUAN vs Pre-News (${preNewsState.dominantBias} → ${pm.dominantBias})`
+      : shiftVsPreNews === 'STRENGTHENED'
+      ? `KEYAKINAN MENINGKAT vs Pre-News (${pm.dominantBias} +${Math.max(Math.abs(buyDelta), Math.abs(sellDelta))}%)`
+      : shiftVsPreNews === 'WEAKENED'
+      ? `KEYAKINAN MELEMAH vs Pre-News`
+      : `SEJALAN DENGAN PRE-NEWS (${pm.dominantBias})`;
+
+  const shiftLabelEn =
+    shiftVsPreNews === 'REVERSED_PIVOT'
+      ? `REVERSED vs Pre-News (${preNewsState.dominantBias} → ${pm.dominantBias})`
+      : shiftVsPreNews === 'STRENGTHENED'
+      ? `CONVICTION STRENGTHENED vs Pre-News (${pm.dominantBias} +${Math.max(Math.abs(buyDelta), Math.abs(sellDelta))}%)`
+      : shiftVsPreNews === 'WEAKENED'
+      ? `CONVICTION WEAKENED vs Pre-News`
+      : `ALIGNED WITH PRE-NEWS (${pm.dominantBias})`;
+
+  const status: PostNewsSystemState['status'] = isWindowExpired ? 'OFF_ARCHIVED_2H' : 'ACTIVE_2H';
+  const result: PostNewsSystemState = {
+    clusterKey,
+    primaryEventId: primaryEvent.id,
+    primaryTitle: clusterEvents.map((e) => e.title).join(' & '),
+    releaseDateIso: primaryEvent.date,
+    status,
+    windowRemainingMs: isWindowExpired ? 0 : windowRemainingMs,
+    expiresAtIso,
+    archivedAt: isWindowExpired ? new Date(nowMs).toISOString() : null,
+    hasVerifiedActual: true,
+    actualSummary,
+    buyProbability: pm.buyProbability,
+    sellProbability: pm.sellProbability,
+    mixedProbability: pm.mixedProbability,
+    dominantBias: pm.dominantBias,
+    shiftVsPreNews,
+    buyDeltaVsPreNews: buyDelta,
+    sellDeltaVsPreNews: sellDelta,
+    summaryId: isWindowExpired
+      ? `[ARSIP OFF · >2 JAM] ${shiftLabelId}. Actual: ${actualSummary}.`
+      : `[POST-NEWS AKTIF] ${shiftLabelId}. Actual: ${actualSummary}.`,
+    summaryEn: isWindowExpired
+      ? `[OFF ARCHIVE · >2H] ${shiftLabelEn}. Actual: ${actualSummary}.`
+      : `[POST-NEWS ACTIVE] ${shiftLabelEn}. Actual: ${actualSummary}.`,
+  };
+
+  if (status === 'OFF_ARCHIVED_2H') {
+    archive[clusterKey] = result;
+    if (!archiveOverride) savePostNewsArchive(archive);
+  }
+  return result;
+}
+
+/**
+ * SYSTEM 3 — Live News, Fed Speeches & Fundamental Pulse (0 Gemini Tokens).
+ * Runs continuously while market is open, combining breaking RSS news/speeches, live Intermarket,
+ * CME FedWatch, and the Offline Actuals Archive track record without mutating System 1 or locked System 2.
+ */
+export function computeLiveFundamentalPulse(params: {
+  calendarEvents: MacroCalendarEvent[];
+  intermarketPulse: MacroNewsSnapshot['intermarketPulse'];
+  breakingNews: BreakingNewsHeadline[];
+  cmeFedWatch?: CmeFedWatchState;
+  nowMs?: number;
+  offlineArchive?: ArchivedMacroActualRecord[];
+}): LiveFundamentalPulseState {
+  const {
+    calendarEvents,
+    intermarketPulse,
+    breakingNews,
+    cmeFedWatch: rawFedWatch,
+    nowMs = Date.now(),
+    offlineArchive,
+  } = params;
+
+  const isMarketOpen = isMarketDay(nowMs, { useUtc: true, enforceFridayCloseUtc: true });
+  const cmeFedWatch = evaluateCmeFedWatchScoring(rawFedWatch);
+  const archiveRecords = offlineArchive ?? loadOfflineActualsArchive();
+
+  let buyScore = 20;
+  let sellScore = 20;
+  let mixedScore = 20;
+
+  // 1) Breaking News & Fed Speeches with recency decay & topic-clustering (prevents duplicate wire amplification)
+  let speechAlertActive = false;
+  const recentHeadlines = (breakingNews || []).slice(0, 16);
+  const channelClusterSeenCount = new Map<string, number>();
+  for (const h of recentHeadlines) {
+    const pubMs = new Date(h.pubDate).getTime();
+    const ageHours = Number.isFinite(pubMs) ? Math.max(0, (nowMs - pubMs) / (60 * 60 * 1000)) : 4;
+    const recencyWeight = ageHours <= 2 ? 1.45 : ageHours <= 6 ? 1.0 : ageHours <= 12 ? 0.6 : 0.3;
+    const clusterKey = `${h.channelType}:${h.sentimentForGold}`;
+    const priorClusterHits = channelClusterSeenCount.get(clusterKey) || 0;
+    channelClusterSeenCount.set(clusterKey, priorClusterHits + 1);
+    const clusterDecay = priorClusterHits === 0 ? 1.0 : priorClusterHits === 1 ? 0.5 : 0.25;
+    const baseWeight = h.impact === 'HIGH' ? 12 : 5;
+    const weight = Math.max(1, Math.round(baseWeight * recencyWeight * clusterDecay));
+
+    if (h.channelType === 'FED_SPEECH' && ageHours <= 8) {
+      speechAlertActive = true;
+    }
+
+    if (h.sentimentForGold === 'BULLISH') buyScore += weight;
+    else if (h.sentimentForGold === 'BEARISH') sellScore += weight;
+    else mixedScore += Math.round(weight * 0.4);
+  }
+
+  // 2) Live Intermarket Transmission (DXY, US02Y, US10Y, USOIL, VIX)
+  const { dxy, us02y, us10y, usoil, vix } = intermarketPulse;
+  if (dxy?.isAvailable !== false && dxy?.price > 0) {
+    if (dxy.direction === 'UP') sellScore += 18;
+    else if (dxy.direction === 'DOWN') buyScore += 18;
+  }
+  if (us02y && us02y.isAvailable !== false && us02y.price > 0) {
+    if (us02y.direction === 'UP') sellScore += 16;
+    else if (us02y.direction === 'DOWN') buyScore += 16;
+  }
+  if (us10y?.isAvailable !== false && us10y?.price > 0) {
+    if (us10y.direction === 'UP') sellScore += 12;
+    else if (us10y.direction === 'DOWN') buyScore += 12;
+  }
+  if (usoil?.isAvailable !== false && usoil?.price > 0) {
+    if (usoil.changePercent >= 1.0) sellScore += 12; // Inflation channel
+    else if (usoil.changePercent <= -1.0) buyScore += 10;
+  }
+  if (vix?.isAvailable && vix.price >= 22 && vix.direction === 'UP') {
+    buyScore += 10;
+  }
+
+  // 3) CME FedWatch baseline
+  if (cmeFedWatch.isAvailable) {
+    if (cmeFedWatch.dominantOutcome === 'CUT') buyScore += 14;
+    else if (cmeFedWatch.dominantOutcome === 'HIKE') sellScore += 16;
+    else if (cmeFedWatch.hawkishShiftDetected) sellScore += 10;
+    else mixedScore += 8;
+  }
+
+  // 4) Offline Historical Actuals Track Record (0 network/tokens — uses prior released CPI/PPI/NFP)
+  const streakInfo = detectPreviousRevisionsAndStreaks(calendarEvents);
+  const releasedArchiveCount = Math.max(
+    archiveRecords.length,
+    calendarEvents.filter((e) => !isPlaceholderMacroValue(e.actual) && !isFedSpeechEvent(e.title)).length
+  );
+  let histBuy = 0;
+  let histSell = 0;
+  for (const ev of calendarEvents) {
+    if (isPlaceholderMacroValue(ev.actual) || isFedSpeechEvent(ev.title)) continue;
+    const evMs = new Date(ev.date).getTime();
+    const ageDays = Number.isFinite(evMs) ? Math.max(0, (nowMs - evMs) / (24 * 60 * 60 * 1000)) : 30;
+    const w =
+      ageDays <= 21
+        ? ev.impact === 'High'
+          ? 5
+          : 2
+        : ageDays <= 45
+        ? ev.impact === 'High'
+          ? 3
+          : 1
+        : 1;
+    if (ev.eventBiasForGold === 'BUY') {
+      buyScore += w;
+      histBuy++;
+    } else if (ev.eventBiasForGold === 'SELL') {
+      sellScore += w;
+      histSell++;
+    }
+  }
+
+  // Anti-whipsaw balance check when DXY & yields diverge
+  if (
+    dxy?.isAvailable !== false &&
+    us02y?.isAvailable !== false &&
+    ((dxy.direction === 'UP' && us02y?.direction === 'DOWN') ||
+      (dxy.direction === 'DOWN' && us02y?.direction === 'UP'))
+  ) {
+    mixedScore += 14;
+  }
+
+  const total = buyScore + sellScore + mixedScore;
+  const buyProbability = Math.round((buyScore / total) * 100);
+  const sellProbability = Math.round((sellScore / total) * 100);
+  const mixedProbability = Math.max(0, 100 - buyProbability - sellProbability);
+
+  let dominantBias: MacroBiasDirection = 'MIXED';
+  if (buyProbability >= sellProbability + 6 && buyProbability > mixedProbability) {
+    dominantBias = 'BUY';
+  } else if (sellProbability >= buyProbability + 6 && sellProbability > mixedProbability) {
+    dominantBias = 'SELL';
+  }
+
+  const topHl =
+    recentHeadlines.find((h) => h.channelType === 'FED_SPEECH' || h.impact === 'HIGH') ||
+    recentHeadlines[0];
+
+  const offlinePillarSummaryId =
+    streakInfo.pillarStreakSummaryId ||
+    `Arsip offline ${releasedArchiveCount} rilis aktual (${histSell} pro-SELL / ${histBuy} pro-BUY Gold).`;
+  const offlinePillarSummaryEn =
+    streakInfo.pillarStreakSummaryEn ||
+    `Offline archive ${releasedArchiveCount} actual prints (${histSell} pro-SELL / ${histBuy} pro-BUY Gold).`;
+
+  const summaryId =
+    dominantBias === 'SELL'
+      ? `Pulse fundamental berkelanjutan condong BEARISH Gold (${sellProbability}%) dari ${
+          topHl ? `berita/pidato "${topHl.title}"` : 'tekanan DXY/Yield'
+        } serta ${releasedArchiveCount} rekam rilis aktual offline.`
+      : dominantBias === 'BUY'
+      ? `Pulse fundamental berkelanjutan condong BULLISH Gold (${buyProbability}%) didukung ${
+          topHl ? `berita/pidato "${topHl.title}"` : 'pelonggaran DXY/Yield'
+        } dan ${releasedArchiveCount} arsip data aktual offline.`
+      : `Pulse berita & pidato terkini masih seimbang (${mixedProbability}% MIXED) sementara pasar mencerna katalis lintas aset dan ${releasedArchiveCount} arsip aktual.`;
+
+  const summaryEn =
+    dominantBias === 'SELL'
+      ? `Continuous fundamental pulse leans BEARISH Gold (${sellProbability}%) driven by ${
+          topHl ? `"${topHl.title}"` : 'firm DXY/Yields'
+        } and ${releasedArchiveCount} archived offline actuals.`
+      : dominantBias === 'BUY'
+      ? `Continuous fundamental pulse leans BULLISH Gold (${buyProbability}%) backed by ${
+          topHl ? `"${topHl.title}"` : 'softer DXY/Yields'
+        } and ${releasedArchiveCount} archived offline actuals.`
+      : `Live news & speech pulse remains balanced (${mixedProbability}% MIXED) as markets digest cross-asset flows and ${releasedArchiveCount} archived actuals.`;
+
+  return {
+    status: isMarketOpen ? 'LIVE_CONTINUOUS' : 'WEEKEND_FROZEN',
+    updatedAt: new Date(nowMs).toISOString(),
+    buyProbability,
+    sellProbability,
+    mixedProbability,
+    dominantBias,
+    speechAlertActive,
+    topCatalystTitle: topHl?.title || (isMarketOpen ? 'Memantau feed RSS & pidato Fed' : 'Akhir pekan — data Jumat'),
+    topCatalystSource: topHl?.source || 'Multi-RSS',
+    topCatalystChannel: topHl?.channelType || 'MACRO_DATA',
+    offlineActualsCount: releasedArchiveCount,
+    offlinePillarSummaryId,
+    offlinePillarSummaryEn,
+    summaryId,
+    summaryEn,
+  };
+}
+
+export function computeMacroThreeSystemState(params: {
+  snapshot: MacroNewsSnapshot;
+  selectedEventId?: string | null;
+  nowMs?: number;
+  offlineArchive?: ArchivedMacroActualRecord[];
+  preNewsArchive?: Record<string, PreNewsSystemState>;
+  postNewsArchive?: Record<string, PostNewsSystemState>;
+}): MacroThreeSystemState {
+  const {
+    snapshot,
+    selectedEventId,
+    nowMs = Date.now(),
+    offlineArchive,
+    preNewsArchive,
+    postNewsArchive,
+  } = params;
+
+  const matrix =
+    selectedEventId && snapshot.scenarioMatrix.primaryEvent.id !== selectedEventId
+      ? analyzeMacroEvent({
+          calendarEvents: snapshot.calendarEvents,
+          intermarketPulse: snapshot.intermarketPulse,
+          breakingNews: snapshot.breakingNews,
+          cmeFedWatch: snapshot.cmeFedWatch || snapshot.scenarioMatrix.cmeFedWatch,
+          selectedEventId,
+          sourceMode: snapshot.sourceMode,
+          modelUsed: snapshot.modelUsed,
+        }).scenarioMatrix
+      : snapshot.scenarioMatrix;
+
+  const system1PreNews = resolveSystem1PreNewsState({
+    primaryEvent: matrix.primaryEvent,
+    simultaneousEvents: matrix.simultaneousEvents || [],
+    calendarEvents: snapshot.calendarEvents,
+    intermarketPulse: snapshot.intermarketPulse,
+    breakingNews: snapshot.breakingNews,
+    cmeFedWatch: snapshot.cmeFedWatch || matrix.cmeFedWatch,
+    currentMatrix: matrix,
+    nowMs,
+    archiveOverride: preNewsArchive,
+  });
+
+  const system2PostNews = resolveSystem2PostNewsState({
+    primaryEvent: matrix.primaryEvent,
+    simultaneousEvents: matrix.simultaneousEvents || [],
+    calendarEvents: snapshot.calendarEvents,
+    intermarketPulse: snapshot.intermarketPulse,
+    breakingNews: snapshot.breakingNews,
+    cmeFedWatch: snapshot.cmeFedWatch || matrix.cmeFedWatch,
+    preNewsState: system1PreNews,
+    nowMs,
+    archiveOverride: postNewsArchive,
+  });
+
+  const system3LivePulse = computeLiveFundamentalPulse({
+    calendarEvents: snapshot.calendarEvents,
+    intermarketPulse: snapshot.intermarketPulse,
+    breakingNews: snapshot.breakingNews,
+    cmeFedWatch: snapshot.cmeFedWatch || matrix.cmeFedWatch,
+    nowMs,
+    offlineArchive,
+  });
+
+  let effectiveSourceSystem: MacroThreeSystemState['effectiveSourceSystem'] = 'SYSTEM_3_LIVE_PULSE';
+  let effectiveFundamentalBias: MacroBiasDirection = system3LivePulse.dominantBias;
+
+  if (system2PostNews.status === 'ACTIVE_2H' && system2PostNews.hasVerifiedActual) {
+    effectiveSourceSystem = 'SYSTEM_2_POST_NEWS';
+    effectiveFundamentalBias = system2PostNews.dominantBias;
+  } else if (system1PreNews.phase === 'T5M_LOCKED') {
+    effectiveSourceSystem = 'SYSTEM_1_PRE_NEWS';
+    effectiveFundamentalBias = system1PreNews.dominantBias;
+  } else if (system1PreNews.phase === 'PRE_ACTIVE') {
+    // Before release, blend/respect System 1 + System 3 (System 3 reflects live headlines/speeches + Pre-News)
+    effectiveSourceSystem = 'SYSTEM_3_LIVE_PULSE';
+    effectiveFundamentalBias = system3LivePulse.dominantBias;
+  }
+
+  return {
+    system1PreNews,
+    system2PostNews,
+    system3LivePulse,
+    effectiveFundamentalBias,
+    effectiveSourceSystem,
+  };
+}
+
+// ============================================================================
+// FUNDAMENTAL GOLD STRUCTURAL ENGINE (1D / 1W / 1M · BULLISH vs BEARISH ONLY)
+// ============================================================================
+
+export const FUNDAMENTAL_GOLD_SNAPSHOT_STORAGE_KEY = 'tradevault_fundamental_gold_snapshot_v1';
+
+export type FundamentalDirectionBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+
+export interface ExtendedMarketAssetPulse {
+  symbol: string;
+  yahooTicker: string;
+  name: string;
+  category:
+    | 'REAL_YIELD'
+    | 'EQUITY'
+    | 'CREDIT_STRESS'
+    | 'VOLATILITY'
+    | 'METALS_FLOW'
+    | 'FX_G10'
+    | 'LIQUIDITY';
+  price: number;
+  previousClose: number;
+  changePercent: number;
+  change5dPercent?: number;
+  change20dPercent?: number;
+  direction: 'UP' | 'DOWN' | 'FLAT';
+  effectOnGold: FundamentalDirectionBias;
+  noteId: string;
+  noteEn: string;
+  isAvailable: boolean;
+  updatedAt: string;
+}
+
+export interface CftcCotGoldState {
+  isAvailable: boolean;
+  reportDate: string;
+  managedMoneyLong: number;
+  managedMoneyShort: number;
+  netSpeculativeContracts: number;
+  netPercentile1y: number; // 0..100
+  crowdingState: 'EXTREME_LONG' | 'ELEVATED_LONG' | 'NEUTRAL' | 'WASHED_OUT_SHORT';
+  noteId: string;
+  noteEn: string;
+}
+
+export interface FundamentalExtendedFeeds {
+  esFutures?: ExtendedMarketAssetPulse;
+  nqFutures?: ExtendedMarketAssetPulse;
+  tipEtf?: ExtendedMarketAssetPulse;
+  iefEtf?: ExtendedMarketAssetPulse;
+  hygEtf?: ExtendedMarketAssetPulse;
+  moveIndex?: ExtendedMarketAssetPulse;
+  gvzIndex?: ExtendedMarketAssetPulse;
+  gldEtf?: ExtendedMarketAssetPulse;
+  silverFutures?: ExtendedMarketAssetPulse;
+  copperFutures?: ExtendedMarketAssetPulse;
+  btcUsd?: ExtendedMarketAssetPulse;
+  eurUsd?: ExtendedMarketAssetPulse;
+  usdJpy?: ExtendedMarketAssetPulse;
+  usdCnh?: ExtendedMarketAssetPulse;
+  cotGold?: CftcCotGoldState;
+  externalEvents?: ExternalG10ChinaEvent[];
+  fetchedAt?: string;
+}
+
+export interface FundamentalHorizonBias {
+  horizon: '1D' | '1W' | '1M';
+  bias: FundamentalDirectionBias;
+  bullishProbability: number;
+  bearishProbability: number;
+  headlineId: string;
+  headlineEn: string;
+}
+
+export interface FundamentalNarrativeLanguageBlock {
+  headlineSummary: string;
+  dataStatusNote: string;
+  sectionA_StatusAndChange: string;
+  sectionB_RatesInflationAndGrowth: string;
+  sectionC_CrossMarketEquitiesCentralBanks: string;
+  sectionD_HorizonOutlookAndRisks: string;
+}
+
+export interface FundamentalDriverBreakdownItem {
+  id: string;
+  category: 'RATES_REAL_YIELD' | 'DOLLAR_FX' | 'EQUITIES_LIQUIDITY' | 'CREDIT_GEOPOLITICS' | 'FLOWS_CHINA_COT';
+  effect: FundamentalDirectionBias;
+  weight: number;
+  labelId: string;
+  labelEn: string;
+  metricText: string;
+  explainId: string;
+  explainEn: string;
+}
+
+export type FundamentalMarketRegime =
+  | 'STAGFLATION'
+  | 'REFLATION_HAWKISH'
+  | 'DISINFLATION_EASING'
+  | 'RISK_OFF_CRISIS'
+  | 'DELEVERAGING_DASH_FOR_CASH'
+  | 'RISK_ON_EQUITY_ROTATION'
+  | 'GOLDILOCKS_NEUTRAL';
+
+export interface FundamentalGoldSnapshot {
+  id: string;
+  instrument: 'XAUUSD';
+  analyzedAt: string;
+  sourceMode: 'GEMINI_AI' | 'DETERMINISTIC_FALLBACK';
+  modelUsed: string;
+  overallBias: FundamentalDirectionBias;
+  bullishProbability: number;
+  bearishProbability: number;
+  horizons: {
+    daily1D: FundamentalHorizonBias;
+    weekly1W: FundamentalHorizonBias;
+    monthly1M: FundamentalHorizonBias;
+  };
+  marketRegime: FundamentalMarketRegime;
+  regimeLabelId: string;
+  regimeLabelEn: string;
+  fundamentalFingerprint: string;
+  changeDetection: {
+    hasChanged: boolean;
+    changeScore: number;
+    previousAnalyzedAt: string | null;
+    statusTitleId: string;
+    statusTitleEn: string;
+    statusDetailId: string;
+    statusDetailEn: string;
+    changedFactorsId: string[];
+    changedFactorsEn: string[];
+  };
+  cadenceSchedule: {
+    currentSlotId: 'ASIA_PRE_LONDON' | 'LONDON_OPEN' | 'NEW_YORK_SESSION' | 'WEEKEND';
+    currentSlotLabelId: string;
+    currentSlotLabelEn: string;
+    recommendedDailyUpdates: number;
+    nextWindowWib: string;
+  };
+  narrative: {
+    id: FundamentalNarrativeLanguageBlock;
+    en: FundamentalNarrativeLanguageBlock;
+  };
+  drivers: FundamentalDriverBreakdownItem[];
+  evidenceSummary: {
+    dxyPrice?: number;
+    dxyChangePct?: number;
+    us10yPrice?: number;
+    us10yChangePct?: number;
+    us02yPrice?: number;
+    realYieldSpreadPct?: number;
+    tipIefChangePct?: number;
+    esChangePct?: number;
+    nqChangePct?: number;
+    vixPrice?: number;
+    movePrice?: number;
+    gvzPrice?: number;
+    hygIefSpreadPct?: number;
+    gldChangePct?: number;
+    goldSilverRatio?: number;
+    copperGoldRatioPct?: number;
+    usdCnhChangePct?: number;
+    btcChangePct?: number;
+    usOilChangePct?: number;
+    cftcNetPercentile?: number;
+    cftcReportDate?: string;
+    fedWatchDominant?: string;
+    fedWatchCutPct?: number | null;
+    fedWatchHoldPct?: number | null;
+    fedWatchHikePct?: number | null;
+    fedWatchMeeting?: string;
+    fedWatchSourceLabel?: string;
+    fedWatchImpliedRate?: number | null;
+    activeDriversCount: number;
+  };
+}
+
+export function computeFundamentalGoldCadenceSlot(
+  nowMs: number = Date.now()
+): FundamentalGoldSnapshot['cadenceSchedule'] {
+  const isMarketOpen = isMarketDay(nowMs, { useUtc: true, enforceFridayCloseUtc: true });
+  if (!isMarketOpen) {
+    return {
+      currentSlotId: 'WEEKEND',
+      currentSlotLabelId: 'Akhir Pekan · Data Penutupan Jumat',
+      currentSlotLabelEn: 'Weekend · Friday Closing Baseline',
+      recommendedDailyUpdates: 3,
+      nextWindowWib: 'Senin 07:30 WIB',
+    };
+  }
+
+  let wibHour = 12;
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Jakarta',
+      hour: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(nowMs));
+    const hVal = Number(parts.find((p) => p.type === 'hour')?.value);
+    if (Number.isFinite(hVal)) wibHour = hVal;
+  } catch {
+    wibHour = new Date(nowMs + 7 * 3600 * 1000).getUTCHours();
+  }
+
+  if (wibHour >= 6 && wibHour < 14) {
+    return {
+      currentSlotId: 'ASIA_PRE_LONDON',
+      currentSlotLabelId: 'Jendela 1 · Sesi Pagi Asia & Tiongkok (07:30 WIB)',
+      currentSlotLabelEn: 'Window 1 · Asia & China Morning Session (07:30 WIB)',
+      recommendedDailyUpdates: 3,
+      nextWindowWib: '14:30 WIB (Pembukaan London)',
+    };
+  }
+  if (wibHour >= 14 && wibHour < 20) {
+    return {
+      currentSlotId: 'LONDON_OPEN',
+      currentSlotLabelId: 'Jendela 2 · Sesi London & Eropa (14:30 WIB)',
+      currentSlotLabelEn: 'Window 2 · London & Europe Open (14:30 WIB)',
+      recommendedDailyUpdates: 3,
+      nextWindowWib: '20:30 WIB (Sesi AS & Saham NY)',
+    };
+  }
+  return {
+    currentSlotId: 'NEW_YORK_SESSION',
+    currentSlotLabelId: 'Jendela 3 · Sesi New York, Data AS & Wall Street (20:30 WIB)',
+    currentSlotLabelEn: 'Window 3 · New York, US Data & Wall Street Session (20:30 WIB)',
+    recommendedDailyUpdates: 3,
+    nextWindowWib: '07:30 WIB (Sesi Asia Esok)',
+  };
+}
+
+function clampProb(val: number, min = 18, max = 82): number {
+  return Math.max(min, Math.min(max, Math.round(val)));
+}
+
+function sanitizeNoBuySellWording(text: string): string {
+  return text
+    .replace(/\bSTRONG\s+BUY\b/gi, 'STRONG BULLISH')
+    .replace(/\bSTRONG\s+SELL\b/gi, 'STRONG BEARISH')
+    .replace(/\bBUY\s+XAU\/USD\b/gi, 'BULLISH XAU/USD')
+    .replace(/\bSELL\s+XAU\/USD\b/gi, 'BEARISH XAU/USD')
+    .replace(/\bPRO-BUY\b/gi, 'PRO-BULLISH')
+    .replace(/\bPRO-SELL\b/gi, 'PRO-BEARISH');
+}
+
+export function computeFundamentalGoldSnapshot(params: {
+  calendarEvents: MacroCalendarEvent[];
+  intermarketPulse: {
+    dxy: IntermarketAssetPulse;
+    us02y?: IntermarketAssetPulse;
+    usoil: IntermarketAssetPulse;
+    us10y: IntermarketAssetPulse;
+    vix?: VixRiskPulse;
+    goldPositioning?: GoldPositioningPulse;
+  };
+  breakingNews: BreakingNewsHeadline[];
+  cmeFedWatch: CmeFedWatchState;
+  extendedFeeds?: FundamentalExtendedFeeds;
+  previousSnapshot?: FundamentalGoldSnapshot | null;
+  nowMs?: number;
+}): FundamentalGoldSnapshot {
+  const {
+    calendarEvents,
+    intermarketPulse,
+    breakingNews,
+    cmeFedWatch: rawFedWatch,
+    extendedFeeds = {},
+    previousSnapshot = null,
+    nowMs = Date.now(),
+  } = params;
+
+  const cmeFedWatch = evaluateCmeFedWatchScoring(rawFedWatch);
+  const { dxy, us02y, usoil, us10y, vix, goldPositioning } = intermarketPulse;
+  const drivers: FundamentalDriverBreakdownItem[] = [];
+
+  // Horizon structural scores (centered around 0; positive = Bullish Gold, negative = Bearish Gold)
+  let score1D = 0;
+  let score1W = 0;
+  let score1M = 0;
+
+  // 1) FOMC 3 Pillars & Historical Calendar Archive (1W & 1M structural backbone + Stagflation detection)
+  let inflScore = 0;
+  let laborGrowthScore = 0;
+  for (const ev of calendarEvents) {
+    if (isFedSpeechEvent(ev.title)) continue;
+    const evMs = new Date(ev.date).getTime();
+    const ageDays = Number.isFinite(evMs) ? (nowMs - evMs) / (24 * 60 * 60 * 1000) : 14;
+    if (ageDays > 65 || ageDays < -14) continue;
+    const recency = ageDays <= 14 ? 1.25 : ageDays <= 35 ? 0.85 : 0.45;
+    const scale = evaluateEventSurpriseScale(ev);
+    const mag = (ev.impact === 'High' ? 4.2 : 1.8) * recency * scale;
+    const dir = ev.eventBiasForGold === 'BUY' ? 1 : ev.eventBiasForGold === 'SELL' ? -1 : 0;
+    if (ev.pillar === 'INFLATION') inflScore += dir * mag;
+    else if (ev.pillar === 'LABOR' || ev.pillar === 'GROWTH') laborGrowthScore += dir * mag;
+  }
+
+  const isStagflationRegime = inflScore <= -4 && laborGrowthScore >= 3;
+  const calendarNet = inflScore + laborGrowthScore;
+  if (isStagflationRegime) {
+    score1W += 11;
+    score1M += 16;
+    drivers.push({
+      id: 'stagflation-regime',
+      category: 'RATES_REAL_YIELD',
+      effect: 'BULLISH',
+      weight: 16,
+      labelId: 'Pola Stagflasi AS (Inflasi Lengket + Ekonomi Melambat)',
+      labelEn: 'US Stagflation Pattern (Sticky Inflation + Cooling Growth/Jobs)',
+      metricText: `Inflasi ${inflScore.toFixed(1)} / Pertumbuhan ${laborGrowthScore > 0 ? '+' : ''}${laborGrowthScore.toFixed(1)}`,
+      explainId: 'Ketika harga barang masih sulit turun tapi ekonomi dan lowongan kerja melambat, investor biasanya memilih Emas untuk melindungi nilai kekayaan.',
+      explainEn: 'When inflation remains stubborn while jobs and growth cool, investors historically accumulate Gold to protect purchasing power.',
+    });
+  } else if (Math.abs(calendarNet) >= 2.5) {
+    const calShift = Math.max(-18, Math.min(18, calendarNet * 0.9));
+    score1W += calShift * 0.85;
+    score1M += calShift;
+    const eff: FundamentalDirectionBias = calShift > 0 ? 'BULLISH' : 'BEARISH';
+    drivers.push({
+      id: 'macro-calendar-pillars',
+      category: 'RATES_REAL_YIELD',
+      effect: eff,
+      weight: Math.round(Math.abs(calShift)),
+      labelId: 'Rangkaian Data Ekonomi AS (CPI, NFP, GDP)',
+      labelEn: 'US Macro Data Streak (CPI, NFP, GDP)',
+      metricText: `Skor 3 Pilar ${calShift > 0 ? '+' : ''}${calShift.toFixed(1)}`,
+      explainId:
+        eff === 'BULLISH'
+          ? 'Data inflasi dan ekonomi AS belakangan lebih jinak dari perkiraan, membuka ruang suku bunga turun di masa depan (mendukung Emas).'
+          : 'Data ekonomi dan inflasi AS masih kuat/panas, memberi alasan bagi bank sentral AS mempertahankan suku bunga tinggi (menekan Emas).',
+      explainEn:
+        eff === 'BULLISH'
+          ? 'Recent US inflation and growth prints came in softer than expected, giving the Fed room to ease policy later (Bullish Gold).'
+          : 'US growth and inflation figures remain resilient, giving the Fed reason to keep interest rates restrictive (Bearish Gold).',
+    });
+  }
+
+  // 2) CME FedWatch & Yield Curve + Real Yield Proxy (TIP / IEF + US10Y + US02Y)
+  if (cmeFedWatch.isAvailable) {
+    let fedDelta = 0;
+    const isRestrictiveHold =
+      cmeFedWatch.dominantOutcome === 'HOLD' &&
+      (cmeFedWatch.cutProbability ?? 50) < 42 &&
+      ((us10y.isAvailable !== false && us10y.price >= 4.35) ||
+        (us02y?.isAvailable !== false && (us02y?.price ?? 0) >= 4.25));
+
+    if (cmeFedWatch.dominantOutcome === 'CUT') fedDelta = 11;
+    else if (cmeFedWatch.dominantOutcome === 'HIKE') fedDelta = -13;
+    else if (cmeFedWatch.hawkishShiftDetected) fedDelta = -8;
+    else if (isRestrictiveHold) {
+      fedDelta = (cmeFedWatch.holdProbability ?? 0) >= 58 ? -7.5 : -5.5;
+    }
+
+    score1D += fedDelta * 0.7;
+    score1W += fedDelta * 0.95;
+    score1M += fedDelta;
+
+    const eff: FundamentalDirectionBias = fedDelta > 0 ? 'BULLISH' : fedDelta < 0 ? 'BEARISH' : 'NEUTRAL';
+    if (eff !== 'NEUTRAL') {
+      drivers.push({
+        id: 'fedwatch-policy',
+        category: 'RATES_REAL_YIELD',
+        effect: eff,
+        weight: Math.round(Math.abs(fedDelta)),
+        labelId: 'Ekspektasi Suku Bunga The Fed',
+        labelEn: 'Fed Interest Rate Expectations',
+        metricText:
+          cmeFedWatch.dominantOutcome === 'CUT' && cmeFedWatch.cutProbability !== null
+            ? `Peluang Turun ${cmeFedWatch.cutProbability.toFixed(0)}%`
+            : cmeFedWatch.dominantOutcome === 'HIKE' && cmeFedWatch.hikeProbability !== null
+            ? `Peluang Naik ${cmeFedWatch.hikeProbability.toFixed(0)}%`
+            : `Tahan ${cmeFedWatch.holdProbability?.toFixed(0) ?? '—'}% (Cut ${cmeFedWatch.cutProbability?.toFixed(0) ?? '—'}%)`,
+        explainId:
+          eff === 'BULLISH'
+            ? 'Pasar melihat peluang pemangkasan suku bunga AS semakin dekat. Suku bunga turun membuat Emas lebih menarik.'
+            : 'Pasar memperkirakan The Fed menahan bunga tinggi lebih lama (peluang potong bunga rendah), sehingga imbal hasil obligasi/USD bersaing ketat dengan Emas.',
+        explainEn:
+          eff === 'BULLISH'
+            ? 'Markets are pricing higher odds of Fed rate cuts. Lower interest rates reduce the opportunity cost of holding Gold.'
+            : 'Markets price restrictive US rates staying on hold for longer (low cut odds), creating real competition for non-yielding Gold.',
+      });
+    }
+  }
+
+  // US10Y & Real Yield Breakeven via TIP vs IEF
+  const tip = extendedFeeds.tipEtf;
+  const ief = extendedFeeds.iefEtf;
+  let tipIefSpreadPct: number | undefined;
+  if (tip?.isAvailable && ief?.isAvailable) {
+    tipIefSpreadPct = Number((tip.changePercent - ief.changePercent).toFixed(2));
+    const tipIef5dSpread = Number(((tip.change5dPercent ?? 0) - (ief.change5dPercent ?? 0)).toFixed(2));
+    // When TIP outperforms IEF, inflation expectations (breakeven) are rising -> lowers REAL yield -> Bullish Gold
+    const rySignal = tipIefSpreadPct * 4.5 + tipIef5dSpread * 2.0;
+    const boundedRy = Math.max(-10, Math.min(10, rySignal));
+    if (Math.abs(boundedRy) >= 1.5) {
+      score1D += boundedRy * 0.5;
+      score1W += boundedRy * 0.85;
+      score1M += boundedRy;
+      const eff: FundamentalDirectionBias = boundedRy > 0 ? 'BULLISH' : 'BEARISH';
+      drivers.push({
+        id: 'real-yield-tip-ief',
+        category: 'RATES_REAL_YIELD',
+        effect: eff,
+        weight: Math.round(Math.abs(boundedRy)),
+        labelId: 'Imbal Hasil Riil & Ekspektasi Inflasi (TIPS vs Obligasi)',
+        labelEn: 'Real Yield & Breakeven Proxy (TIPS vs Treasuries)',
+        metricText: `TIPS vs IEF ${tipIefSpreadPct >= 0 ? '+' : ''}${tipIefSpreadPct.toFixed(2)}%`,
+        explainId:
+          eff === 'BULLISH'
+            ? 'Obligasi anti-inflasi (TIPS) lebih diburu daripada obligasi biasa, menandakan bunga riil cenderung turun dan mendukung Emas.'
+            : 'Bunga riil AS terasa lebih ketat karena obligasi biasa mengungguli TIPS, menahan kenaikan Emas.',
+        explainEn:
+          eff === 'BULLISH'
+            ? 'Inflation-protected bonds (TIPS) are outperforming nominal Treasuries, signaling lower real yields and a tailwind for Gold.'
+            : 'Nominal Treasuries are outperforming TIPS, indicating firmer real yields that restrain Gold upside.',
+      });
+    }
+  }
+
+  if (us10y.isAvailable !== false && us10y.price > 0) {
+    const isHighAbsoluteYield = us10y.price >= 4.55;
+    let yDelta =
+      us10y.changePercent <= -1.2 ? 7 : us10y.changePercent >= 1.2 ? -9 : us10y.direction === 'DOWN' ? 3.5 : us10y.direction === 'UP' ? -4.5 : 0;
+    // High absolute yield ceiling dampens a single day's bounce & penalizes 1W/1M structural holding cost
+    if (isHighAbsoluteYield && yDelta > 0) {
+      yDelta *= 0.45;
+    }
+    score1D += yDelta;
+    score1W += yDelta * 0.7 - (isHighAbsoluteYield ? 5 : 0);
+    score1M += yDelta * 0.35 - (us10y.price >= 4.7 ? 6 : isHighAbsoluteYield ? 3 : 0);
+  }
+  if (us02y?.isAvailable !== false && us02y && us02y.price > 0) {
+    const y2Delta = us02y.direction === 'DOWN' ? 3.5 : us02y.direction === 'UP' ? -6 : 0;
+    score1D += y2Delta;
+    score1W += y2Delta * 0.6 - (us02y.price >= 4.6 ? 3 : 0);
+  }
+
+  // 3) DXY & G10/China Currency Basket (EUR/USD, USD/JPY, USD/CNH)
+  if (dxy.isAvailable !== false && dxy.price > 0) {
+    const dxyScore = Math.max(-14, Math.min(14, -dxy.changePercent * 14));
+    score1D += dxyScore * 1.15;
+    score1W += dxyScore * 0.85;
+    score1M += dxyScore * 0.5;
+    if (Math.abs(dxyScore) >= 2.5) {
+      const eff: FundamentalDirectionBias = dxyScore > 0 ? 'BULLISH' : 'BEARISH';
+      drivers.push({
+        id: 'dxy-strength',
+        category: 'DOLLAR_FX',
+        effect: eff,
+        weight: Math.round(Math.abs(dxyScore)),
+        labelId: 'Kekuatan Dolar AS (DXY)',
+        labelEn: 'US Dollar Index (DXY)',
+        metricText: `${dxy.price.toFixed(2)} (${dxy.changePercent >= 0 ? '+' : ''}${dxy.changePercent.toFixed(2)}%)`,
+        explainId:
+          eff === 'BULLISH'
+            ? 'Dolar AS sedang melemah. Karena harga Emas dunia dihitung dalam USD, Dolar yang lemah membuat Emas lebih murah dibeli dunia.'
+            : 'Dolar AS sedang menguat. Penguatan Dolar membuat harga Emas relatif lebih mahal bagi pembeli di luar AS.',
+        explainEn:
+          eff === 'BULLISH'
+            ? 'The US Dollar is softening, making USD-denominated Gold cheaper for international buyers.'
+            : 'The US Dollar is strengthening, making USD-priced Gold costlier for global buyers.',
+      });
+    }
+  }
+
+  const usdCnh = extendedFeeds.usdCnh;
+  if (usdCnh?.isAvailable) {
+    // Rising USD/CNH (Yuan weakens) often sparks Chinese household & PBoC Gold hedging demand over 1W/1M
+    const cnhMove = usdCnh.change5dPercent ?? usdCnh.changePercent;
+    if (Math.abs(cnhMove) >= 0.35) {
+      const cnhBull = cnhMove > 0 ? 5.5 : -2.5;
+      score1W += cnhBull;
+      score1M += cnhBull * 1.25;
+      if (cnhMove > 0) {
+        drivers.push({
+          id: 'china-yuan-hedge',
+          category: 'FLOWS_CHINA_COT',
+          effect: 'BULLISH',
+          weight: 6,
+          labelId: 'Lindung Nilai Yuan Tiongkok (USD/CNH)',
+          labelEn: 'China Yuan Hedge Demand (USD/CNH)',
+          metricText: `USD/CNH ${cnhMove >= 0 ? '+' : ''}${cnhMove.toFixed(2)}%`,
+          explainId: 'Saat mata uang Yuan Tiongkok melemah, masyarakat dan bank sentral Tiongkok cenderung memperbanyak simpanan Emas fisik.',
+          explainEn: 'As China’s Yuan weakens, domestic investors and institutions tend to increase physical Gold hedging demand.',
+        });
+      }
+    }
+  }
+
+  const usdJpy = extendedFeeds.usdJpy;
+  if (usdJpy?.isAvailable && usdJpy.changePercent <= -0.8) {
+    // Sharp Yen surge / Carry Trade unwind -> global risk-off tailwind for Gold
+    score1D += 6;
+    score1W += 5;
+  }
+
+  // 4) US Equities & Risk-On Liquidity Drain (S&P 500 Futures ES=F, Nasdaq NQ=F, Mega-IPO / Bitcoin)
+  const es = extendedFeeds.esFutures;
+  const nq = extendedFeeds.nqFutures;
+  const equityAvgDay =
+    es?.isAvailable && nq?.isAvailable
+      ? (es.changePercent + nq.changePercent) / 2
+      : es?.isAvailable
+      ? es.changePercent
+      : nq?.isAvailable
+      ? nq.changePercent
+      : null;
+  const equityAvg5d =
+    es?.isAvailable && nq?.isAvailable
+      ? ((es.change5dPercent ?? 0) + (nq.change5dPercent ?? 0)) / 2
+      : es?.isAvailable
+      ? es.change5dPercent ?? 0
+      : nq?.isAvailable
+      ? nq.change5dPercent ?? 0
+      : 0;
+
+  const gld = extendedFeeds.gldEtf;
+  const silver = extendedFeeds.silverFutures;
+  const copper = extendedFeeds.copperFutures;
+  const gld1dPct = gld?.isAvailable ? gld.changePercent : undefined;
+  const gold3dPct = goldPositioning?.isAvailable ? goldPositioning.change3dPercent : undefined;
+  const gold6hPct = goldPositioning?.isAvailable ? goldPositioning.change6hPercent : undefined;
+
+  // Detect Margin-Call / Liquidation "Dash for Cash": Equities plunging + VIX spiking + Gold/GLD simultaneously falling
+  const isGoldActivelySellingOff =
+    (typeof gld1dPct === 'number' && gld1dPct <= -1.2) ||
+    (typeof gold3dPct === 'number' && gold3dPct <= -3.0) ||
+    (typeof gold6hPct === 'number' && gold6hPct <= -0.6);
+
+  const isDashForCashLiquidation =
+    ((equityAvgDay !== null && equityAvgDay <= -2.0) || Boolean(vix?.isAvailable && vix.price >= 26)) &&
+    isGoldActivelySellingOff;
+
+  if (isDashForCashLiquidation) {
+    const gldDrag = typeof gld1dPct === 'number' && gld1dPct < 0 ? Math.abs(gld1dPct) * 3.8 : 0;
+    const gc3dDrag = typeof gold3dPct === 'number' && gold3dPct < 0 ? Math.abs(gold3dPct) * 1.5 : 0;
+    const liq1D = Math.min(22, Math.max(11, gldDrag + 6));
+    const liq1W = Math.min(16, Math.max(8, gc3dDrag + gldDrag * 0.6));
+    score1D -= liq1D;
+    score1W -= liq1W;
+    drivers.push({
+      id: 'dash-for-cash-liquidation',
+      category: 'EQUITIES_LIQUIDITY',
+      effect: 'BEARISH',
+      weight: Math.round(liq1W + 4),
+      labelId: 'Aksi Jual Likuiditas & Margin Call (Saham + Emas Turun Bersama)',
+      labelEn: 'Margin-Call Dash for Cash (Stocks & Gold Liquidated Together)',
+      metricText: `GLD ${typeof gld1dPct === 'number' ? `${gld1dPct.toFixed(2)}%` : '—'} · GC=F 3D ${typeof gold3dPct === 'number' ? `${gold3dPct.toFixed(2)}%` : '—'} · VIX ${vix?.isAvailable ? vix.price.toFixed(1) : '—'}`,
+      explainId: 'Saat pasar saham jatuh tajam dan VIX melonjak tapi harga Emas ikut turun, dana besar sedang menjual Emas untuk mencairkan Dolar tunai (menutup margin call). Ini sering menekan Emas dalam jangka pendek-mingguan sebelum fungsi aset aman pulih.',
+      explainEn: 'When Wall Street tumbles alongside Gold ETF & futures outflows, institutions are selling profitable Gold positions to raise USD cash and meet margin calls — creating real 1D/1W downside pressure.',
+    });
+  }
+
+  let isEquityRotationRiskOn = false;
+  if (equityAvgDay !== null) {
+    // Sharp equity rally pulls speculative liquidity into stocks & mega-IPOs (short-term headwind unless yields drop)
+    // Moderate equity selloff (when Gold holds/rises) triggers flight-to-safety; if Gold falls simultaneously, it is Dash-for-Cash liquidation handled above!
+    if (equityAvgDay >= 0.7 || equityAvg5d >= 1.8) {
+      isEquityRotationRiskOn = true;
+      const drag = Math.min(11, Math.max(4, equityAvgDay * 4 + equityAvg5d * 1.2));
+      score1D -= drag;
+      score1W -= drag * 0.75;
+      drivers.push({
+        id: 'us-equities-rotation',
+        category: 'EQUITIES_LIQUIDITY',
+        effect: 'BEARISH',
+        weight: Math.round(drag),
+        labelId: 'Rotasi Uang ke Saham AS (Risk-On)',
+        labelEn: 'Capital Rotation into US Equities (Risk-On)',
+        metricText: `S&P/Nasdaq ${equityAvgDay >= 0 ? '+' : ''}${equityAvgDay.toFixed(2)}% (1D)`,
+        explainId: 'Pasar saham AS sedang bergairah, membuat sebagian dana investor berpindah sementara dari Emas ke saham teknologi dan IPO baru.',
+        explainEn: 'Strong US equity momentum is pulling risk appetite and short-term capital away from defensive Gold into stocks and IPOs.',
+      });
+    } else if (!isDashForCashLiquidation && (equityAvgDay <= -0.8 || equityAvg5d <= -2.0)) {
+      const boost = Math.min(11, Math.max(4, Math.abs(equityAvgDay) * 3.5 + Math.abs(equityAvg5d) * 1.0));
+      score1D += boost;
+      score1W += boost * 0.8;
+      drivers.push({
+        id: 'us-equities-riskoff',
+        category: 'EQUITIES_LIQUIDITY',
+        effect: 'BULLISH',
+        weight: Math.round(boost),
+        labelId: 'Pelemahan Saham AS → Cari Aset Aman',
+        labelEn: 'US Equity Pullback → Safe-Haven Flight',
+        metricText: `S&P/Nasdaq ${equityAvgDay.toFixed(2)}% (1D)`,
+        explainId: 'Ketika bursa saham AS memerah sementara Emas bertahan kuat, investor besar memarkir dana ke Emas.',
+        explainEn: 'When Wall Street stocks decline while Gold holds firm, institutional portfolios rotate capital into defensive Gold.',
+      });
+    }
+  }
+
+  const btc = extendedFeeds.btcUsd;
+  if (btc?.isAvailable && Math.abs(btc.changePercent) >= 3.5 && btc.changePercent <= -4.0 && vix?.isAvailable && vix.price >= 22) {
+    // Acute liquidity crunch signal if Bitcoin dumps simultaneously with rising VIX
+    score1D -= 3; // possible brief cash/margin raise volatility
+    score1W += 5; // safe-haven recovery once margin dust settles
+  }
+
+  // 5) Credit Stress & Volatility (VIX, ^MOVE, HYG vs IEF, ^GVZ)
+  const move = extendedFeeds.moveIndex;
+  const hyg = extendedFeeds.hygEtf;
+  const gvz = extendedFeeds.gvzIndex;
+  let hygIefSpreadPct: number | undefined;
+  let hasCreditStress = false;
+  if (hyg?.isAvailable && ief?.isAvailable) {
+    hygIefSpreadPct = Number((hyg.changePercent - ief.changePercent).toFixed(2));
+    if (hygIefSpreadPct <= -0.45) {
+      hasCreditStress = true;
+      if (!isDashForCashLiquidation) {
+        score1W += 6;
+      }
+      score1M += 9;
+    }
+  }
+  const isVixElevated = Boolean(vix?.isAvailable && (vix.price >= 21 || vix.changePercent >= 5));
+  const isMoveElevated = Boolean(move?.isAvailable && (move.price >= 110 || move.changePercent >= 4));
+  if (!isDashForCashLiquidation && (isVixElevated || isMoveElevated || hasCreditStress)) {
+    score1D += isVixElevated ? 5 : 2;
+    score1W += 7;
+    score1M += 6;
+    drivers.push({
+      id: 'volatility-credit-stress',
+      category: 'CREDIT_GEOPOLITICS',
+      effect: 'BULLISH',
+      weight: 8,
+      labelId: 'Tingkat Kecemasan Pasar & Obligasi (VIX / MOVE)',
+      labelEn: 'Market Fear & Bond Stress (VIX / MOVE)',
+      metricText: `VIX ${vix?.isAvailable ? vix.price.toFixed(1) : '—'}${move?.isAvailable ? ` · MOVE ${move.price.toFixed(0)}` : ''}`,
+      explainId: 'Indeks kecemasan di pasar saham maupun obligasi sedang meningkat. Dalam situasi tidak pasti, Emas dicari sebagai pelindung utama.',
+      explainEn: 'Elevated equity or Treasury bond volatility reflects financial anxiety, strengthening demand for Gold as a hedge.',
+    });
+  } else if (isDashForCashLiquidation && (isVixElevated || hasCreditStress)) {
+    // High VIX confirms acute stress supports 1M structural hedge, even while 1D/1W suffers liquidation
+    score1M += 5;
+  }
+
+  // 6) Energy / Oil Channel & Metals Confirmation (GLD, Silver, Copper/Gold, GC=F Momentum)
+  if (usoil.isAvailable !== false && usoil.price > 0) {
+    if (usoil.changePercent >= 1.4) {
+      score1D -= 6;
+      score1W -= 4.5;
+      drivers.push({
+        id: 'oil-inflation-channel',
+        category: 'RATES_REAL_YIELD',
+        effect: 'BEARISH',
+        weight: 6,
+        labelId: 'Kenaikan Harga Minyak Dunia (Jalur Inflasi)',
+        labelEn: 'Crude Oil Surge (Inflation Channel)',
+        metricText: `WTI $${usoil.price.toFixed(2)} (+${usoil.changePercent.toFixed(2)}%)`,
+        explainId: 'Lonjakan harga minyak dapat membuat biaya hidup & inflasi naik lagi, yang berisiko membuat The Fed menunda penurunan bunga.',
+        explainEn: 'Rising oil prices threaten to reignite headline inflation, potentially delaying Fed rate cuts.',
+      });
+    } else if (usoil.changePercent <= -1.5) {
+      score1D += 5;
+      score1W += 4;
+    }
+  }
+
+  const goldPriceRef = goldPositioning?.isAvailable && goldPositioning.price > 0 ? goldPositioning.price : 0;
+  const goldSilverRatio =
+    goldPriceRef > 0 && silver?.isAvailable && silver.price > 0
+      ? Number((goldPriceRef / silver.price).toFixed(1))
+      : undefined;
+  const copperGoldRatioPct =
+    copper?.isAvailable && goldPositioning?.isAvailable
+      ? Number((copper.changePercent - (goldPositioning.change6hPercent ?? 0)).toFixed(2))
+      : undefined;
+
+  if (gld?.isAvailable) {
+    if (Math.abs(gld.changePercent) >= 1.0 && !isDashForCashLiquidation) {
+      const gldDayScore = Math.max(-12, Math.min(10, gld.changePercent * 3.0));
+      score1D += gldDayScore;
+      score1W += gldDayScore * 0.5;
+    }
+    const gld5d = gld.change5dPercent ?? gld.changePercent;
+    if (Math.abs(gld5d) >= 1.0) {
+      const gldScore = Math.max(-9, Math.min(9, gld5d * 1.4));
+      score1W += gldScore;
+      score1M += gldScore * 0.9;
+    }
+  }
+  if (!isDashForCashLiquidation && typeof gold3dPct === 'number' && Math.abs(gold3dPct) >= 2.5) {
+    // Near-term institutional tape flow: strong 3D drop weighs on 1D/1W follow-through until price stabilizes
+    const momDelta = Math.max(-10, Math.min(8, gold3dPct * 1.1));
+    score1D += momDelta;
+    score1W += momDelta * 0.85;
+  }
+  if (goldSilverRatio !== undefined && goldSilverRatio >= 88) {
+    // High GSR signals defensive Gold leadership
+    score1W += 3;
+    score1M += 4;
+  }
+
+  // 7) CFTC Commitments of Traders (Managed Money Crowding on 1M / 1W)
+  const cot = extendedFeeds.cotGold;
+  if (cot?.isAvailable) {
+    if (cot.crowdingState === 'EXTREME_LONG') {
+      score1D -= 3;
+      score1W -= 5;
+      // High crowding caps near-term upside even in structural bull markets (shakeout risk)
+      drivers.push({
+        id: 'cftc-cot-crowding',
+        category: 'FLOWS_CHINA_COT',
+        effect: 'BEARISH',
+        weight: 6,
+        labelId: 'Posisi Dana Besar CFTC Sudah Sangat Penuh',
+        labelEn: 'CFTC Managed Money Positioning Crowded Long',
+        metricText: `Persentil ${cot.netPercentile1y.toFixed(0)}/100 (${cot.reportDate})`,
+        explainId: 'Banyak pengelola dana besar sudah memegang Emas dalam porsi sangat tinggi, sehingga rawan koreksi sehat (ambil untung) jangka pendek.',
+        explainEn: 'Institutional futures positioning sits near 1-year highs, raising near-term profit-taking and shakeout risk.',
+      });
+    } else if (cot.crowdingState === 'WASHED_OUT_SHORT') {
+      score1W += 7;
+      score1M += 9;
+      drivers.push({
+        id: 'cftc-cot-washed',
+        category: 'FLOWS_CHINA_COT',
+        effect: 'BULLISH',
+        weight: 8,
+        labelId: 'Posisi Dana Besar CFTC Masih Ringan (Ruang Naik Lebar)',
+        labelEn: 'CFTC Managed Money Under-Positioned (Room to Build)',
+        metricText: `Persentil ${cot.netPercentile1y.toFixed(0)}/100 (${cot.reportDate})`,
+        explainId: 'Posisi beli institusi besar masih relatif rendah, memberi ruang lebar bagi arus modal masuk jika ada katalis positif.',
+        explainEn: 'Speculative long positioning is light relative to the past year, leaving ample room for fresh institutional inflows.',
+      });
+    }
+  }
+
+  // 8) Breaking RSS Wire Synthesis (Topic-clustered + time-decayed for 1D & 1W)
+  let rssBull = 0;
+  let rssBear = 0;
+  const clusterSeen = new Map<string, number>();
+  for (const b of breakingNews.slice(0, 16)) {
+    const pubMs = new Date(b.pubDate).getTime();
+    const ageH = Number.isFinite(pubMs) ? Math.max(0, (nowMs - pubMs) / (60 * 60 * 1000)) : 4;
+    const decay = ageH <= 2 ? 1.0 : ageH <= 6 ? 0.7 : ageH <= 12 ? 0.45 : 0.25;
+    const key = `${b.channelType}:${b.sentimentForGold}`;
+    const prevHits = clusterSeen.get(key) || 0;
+    clusterSeen.set(key, prevHits + 1);
+    const clusterWeight = prevHits === 0 ? 1.0 : prevHits === 1 ? 0.45 : 0.2;
+    const pts = (b.impact === 'HIGH' ? 3.2 : 1.5) * decay * clusterWeight;
+    if (b.sentimentForGold === 'BULLISH') rssBull += pts;
+    else if (b.sentimentForGold === 'BEARISH') rssBear += pts;
+  }
+  const rssNet = Math.max(-10, Math.min(10, rssBull - rssBear));
+  if (Math.abs(rssNet) >= 1.5) {
+    score1D += rssNet * 1.1;
+    score1W += rssNet * 0.55;
+    const eff: FundamentalDirectionBias = rssNet > 0 ? 'BULLISH' : 'BEARISH';
+    drivers.push({
+      id: 'news-wire-sentiment',
+      category: 'CREDIT_GEOPOLITICS',
+      effect: eff,
+      weight: Math.round(Math.abs(rssNet)),
+      labelId: 'Arus Berita & Geopolitik Global',
+      labelEn: 'Global News & Geopolitical Flow',
+      metricText: `${breakingNews.filter((x) => x.sentimentForGold === 'BULLISH').length} Bullish · ${breakingNews.filter((x) => x.sentimentForGold === 'BEARISH').length} Bearish`,
+      explainId:
+        eff === 'BULLISH'
+          ? 'Berita utama hari ini lebih banyak menyorot hal yang mendorong minat lindung nilai atau pelemahan Dolar AS.'
+          : 'Berita global hari ini lebih banyak menyorot risiko suku bunga tinggi, meredanya konflik, atau penguatan aset berisiko.',
+      explainEn:
+        eff === 'BULLISH'
+          ? 'Today’s news flow leans toward safe-haven hedging demand or softer US rate expectations.'
+          : 'Recent global headlines lean toward higher-for-longer rates, geopolitical de-escalation, or risk-on appetite.',
+    });
+  }
+
+  // Sort drivers by weight descending so most impactful evidence leads
+  drivers.sort((a, b) => b.weight - a.weight);
+
+  // Convert horizon raw scores cleanly into BULLISH % + BEARISH % === 100
+  let bull1D = clampProb(50 + score1D);
+  let bull1W = clampProb(50 + score1W);
+  const bull1M = clampProb(50 + score1M);
+
+  // Reality-Check Guardrail: Never display euphoric Bullish odds on 1D/1W when live GLD/GC=F is plunging (-1.5% 1D or -3.5% 3D)
+  if (isDashForCashLiquidation || (typeof gld1dPct === 'number' && gld1dPct <= -1.5)) {
+    bull1D = Math.min(bull1D, 46);
+  }
+  if (isDashForCashLiquidation || (typeof gold3dPct === 'number' && gold3dPct <= -4.0)) {
+    bull1W = Math.min(bull1W, 49);
+  }
+
+  const bear1D = 100 - bull1D;
+  const bear1W = 100 - bull1W;
+  const bear1M = 100 - bull1M;
+
+  // Overall structural probability blends 25% 1D + 40% 1W + 35% 1M
+  const bullishProbability = clampProb(bull1D * 0.25 + bull1W * 0.4 + bull1M * 0.35);
+  const bearishProbability = 100 - bullishProbability;
+
+  const getBiasFromProb = (bull: number): FundamentalDirectionBias =>
+    bull >= 54 ? 'BULLISH' : bull <= 46 ? 'BEARISH' : 'NEUTRAL';
+
+  const overallBias = getBiasFromProb(bullishProbability);
+  const bias1D = getBiasFromProb(bull1D);
+  const bias1W = getBiasFromProb(bull1W);
+  const bias1M = getBiasFromProb(bull1M);
+
+  // Determine Market Regime
+  let marketRegime: FundamentalMarketRegime = 'GOLDILOCKS_NEUTRAL';
+  let regimeLabelId = 'Pasar Seimbang (Menunggu Pemicu Baru)';
+  let regimeLabelEn = 'Balanced Regime (Awaiting Fresh Catalyst)';
+
+  if (isDashForCashLiquidation) {
+    marketRegime = 'DELEVERAGING_DASH_FOR_CASH';
+    regimeLabelId = 'Likuidasi Tunai / Margin Call (Saham & Emas Dijual Bersamaan)';
+    regimeLabelEn = 'Dash-for-Cash Deleveraging (Equities & Gold Sold Together)';
+  } else if (isStagflationRegime) {
+    marketRegime = 'STAGFLATION';
+    regimeLabelId = 'Stagflasi (Inflasi Lengket + Ekonomi Melambat)';
+    regimeLabelEn = 'Stagflation (Sticky Inflation + Cooling Growth)';
+  } else if (isVixElevated || isMoveElevated || hasCreditStress) {
+    marketRegime = 'RISK_OFF_CRISIS';
+    regimeLabelId = 'Mode Defensif / Safe-Haven (Kecemasan Pasar Naik)';
+    regimeLabelEn = 'Risk-Off Safe-Haven (Rising Market Stress)';
+  } else if (isEquityRotationRiskOn && overallBias === 'BEARISH') {
+    marketRegime = 'RISK_ON_EQUITY_ROTATION';
+    regimeLabelId = 'Rotasi Risk-On (Uang Mengalir ke Saham AS / IPO)';
+    regimeLabelEn = 'Risk-On Equity Rotation (Capital Flowing to US Stocks / IPOs)';
+  } else if (overallBias === 'BULLISH') {
+    marketRegime = 'DISINFLATION_EASING';
+    regimeLabelId = 'Pelonggaran Bunga & Dukungan Struktural Emas';
+    regimeLabelEn = 'Easing Rate Path & Structural Gold Support';
+  } else if (overallBias === 'BEARISH') {
+    marketRegime = 'REFLATION_HAWKISH';
+    regimeLabelId = 'Tekanan Suku Bunga Ketat & Dolar Kuat';
+    regimeLabelEn = 'Tighter Yield & Strong US Dollar Pressure';
+  }
+
+  // Structural Fingerprint (rounded buckets so normal 1-pip noise doesn't look like a fundamental shift!)
+  const dxyBucket = dxy.isAvailable !== false && dxy.price > 0 ? Math.round(dxy.price * 2) / 2 : 0;
+  const y10Bucket = us10y.isAvailable !== false && us10y.price > 0 ? Math.round(us10y.price * 10) / 10 : 0;
+  const esBucket = es?.isAvailable ? Math.round(es.changePercent) : 0;
+  const topHeadlineSig = breakingNews
+    .slice(0, 4)
+    .map((h) => `${h.channelType}:${h.sentimentForGold}`)
+    .join(',');
+  const fpRaw = [
+    `regime:${marketRegime}`,
+    `overall:${overallBias}:${Math.round(bullishProbability / 5) * 5}`,
+    `h:${bias1D}-${bias1W}-${bias1M}`,
+    `dxy:${dxyBucket}:y10:${y10Bucket}:es:${esBucket}`,
+    `fed:${cmeFedWatch.dominantOutcome}:${Math.round((cmeFedWatch.cutProbability ?? 0) / 10) * 10}`,
+    `cal:${calendarEvents.filter((e) => !isPlaceholderMacroValue(e.actual)).slice(0, 6).map((e) => `${e.title}:${e.actual}`).join('|')}`,
+    `cot:${cot?.crowdingState || 'NA'}`,
+    `news:${topHeadlineSig}`,
+  ].join('##');
+
+  let fpHash = 2166136261;
+  for (let i = 0; i < fpRaw.length; i++) {
+    fpHash ^= fpRaw.charCodeAt(i);
+    fpHash = Math.imul(fpHash, 16777619);
+  }
+  const fundamentalFingerprint = `fg-${(fpHash >>> 0).toString(16)}`;
+
+  // Honest Change Detection vs Previous Snapshot
+  const changedFactorsId: string[] = [];
+  const changedFactorsEn: string[] = [];
+  let hasChanged = false;
+  let changeScore = 0;
+
+  if (!previousSnapshot) {
+    hasChanged = true;
+    changeScore = 100;
+    changedFactorsId.push('Pembacaan awal fundamental XAU/USD disusun dari seluruh data makro & pasar global.');
+    changedFactorsEn.push('Initial XAU/USD structural fundamental reading compiled from macro & cross-asset feeds.');
+  } else {
+    const bullDiff = Math.abs(bullishProbability - previousSnapshot.bullishProbability);
+    if (previousSnapshot.marketRegime !== marketRegime) {
+      hasChanged = true;
+      changeScore += 45;
+      changedFactorsId.push(`Iklim pasar bergeser ke "${regimeLabelId}".`);
+      changedFactorsEn.push(`Market regime shifted to "${regimeLabelEn}".`);
+    }
+    if (previousSnapshot.overallBias !== overallBias || bullDiff >= 5) {
+      hasChanged = true;
+      changeScore += 35;
+      changedFactorsId.push(
+        `Peluang arah berubah dari ${previousSnapshot.bullishProbability}% Bullish menjadi ${bullishProbability}% Bullish.`
+      );
+      changedFactorsEn.push(
+        `Directional probability shifted from ${previousSnapshot.bullishProbability}% Bullish to ${bullishProbability}% Bullish.`
+      );
+    }
+    if (previousSnapshot.fundamentalFingerprint !== fundamentalFingerprint && !hasChanged) {
+      hasChanged = true;
+      changeScore += 20;
+      changedFactorsId.push('Ada pembaruan rilis berita / pergeseran antar-aset (DXY, Obligasi, atau Saham AS).');
+      changedFactorsEn.push('Updated macro headlines or cross-asset moves detected (DXY, yields, or US equities).');
+    }
+  }
+
+  const cadenceSchedule = computeFundamentalGoldCadenceSlot(nowMs);
+  const biasWordId =
+    overallBias === 'BULLISH' ? 'Cenderung Naik (Bullish)' : overallBias === 'BEARISH' ? 'Cenderung Turun (Bearish)' : 'Netral / Seimbang';
+  const biasWordEn =
+    overallBias === 'BULLISH' ? 'Bullish Tilt' : overallBias === 'BEARISH' ? 'Bearish Tilt' : 'Neutral / Balanced';
+
+  const statusTitleId = !previousSnapshot
+    ? 'Analisis Fundamental Siap'
+    : hasChanged
+    ? 'Ada Pergeseran Data Fundamental'
+    : 'Data Fundamental Masih Sama';
+  const statusTitleEn = !previousSnapshot
+    ? 'Fundamental Readout Ready'
+    : hasChanged
+    ? 'Fundamental Drivers Shifted'
+    : 'Fundamental Data Unchanged';
+
+  const statusDetailId = !previousSnapshot
+    ? 'Disusun dari pembacaan suku bunga The Fed, imbal hasil obligasi AS, indeks Dolar (DXY), sentimen Wall Street, arus institusi, dan risiko global.'
+    : hasChanged
+    ? changedFactorsId.join(' ')
+    : `Belum ada katalis makro baru yang mengubah struktur sejak pengecekan terakhir. Arah besar Emas tetap ${biasWordId} dengan pendorong inti yang sama.`;
+  const statusDetailEn = !previousSnapshot
+    ? 'Synthesized from Fed rate pricing, US Treasury yields, the US Dollar Index (DXY), Wall Street risk flows, institutional positioning, and global stress.'
+    : hasChanged
+    ? changedFactorsEn.join(' ')
+    : `No fresh macro catalyst has altered the backdrop since the last check. Gold’s structural leaning stays ${biasWordEn} on the same core drivers.`;
+
+  // Crisp Macro Desk Brief Deterministic Narrative (used offline, as fallback, or when data is unchanged)
+  const topDriver = drivers[0];
+  const ratesDriver = drivers.find((d) => d.category === 'RATES_REAL_YIELD');
+  const flowDriver =
+    drivers.find((d) => d.category === 'EQUITIES_LIQUIDITY') ||
+    drivers.find((d) => d.category === 'FLOWS_CHINA_COT') ||
+    drivers.find((d) => d.category === 'DOLLAR_FX');
+
+  const headlineId =
+    overallBias === 'BULLISH'
+      ? `Bias makro XAU/USD mengarah Bullish (${bullishProbability}%) di bawah rezim ${regimeLabelId.toLowerCase()}.`
+      : overallBias === 'BEARISH'
+      ? `Bias makro XAU/USD berada di bawah tekanan Bearish (${bearishProbability}%) akibat rezim ${regimeLabelId.toLowerCase()}.`
+      : `Bias makro XAU/USD masih seimbang (${bullishProbability}% Bullish vs ${bearishProbability}% Bearish) di tengah tarik-menarik pendorong naik dan penahan lintas pasar.`;
+
+  const headlineEn =
+    overallBias === 'BULLISH'
+      ? `XAU/USD macro bias leans Bullish (${bullishProbability}%) within a ${regimeLabelEn.toLowerCase()} regime.`
+      : overallBias === 'BEARISH'
+      ? `XAU/USD macro bias faces Bearish pressure (${bearishProbability}%) under a ${regimeLabelEn.toLowerCase()} regime.`
+      : `XAU/USD macro bias stays balanced (${bullishProbability}% Bullish vs ${bearishProbability}% Bearish) as supportive and headwind forces offset.`;
+
+  const horizon1DTextId =
+    bias1D === 'BULLISH'
+      ? `condong menguat (${bull1D}% Bullish)`
+      : bias1D === 'BEARISH'
+      ? `rawan tekanan jangka pendek (${bear1D}% Bearish)`
+      : `cenderung mendatar (${bull1D}% Bullish)`;
+  const horizon1WTextId =
+    bias1W === 'BULLISH'
+      ? `berpihak pada sisi Bullish (${bull1W}%)`
+      : bias1W === 'BEARISH'
+      ? `didominasi tekanan Bearish (${bear1W}%)`
+      : `bergerak selektif netral (${bull1W}% Bullish)`;
+  const horizon1MTextId =
+    bias1M === 'BULLISH'
+      ? `menopang struktur naik (${bull1M}% Bullish)`
+      : bias1M === 'BEARISH'
+      ? `membebani arah tren besar (${bear1M}% Bearish)`
+      : `berkonsolidasi netral (${bull1M}% Bullish)`;
+
+  const horizon1DTextEn =
+    bias1D === 'BULLISH'
+      ? `tilted higher (${bull1D}% Bullish)`
+      : bias1D === 'BEARISH'
+      ? `facing near-term pressure (${bear1D}% Bearish)`
+      : `range-bound (${bull1D}% Bullish)`;
+  const horizon1WTextEn =
+    bias1W === 'BULLISH'
+      ? `Bullish-leaning (${bull1W}%)`
+      : bias1W === 'BEARISH'
+      ? `Bearish-tilted (${bear1W}%)`
+      : `selective neutral (${bull1W}% Bullish)`;
+  const horizon1MTextEn =
+    bias1M === 'BULLISH'
+      ? `supportive for the broader uptrend (${bull1M}% Bullish)`
+      : bias1M === 'BEARISH'
+      ? `weighing on the macro trend (${bear1M}% Bearish)`
+      : `consolidating neutrally (${bull1M}% Bullish)`;
+
+  const sectionA_Id = `${
+    hasChanged
+      ? 'Pembaruan data terbaru mengonfirmasi pergeseran rezim yang menempatkan'
+      : 'Belum ada perubahan fundamental berarti sejak pengecekan sebelumnya — struktur makro masih menempatkan'
+  } Emas (XAU/USD) pada posisi ${biasWordId} (${bullishProbability}% Bullish vs ${bearishProbability}% Bearish). ${
+    topDriver
+      ? `Penggerak paling dominan saat ini datang dari ${topDriver.labelId.toLowerCase()}: ${topDriver.explainId}`
+      : ''
+  }`.trim();
+
+  const sectionB_Id = ratesDriver
+    ? `Pada poros utama penentu harga Emas — suku bunga The Fed, bunga riil, dan obligasi AS — ${ratesDriver.explainId} ${
+        dxy.isAvailable !== false && dxy.price > 0
+          ? `Sejalan dengan itu, Indeks Dolar AS (DXY di ${dxy.price.toFixed(2)}, ${
+              dxy.changePercent >= 0 ? 'menguat' : 'melemah'
+            } ${Math.abs(dxy.changePercent).toFixed(2)}%) bersama yield obligasi AS 10 tahun (${
+              us10y.isAvailable !== false ? `${us10y.price.toFixed(2)}%` : '—'
+            }) menjadi barometer langsung apakah biaya peluang menahan Emas sedang melonggar atau justru mengetat.`
+          : ''
+      }`.trim()
+    : `Pada poros suku bunga dan inflasi AS, pasar tetap menjadikan ekspektasi kebijakan The Fed sebagai jangkar utama. ${
+        cmeFedWatch.isAvailable
+          ? cmeFedWatch.summaryNoteId || ''
+          : 'Pergerakan yield obligasi AS dan DXY tetap menentukan ruang gerak struktural Emas jangka menengah.'
+      }`.trim();
+
+  const sectionC_Id = [
+    flowDriver
+      ? `Dari sisi rotasi modal lintas pasar (Wall Street, mata uang Asia, dan arus institusi): ${flowDriver.explainId}`
+      : '',
+    es?.isAvailable
+      ? `Di bursa saham AS, indeks utama sedang ${
+          es.changePercent >= 0
+            ? `menguat (+${es.changePercent.toFixed(2)}%), menandakan sebagian likuiditas jangka pendek masih nyaman bertahan di aset berisiko`
+            : `terkoreksi (${es.changePercent.toFixed(2)}%), sehingga minat lindung nilai defensif terhadap Emas mulai terjaga`
+        }.`
+      : '',
+    cot?.isAvailable
+      ? `Sementara di pasar berjangka global (laporan CFTC COT), eksposur beli bersih dana institusi berada di persentil ${cot.netPercentile1y.toFixed(
+          0
+        )} dari 100 dalam setahun terakhir.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const sectionD_Id = `Memetakan tiga horizon waktu: dalam 1 hari ke depan XAU/USD ${horizon1DTextId}, pada rentang 1 minggu arah fundamental ${horizon1WTextId}, dan secara struktural 1 bulan ke depan masih ${horizon1MTextId}. Skenario ini berisiko berbalik apabila rilis inflasi atau tenaga kerja AS melenceng tajam dari konsensus, DXY dan yield US10Y menembus naik secara agresif, atau terjadi pergeseran mendadak pada sentimen risiko geopolitik.`;
+
+  const sectionA_En = `${
+    hasChanged
+      ? 'Incoming macro data confirms a shift placing'
+      : 'No material fundamental change since the prior check — the broader macro backdrop continues to place'
+  } Gold (XAU/USD) at a ${biasWordEn} (${bullishProbability}% Bullish vs ${bearishProbability}% Bearish). ${
+    topDriver
+      ? `The dominant driver right now is ${topDriver.labelEn}: ${topDriver.explainEn}`
+      : ''
+  }`.trim();
+
+  const sectionB_En = ratesDriver
+    ? `Across Gold’s core rate-and-dollar engine — Fed expectations, real yields, and Treasuries — ${ratesDriver.explainEn} ${
+        dxy.isAvailable !== false && dxy.price > 0
+          ? `Alongside this, the US Dollar Index (DXY at ${dxy.price.toFixed(2)}, ${
+              dxy.changePercent >= 0 ? 'up' : 'down'
+            } ${Math.abs(dxy.changePercent).toFixed(2)}%) and the 10-year Treasury yield (${
+              us10y.isAvailable !== false ? `${us10y.price.toFixed(2)}%` : '—'
+            }) directly dictate whether the opportunity cost of holding non-yielding Gold is easing or tightening.`
+          : ''
+      }`.trim()
+    : `Across US rates and inflation, Federal Reserve policy pricing remains Gold’s primary anchor. ${
+        cmeFedWatch.isAvailable
+          ? cmeFedWatch.summaryNoteEn || ''
+          : 'Treasury yields and the US Dollar continue setting the medium-term tone for Gold.'
+      }`.trim();
+
+  const sectionC_En = [
+    flowDriver
+      ? `Looking at cross-market capital flows (Wall Street risk appetite, Asia FX, and institutions): ${flowDriver.explainEn}`
+      : '',
+    es?.isAvailable
+      ? `On the equity side, US stock futures are ${
+          es.changePercent >= 0
+            ? `advancing (+${es.changePercent.toFixed(2)}%), keeping short-term speculative capital rotated toward risk assets`
+            : `pulling back (${es.changePercent.toFixed(2)}%), keeping defensive hedging interest in Gold supported`
+        }.`
+      : '',
+    cot?.isAvailable
+      ? `In institutional futures positioning (CFTC COT), managed money net longs sit at the ${cot.netPercentile1y.toFixed(
+          0
+        )}th percentile over the past 12 months.`
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const sectionD_En = `Across time horizons: over the next 1 Day XAU/USD is ${horizon1DTextEn}, across 1 Week fundamentals stay ${horizon1WTextEn}, and on a 1 Month window structural forces remain ${horizon1MTextEn}. Watch for invalidation if upcoming US inflation or labor prints surprise sharply, DXY and US10Y yields break decisively higher, or geopolitical stress abruptly shifts.`;
+
+  return {
+    id: `fgs-${nowMs}`,
+    instrument: 'XAUUSD',
+    analyzedAt: new Date(nowMs).toISOString(),
+    sourceMode: 'DETERMINISTIC_FALLBACK',
+    modelUsed: 'fundamental-engine-v1',
+    overallBias,
+    bullishProbability,
+    bearishProbability,
+    horizons: {
+      daily1D: {
+        horizon: '1D',
+        bias: bias1D,
+        bullishProbability: bull1D,
+        bearishProbability: bear1D,
+        headlineId: sanitizeNoBuySellWording(`Harian (1 Hari): ${bias1D === 'BULLISH' ? 'Condong Bullish' : bias1D === 'BEARISH' ? 'Condong Bearish' : 'Seimbang'} (${bull1D}% Bullish / ${bear1D}% Bearish)`),
+        headlineEn: sanitizeNoBuySellWording(`1-Day Outlook: ${bias1D} (${bull1D}% Bullish / ${bear1D}% Bearish)`),
+      },
+      weekly1W: {
+        horizon: '1W',
+        bias: bias1W,
+        bullishProbability: bull1W,
+        bearishProbability: bear1W,
+        headlineId: sanitizeNoBuySellWording(`Mingguan (1 Minggu): ${bias1W === 'BULLISH' ? 'Condong Bullish' : bias1W === 'BEARISH' ? 'Condong Bearish' : 'Seimbang'} (${bull1W}% Bullish / ${bear1W}% Bearish)`),
+        headlineEn: sanitizeNoBuySellWording(`1-Week Outlook: ${bias1W} (${bull1W}% Bullish / ${bear1W}% Bearish)`),
+      },
+      monthly1M: {
+        horizon: '1M',
+        bias: bias1M,
+        bullishProbability: bull1M,
+        bearishProbability: bear1M,
+        headlineId: sanitizeNoBuySellWording(`Bulanan (1 Bulan): ${bias1M === 'BULLISH' ? 'Condong Bullish' : bias1M === 'BEARISH' ? 'Condong Bearish' : 'Seimbang'} (${bull1M}% Bullish / ${bear1M}% Bearish)`),
+        headlineEn: sanitizeNoBuySellWording(`1-Month Outlook: ${bias1M} (${bull1M}% Bullish / ${bear1M}% Bearish)`),
+      },
+    },
+    marketRegime,
+    regimeLabelId,
+    regimeLabelEn,
+    fundamentalFingerprint,
+    changeDetection: {
+      hasChanged,
+      changeScore,
+      previousAnalyzedAt: previousSnapshot?.analyzedAt || null,
+      statusTitleId,
+      statusTitleEn,
+      statusDetailId: sanitizeNoBuySellWording(statusDetailId),
+      statusDetailEn: sanitizeNoBuySellWording(statusDetailEn),
+      changedFactorsId: changedFactorsId.map(sanitizeNoBuySellWording),
+      changedFactorsEn: changedFactorsEn.map(sanitizeNoBuySellWording),
+    },
+    cadenceSchedule,
+    narrative: {
+      id: {
+        headlineSummary: sanitizeNoBuySellWording(headlineId),
+        dataStatusNote: sanitizeNoBuySellWording(statusDetailId),
+        sectionA_StatusAndChange: sanitizeNoBuySellWording(sectionA_Id),
+        sectionB_RatesInflationAndGrowth: sanitizeNoBuySellWording(sectionB_Id),
+        sectionC_CrossMarketEquitiesCentralBanks: sanitizeNoBuySellWording(sectionC_Id || 'Aliran dana lintas pasar sedang bergerak stabil menantikan katalis besar berikutnya.'),
+        sectionD_HorizonOutlookAndRisks: sanitizeNoBuySellWording(sectionD_Id),
+      },
+      en: {
+        headlineSummary: sanitizeNoBuySellWording(headlineEn),
+        dataStatusNote: sanitizeNoBuySellWording(statusDetailEn),
+        sectionA_StatusAndChange: sanitizeNoBuySellWording(sectionA_En),
+        sectionB_RatesInflationAndGrowth: sanitizeNoBuySellWording(sectionB_En),
+        sectionC_CrossMarketEquitiesCentralBanks: sanitizeNoBuySellWording(sectionC_En || 'Cross-market capital flows remain relatively balanced awaiting the next major macro catalyst.'),
+        sectionD_HorizonOutlookAndRisks: sanitizeNoBuySellWording(sectionD_En),
+      },
+    },
+    drivers,
+    evidenceSummary: {
+      dxyPrice: dxy.isAvailable !== false && dxy.price > 0 ? dxy.price : undefined,
+      dxyChangePct: dxy.isAvailable !== false ? dxy.changePercent : undefined,
+      us10yPrice: us10y.isAvailable !== false && us10y.price > 0 ? us10y.price : undefined,
+      us10yChangePct: us10y.isAvailable !== false ? us10y.changePercent : undefined,
+      us02yPrice: us02y?.isAvailable !== false && us02y && us02y.price > 0 ? us02y.price : undefined,
+      tipIefChangePct: tipIefSpreadPct,
+      esChangePct: es?.isAvailable ? es.changePercent : undefined,
+      nqChangePct: nq?.isAvailable ? nq.changePercent : undefined,
+      vixPrice: vix?.isAvailable ? vix.price : undefined,
+      movePrice: move?.isAvailable ? move.price : undefined,
+      gvzPrice: gvz?.isAvailable ? gvz.price : undefined,
+      hygIefSpreadPct,
+      gldChangePct: gld?.isAvailable ? gld.changePercent : undefined,
+      goldSilverRatio,
+      copperGoldRatioPct,
+      usdCnhChangePct: usdCnh?.isAvailable ? usdCnh.changePercent : undefined,
+      btcChangePct: btc?.isAvailable ? btc.changePercent : undefined,
+      usOilChangePct: usoil.isAvailable !== false ? usoil.changePercent : undefined,
+      cftcNetPercentile: cot?.isAvailable ? cot.netPercentile1y : undefined,
+      cftcReportDate: cot?.isAvailable ? cot.reportDate : undefined,
+      fedWatchDominant: cmeFedWatch.isAvailable ? cmeFedWatch.dominantOutcome : undefined,
+      fedWatchCutPct: cmeFedWatch.isAvailable ? cmeFedWatch.cutProbability : undefined,
+      fedWatchHoldPct: cmeFedWatch.isAvailable ? cmeFedWatch.holdProbability : undefined,
+      fedWatchHikePct: cmeFedWatch.isAvailable ? cmeFedWatch.hikeProbability : undefined,
+      fedWatchMeeting: cmeFedWatch.isAvailable ? cmeFedWatch.fomcMeetingDate : undefined,
+      fedWatchSourceLabel: cmeFedWatch.isAvailable ? cmeFedWatch.sourceLabel : undefined,
+      fedWatchImpliedRate: cmeFedWatch.isAvailable ? cmeFedWatch.impliedFedFundsRate : undefined,
+      activeDriversCount: drivers.length,
+    },
+  };
+}
+
+export function loadLocalCachedFundamentalGoldSnapshotSync(): FundamentalGoldSnapshot | null {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(FUNDAMENTAL_GOLD_SNAPSHOT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      parsed.instrument === 'XAUUSD' &&
+      typeof parsed.bullishProbability === 'number' &&
+      parsed.horizons &&
+      parsed.narrative
+    ) {
+      return parsed as FundamentalGoldSnapshot;
+    }
+  } catch {
+    // ignore corrupted cache
+  }
+  return null;
+}
+
+export function saveFundamentalGoldSnapshotToLocal(snapshot: FundamentalGoldSnapshot): void {
+  if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(FUNDAMENTAL_GOLD_SNAPSHOT_STORAGE_KEY, JSON.stringify(snapshot));
+    dispatchMacroLocalSyncEvent();
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
