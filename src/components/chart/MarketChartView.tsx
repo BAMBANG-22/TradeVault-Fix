@@ -52,6 +52,7 @@ import {
   Settings,
   Ruler,
   ChevronsRight,
+  Clock,
 } from 'lucide-react';
 import { getSupabase } from '../../utils/supabaseClient';
 import type { Trade } from '../../types/trade';
@@ -59,6 +60,16 @@ import type { AppSettings } from '../../types/settings';
 import { getTradeLifecycleStatus, resolveTradeLifecycle } from '../../utils/tradeLifecycle';
 import { useLanguage } from '../../utils/language';
 import { useTheme } from '../../utils/theme';
+import {
+  type MarketSessionSettings,
+  type MarketSessionSegment,
+  DEFAULT_MARKET_SESSION_SETTINGS,
+  sanitizeMarketSessionSettings,
+  shiftMarketSessionSettingsTimezone,
+  buildMarketSessionPreset,
+  formatSessionSummaryLine,
+  computeMarketSessionSegments,
+} from '../../utils/marketSessionEngine';
 
 interface MarketChartViewProps {
   isActive?: boolean;
@@ -1752,6 +1763,7 @@ export interface MarketChartPreferences {
   withDateRanges: boolean;
   hideLegend: boolean;
   candleColorStyle?: CandleColorStyle;
+  sessionSettings?: MarketSessionSettings;
   updatedAt?: string;
 }
 
@@ -1870,6 +1882,7 @@ export const DEFAULT_CHART_PREFS: MarketChartPreferences = {
   withDateRanges: false,
   hideLegend: false,
   candleColorStyle: 'monochrome',
+  sessionSettings: sanitizeMarketSessionSettings(DEFAULT_MARKET_SESSION_SETTINGS),
 };
 
 /**
@@ -2089,6 +2102,7 @@ export function sanitizeChartPreferences(raw: unknown): MarketChartPreferences {
     withDateRanges: false,
     hideLegend: false,
     candleColorStyle: parsed.candleColorStyle === 'classic' && parsed.updatedAt ? 'classic' : 'monochrome',
+    sessionSettings: sanitizeMarketSessionSettings(parsed.sessionSettings),
     updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : undefined,
   };
 }
@@ -3509,6 +3523,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
   // Modals & Popovers
   const [displayMode, setDisplayMode] = useState<ChartDisplayMode>(() => loadStoredDisplayMode());
   const [isIndicatorsOpen, setIsIndicatorsOpen] = useState<boolean>(false);
+  const [indicatorsModalTab, setIndicatorsModalTab] = useState<'list' | 'session_settings'>('list');
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState<boolean>(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>(
@@ -6095,6 +6110,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
     id: string;
     name: 'ASIA' | 'LONDON' | 'NEW YORK';
     subLabel: string;
+    shortTimeLabel: string;
     color: string;
     bgColor: string;
     borderColor: string;
@@ -6106,20 +6122,12 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
     low: number;
   }
 
-  interface MarketSessionSegment {
-    id: string;
-    name: 'ASIA' | 'LONDON' | 'NEW YORK';
-    subLabel: string;
-    color: string;
-    bgColor: string;
-    borderColor: string;
-    startLogical: number;
-    endLogical: number;
-    high: number;
-    low: number;
-  }
+  const activeSessionSettings = useMemo(
+    () => sanitizeMarketSessionSettings(prefs.sessionSettings),
+    [prefs.sessionSettings]
+  );
 
-  // Stage 1: Precompute static logical/price session segments ONLY when candle data or studies change (never on 60fps pan/zoom!)
+  // Stage 1: Precompute static logical/price session segments ONLY when candle data, studies, or session times change (never on 60fps pan/zoom!)
   const marketSessionSegments = useMemo((): MarketSessionSegment[] => {
     if (!prefs.studies.includes('SESSION_BOX')) return [];
     const list =
@@ -6130,126 +6138,11 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
 
     const sampleStartIndex = Math.max(0, list.length - 180);
     const sample = list.slice(sampleStartIndex);
-
-    type SessionDef = {
-      name: 'ASIA' | 'LONDON' | 'NEW YORK';
-      startHour: number;
-      endHour: number;
-      color: string;
-      bgColor: string;
-      borderColor: string;
-      label: string;
-    };
-
-    const SESSIONS: SessionDef[] = [
-      {
-        name: 'ASIA',
-        startHour: 0,
-        endHour: 8,
-        color: '#C084FC',
-        bgColor: 'rgba(168, 85, 247, 0.08)',
-        borderColor: 'rgba(168, 85, 247, 0.45)',
-        label: '00:00 - 08:00 UTC',
-      },
-      {
-        name: 'LONDON',
-        startHour: 7,
-        endHour: 16,
-        color: '#38BDF8',
-        bgColor: 'rgba(56, 189, 248, 0.08)',
-        borderColor: 'rgba(56, 189, 248, 0.45)',
-        label: '07:00 - 16:00 UTC',
-      },
-      {
-        name: 'NEW YORK',
-        startHour: 12,
-        endHour: 21,
-        color: '#F59E0B',
-        bgColor: 'rgba(245, 158, 11, 0.08)',
-        borderColor: 'rgba(245, 158, 11, 0.45)',
-        label: '12:00 - 21:00 UTC',
-      },
-    ];
-
-    const segments: MarketSessionSegment[] = [];
-
-    for (const session of SESSIONS) {
-      let currentSegStart: number | null = null;
-      let currentHigh = -Infinity;
-      let currentLow = Infinity;
-      let currentDayKey = '';
-
-      for (let i = 0; i < sample.length; i++) {
-        const c = sample[i];
-        const date = new Date(Number(c.time) * 1000);
-        const utcHour = date.getUTCHours();
-        const dayKey = `${date.getUTCFullYear()}-${date.getUTCMonth()}-${date.getUTCDate()}`;
-
-        const inSession = utcHour >= session.startHour && utcHour < session.endHour;
-
-        if (inSession) {
-          if (currentSegStart === null || currentDayKey !== dayKey) {
-            if (currentSegStart !== null) {
-              segments.push({
-                id: `${session.name}_${currentDayKey}_${currentSegStart}`,
-                name: session.name,
-                subLabel: session.label,
-                color: session.color,
-                bgColor: session.bgColor,
-                borderColor: session.borderColor,
-                startLogical: sampleStartIndex + currentSegStart,
-                endLogical: sampleStartIndex + i - 1,
-                high: currentHigh,
-                low: currentLow,
-              });
-            }
-            currentSegStart = i;
-            currentHigh = c.high;
-            currentLow = c.low;
-            currentDayKey = dayKey;
-          } else {
-            if (c.high > currentHigh) currentHigh = c.high;
-            if (c.low < currentLow) currentLow = c.low;
-          }
-        } else if (currentSegStart !== null) {
-          segments.push({
-            id: `${session.name}_${currentDayKey}_${currentSegStart}`,
-            name: session.name,
-            subLabel: session.label,
-            color: session.color,
-            bgColor: session.bgColor,
-            borderColor: session.borderColor,
-            startLogical: sampleStartIndex + currentSegStart,
-            endLogical: sampleStartIndex + i - 1,
-            high: currentHigh,
-            low: currentLow,
-          });
-          currentSegStart = null;
-          currentHigh = -Infinity;
-          currentLow = Infinity;
-        }
-      }
-
-      if (currentSegStart !== null) {
-        segments.push({
-          id: `${session.name}_${currentDayKey}_${currentSegStart}`,
-          name: session.name,
-          subLabel: session.label,
-          color: session.color,
-          bgColor: session.bgColor,
-          borderColor: session.borderColor,
-          startLogical: sampleStartIndex + currentSegStart,
-          endLogical: sampleStartIndex + sample.length - 1,
-          high: currentHigh,
-          low: currentLow,
-        });
-      }
-    }
-
-    return segments;
+    return computeMarketSessionSegments(sample, activeSessionSettings, sampleStartIndex);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     prefs.studies,
+    activeSessionSettings,
     replayPhase,
     replayCutIndex,
     latestCandle,
@@ -6269,6 +6162,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
           id: seg.id,
           name: seg.name,
           subLabel: seg.subLabel,
+          shortTimeLabel: seg.shortTimeLabel,
           color: seg.color,
           bgColor: seg.bgColor,
           borderColor: seg.borderColor,
@@ -6532,6 +6426,26 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                   prefs.studies.map((studyId) => {
                     const meta = STUDY_PRESETS.find((s) => s.id === studyId);
                     if (!meta) return null;
+                    if (studyId === 'SESSION_BOX') {
+                      return (
+                        <button
+                          key={studyId}
+                          type="button"
+                          onClick={() => {
+                            setIsMoreMenuOpen(false);
+                            setIsSyncModalOpen(false);
+                            setIndicatorsModalTab('session_settings');
+                            setIsIndicatorsOpen(true);
+                          }}
+                          style={{ color: meta.color }}
+                          title={tr('Atur waktu sesi pasar', 'Configure session hours')}
+                          className="hidden sm:inline-flex items-center gap-0.5 text-[9px] font-semibold tracking-tight hover:underline cursor-pointer"
+                        >
+                          <span>{meta.shortLabel}</span>
+                          <Settings className="h-2.5 w-2.5 opacity-75" />
+                        </button>
+                      );
+                    }
                     return (
                       <span
                         key={studyId}
@@ -7790,6 +7704,9 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                   letterSpacing="0.05em"
                 >
                   {box.name}
+                  {activeSessionSettings.showTimeLabels && box.width >= 96
+                    ? ` · ${box.shortTimeLabel}`
+                    : ''}
                 </text>
               </g>
             </g>
@@ -9180,67 +9097,434 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
             data-testid="market-chart-indicators-modal"
             role="dialog"
             aria-modal="true"
-            aria-label={tr('Indikator Teknis', 'Technical Indicators')}
+            aria-label={
+              indicatorsModalTab === 'session_settings'
+                ? tr('Pengaturan Waktu Sesi Pasar', 'Market Session Time Settings')
+                : tr('Indikator Teknis', 'Technical Indicators')
+            }
             className="absolute inset-0 z-30 flex items-end sm:items-center justify-center p-2 sm:p-4 bg-black/65"
-            onClick={() => setIsIndicatorsOpen(false)}
+            onClick={() => {
+              setIsIndicatorsOpen(false);
+              setIndicatorsModalTab('list');
+            }}
           >
             <div
-              className="w-full max-w-sm rounded-lg bg-[#131722] border border-white/[0.08] p-4 text-white shadow-2xl space-y-3"
+              className="w-full max-w-sm max-h-[86%] overflow-y-auto overscroll-contain rounded-lg bg-[#131722] border border-white/[0.08] p-4 text-white shadow-2xl space-y-3"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
-                <div>
-                  <h2 className="text-sm font-bold tracking-tight text-[#F8FAFC]">
-                    {tr('Indikator Teknikal', 'Technical Indicators')}
-                  </h2>
-                  <p className="text-[11px] text-[#868993]">
-                    EMA 20/50, SMA 200, &amp; Session Box ({prefs.studies.length}{' '}
-                    {tr('aktif', 'active')})
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsIndicatorsOpen(false)}
-                  aria-label={tr('Tutup panel indikator', 'Close indicators panel')}
-                  className="p-1.5 rounded-md text-[#868993] hover:text-white hover:bg-[#2A2E39] cursor-pointer"
-                >
-                  <X className="h-4 w-4 stroke-[1.75]" />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-1.5">
-                {STUDY_PRESETS.map((study) => {
-                  const active = prefs.studies.includes(study.id);
-                  return (
+              {indicatorsModalTab === 'list' ? (
+                <>
+                  <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
+                    <div>
+                      <h2 className="text-sm font-bold tracking-tight text-[#F8FAFC]">
+                        {tr('Indikator Teknikal', 'Technical Indicators')}
+                      </h2>
+                      <p className="text-[11px] text-[#868993]">
+                        EMA 20/50, SMA 200, &amp; Session Box ({prefs.studies.length}{' '}
+                        {tr('aktif', 'active')})
+                      </p>
+                    </div>
                     <button
-                      key={study.id}
                       type="button"
-                      onClick={() =>
-                        updatePrefs((prev) => ({
-                          ...prev,
-                          studies: active
-                            ? prev.studies.filter((id) => id !== study.id)
-                            : [...prev.studies, study.id],
-                        }))
-                      }
-                      className={`px-3 py-2.5 rounded-md text-xs border text-left flex items-center justify-between gap-2 transition-colors cursor-pointer ${
-                        active
-                          ? 'bg-[#2A2E39] text-white border-white/20 font-semibold'
-                          : 'bg-[#1E222D] text-[#868993] border-white/[0.06] hover:border-white/15 hover:text-white'
-                      }`}
+                      onClick={() => {
+                        setIsIndicatorsOpen(false);
+                        setIndicatorsModalTab('list');
+                      }}
+                      aria-label={tr('Tutup panel indikator', 'Close indicators panel')}
+                      className="p-1.5 rounded-md text-[#868993] hover:text-white hover:bg-[#2A2E39] cursor-pointer"
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="h-2.5 w-2.5 rounded-full shrink-0"
-                          style={{ backgroundColor: study.color }}
-                        />
-                        <span className="truncate">{study.label}</span>
-                      </div>
-                      {active && <Check className="h-3.5 w-3.5 shrink-0 stroke-[2.25] text-white" />}
+                      <X className="h-4 w-4 stroke-[1.75]" />
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {STUDY_PRESETS.map((study) => {
+                      const active = prefs.studies.includes(study.id);
+                      const isSessionStudy = study.id === 'SESSION_BOX';
+
+                      if (isSessionStudy) {
+                        return (
+                          <div
+                            key={study.id}
+                            className={`rounded-md border transition-colors ${
+                              active
+                                ? 'bg-[#2A2E39] border-white/20'
+                                : 'bg-[#1E222D] border-white/[0.06] hover:border-white/15'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5 px-3 py-2">
+                              <button
+                                type="button"
+                                data-testid="indicator-toggle-session-box"
+                                onClick={() =>
+                                  updatePrefs((prev) => ({
+                                    ...prev,
+                                    studies: active
+                                      ? prev.studies.filter((id) => id !== study.id)
+                                      : [...prev.studies, study.id],
+                                  }))
+                                }
+                                className={`flex-1 min-w-0 text-left flex items-center justify-between gap-2 text-xs cursor-pointer ${
+                                  active ? 'text-white font-semibold' : 'text-[#868993] hover:text-white'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: study.color }}
+                                    />
+                                    <span className="truncate">{study.label}</span>
+                                  </div>
+                                  <p className="mt-0.5 pl-4 text-[10px] font-normal text-[#868993] font-mono-numbers tabular-nums truncate">
+                                    {formatSessionSummaryLine(activeSessionSettings)}
+                                  </p>
+                                </div>
+                                {active && (
+                                  <Check className="h-3.5 w-3.5 shrink-0 stroke-[2.25] text-white" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                data-testid="session-box-settings-open-btn"
+                                onClick={() => setIndicatorsModalTab('session_settings')}
+                                title={tr('Atur waktu sesi Asia, London, NY', 'Configure Asia, London, NY session times')}
+                                aria-label={tr('Atur waktu sesi pasar', 'Configure market session times')}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#131722] border border-white/[0.1] text-[11px] font-medium text-[#D1D4DC] hover:text-white hover:border-white/25 cursor-pointer shrink-0 whitespace-nowrap"
+                              >
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{tr('Waktu', 'Times')}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={study.id}
+                          type="button"
+                          onClick={() =>
+                            updatePrefs((prev) => ({
+                              ...prev,
+                              studies: active
+                                ? prev.studies.filter((id) => id !== study.id)
+                                : [...prev.studies, study.id],
+                            }))
+                          }
+                          className={`px-3 py-2.5 rounded-md text-xs border text-left flex items-center justify-between gap-2 transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-[#2A2E39] text-white border-white/20 font-semibold'
+                              : 'bg-[#1E222D] text-[#868993] border-white/[0.06] hover:border-white/15 hover:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: study.color }}
+                            />
+                            <span className="truncate">{study.label}</span>
+                          </div>
+                          {active && <Check className="h-3.5 w-3.5 shrink-0 stroke-[2.25] text-white" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Sub-View: Session Time Settings */}
+                  <div className="flex items-center justify-between pb-2.5 border-b border-white/[0.08]">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <button
+                        type="button"
+                        data-testid="session-settings-back-btn"
+                        onClick={() => setIndicatorsModalTab('list')}
+                        aria-label={tr('Kembali ke daftar indikator', 'Back to indicators list')}
+                        className="p-1.5 rounded-md text-[#868993] hover:text-white hover:bg-[#2A2E39] cursor-pointer shrink-0"
+                      >
+                        <ChevronLeft className="h-4 w-4 stroke-[2]" />
+                      </button>
+                      <div className="min-w-0">
+                        <h2 className="text-sm font-bold tracking-tight text-[#F8FAFC] truncate">
+                          {tr('Pengaturan Waktu Sesi', 'Session Time Settings')}
+                        </h2>
+                        <p className="text-[11px] text-[#868993] truncate">
+                          {tr(
+                            'Sesuaikan jam Asia, London & New York pada Replay Chart',
+                            'Customize Asia, London & New York hours on Replay Chart'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsIndicatorsOpen(false);
+                        setIndicatorsModalTab('list');
+                      }}
+                      aria-label={tr('Tutup pengaturan sesi', 'Close session settings')}
+                      className="p-1.5 rounded-md text-[#868993] hover:text-white hover:bg-[#2A2E39] cursor-pointer shrink-0"
+                    >
+                      <X className="h-4 w-4 stroke-[1.75]" />
+                    </button>
+                  </div>
+
+                  {/* Timezone Switch & Quick Presets */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-medium text-[#868993]">
+                        {tr('Zona Waktu Input', 'Time Reference')}
+                      </span>
+                      <div className="inline-flex items-center gap-1 p-0.5 rounded-md bg-[#1E222D] border border-white/[0.06]">
+                        {(['WIB', 'UTC'] as const).map((tz) => {
+                          const isSelected = activeSessionSettings.timezone === tz;
+                          return (
+                            <button
+                              key={tz}
+                              type="button"
+                              data-testid={`session-tz-${tz.toLowerCase()}-btn`}
+                              onClick={() =>
+                                updatePrefs((prev) => ({
+                                  ...prev,
+                                  sessionSettings: shiftMarketSessionSettingsTimezone(
+                                    prev.sessionSettings || DEFAULT_MARKET_SESSION_SETTINGS,
+                                    tz
+                                  ),
+                                }))
+                              }
+                              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                                isSelected
+                                  ? 'bg-[#2A2E39] text-white'
+                                  : 'text-[#868993] hover:text-white'
+                              }`}
+                            >
+                              {tz === 'WIB' ? 'WIB (UTC+7)' : 'UTC'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        data-testid="session-preset-standard-btn"
+                        onClick={() =>
+                          updatePrefs((prev) => ({
+                            ...prev,
+                            studies: prev.studies.includes('SESSION_BOX')
+                              ? prev.studies
+                              : [...prev.studies, 'SESSION_BOX'],
+                            sessionSettings: buildMarketSessionPreset(
+                              'standard',
+                              activeSessionSettings.timezone,
+                              activeSessionSettings.showTimeLabels
+                            ),
+                          }))
+                        }
+                        className="px-2.5 py-1.5 rounded-md bg-[#1E222D] border border-white/[0.06] hover:border-white/20 text-[11px] font-medium text-[#D1D4DC] hover:text-white cursor-pointer transition-colors"
+                      >
+                        {tr('Preset: Standar Pasar', 'Preset: Market Standard')}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="session-preset-killzone-btn"
+                        onClick={() =>
+                          updatePrefs((prev) => ({
+                            ...prev,
+                            studies: prev.studies.includes('SESSION_BOX')
+                              ? prev.studies
+                              : [...prev.studies, 'SESSION_BOX'],
+                            sessionSettings: buildMarketSessionPreset(
+                              'killzone',
+                              activeSessionSettings.timezone,
+                              activeSessionSettings.showTimeLabels
+                            ),
+                          }))
+                        }
+                        className="px-2.5 py-1.5 rounded-md bg-[#1E222D] border border-white/[0.06] hover:border-white/20 text-[11px] font-medium text-[#D1D4DC] hover:text-white cursor-pointer transition-colors"
+                      >
+                        {tr('Preset: ICT Killzones', 'Preset: ICT Killzones')}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Per-Session Rows (Asia, London, New York) */}
+                  <div className="space-y-2">
+                    {activeSessionSettings.sessions.map((sessionItem) => {
+                      const updateSessionField = (
+                        patch: Partial<typeof sessionItem>
+                      ) => {
+                        updatePrefs((prev) => {
+                          const current = sanitizeMarketSessionSettings(prev.sessionSettings);
+                          const nextSessions = current.sessions.map((item) =>
+                            item.id === sessionItem.id ? { ...item, ...patch } : item
+                          );
+                          const shouldAutoEnable =
+                            patch.startTime !== undefined ||
+                            patch.endTime !== undefined ||
+                            patch.enabled === true;
+                          return {
+                            ...prev,
+                            studies:
+                              shouldAutoEnable && !prev.studies.includes('SESSION_BOX')
+                                ? [...prev.studies, 'SESSION_BOX']
+                                : prev.studies,
+                            sessionSettings: {
+                              ...current,
+                              sessions: nextSessions,
+                            },
+                          };
+                        });
+                      };
+
+                      return (
+                        <div
+                          key={sessionItem.id}
+                          data-testid={`session-config-row-${sessionItem.id.toLowerCase().replace(/\s+/g, '-')}`}
+                          className="rounded-md bg-[#1E222D] border border-white/[0.06] p-2.5 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="h-2.5 w-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: sessionItem.color }}
+                              />
+                              <span className="text-xs font-semibold tracking-tight text-white">
+                                {sessionItem.id}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={sessionItem.enabled}
+                              aria-label={`${sessionItem.id} ${tr('aktif', 'enabled')}`}
+                              data-testid={`session-toggle-${sessionItem.id.toLowerCase().replace(/\s+/g, '-')}`}
+                              onClick={() => updateSessionField({ enabled: !sessionItem.enabled })}
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors cursor-pointer ${
+                                sessionItem.enabled
+                                  ? 'bg-[#2A2E39] text-white border-white/20'
+                                  : 'bg-[#131722] text-[#868993] border-white/[0.06]'
+                              }`}
+                            >
+                              {sessionItem.enabled ? tr('Aktif', 'On') : tr('Mati', 'Off')}
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <label className="space-y-1">
+                              <span className="block text-[10px] text-[#868993]">
+                                {tr('Mulai', 'Start')} ({activeSessionSettings.timezone})
+                              </span>
+                              <input
+                                type="time"
+                                value={sessionItem.startTime}
+                                disabled={!sessionItem.enabled}
+                                data-testid={`session-start-${sessionItem.id.toLowerCase().replace(/\s+/g, '-')}`}
+                                aria-label={`${tr('Mulai', 'Start')} ${sessionItem.id}`}
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    updateSessionField({ startTime: e.target.value });
+                                  }
+                                }}
+                                className="w-full h-9 px-2.5 rounded-md bg-[#131722] border border-white/[0.08] text-xs font-mono-numbers tabular-nums text-white [color-scheme:dark] disabled:opacity-45 focus:outline-none focus:border-white/25"
+                              />
+                            </label>
+                            <label className="space-y-1">
+                              <span className="block text-[10px] text-[#868993]">
+                                {tr('Selesai', 'End')} ({activeSessionSettings.timezone})
+                              </span>
+                              <input
+                                type="time"
+                                value={sessionItem.endTime}
+                                disabled={!sessionItem.enabled}
+                                data-testid={`session-end-${sessionItem.id.toLowerCase().replace(/\s+/g, '-')}`}
+                                aria-label={`${tr('Selesai', 'End')} ${sessionItem.id}`}
+                                onChange={(e) => {
+                                  if (e.target.value) {
+                                    updateSessionField({ endTime: e.target.value });
+                                  }
+                                }}
+                                className="w-full h-9 px-2.5 rounded-md bg-[#131722] border border-white/[0.08] text-xs font-mono-numbers tabular-nums text-white [color-scheme:dark] disabled:opacity-45 focus:outline-none focus:border-white/25"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Display options + Footer */}
+                  <div className="space-y-2 pt-1 border-t border-white/[0.08]">
+                    <button
+                      type="button"
+                      data-testid="session-show-labels-toggle"
+                      onClick={() =>
+                        updatePrefs((prev) => {
+                          const current = sanitizeMarketSessionSettings(prev.sessionSettings);
+                          return {
+                            ...prev,
+                            sessionSettings: {
+                              ...current,
+                              showTimeLabels: !current.showTimeLabels,
+                            },
+                          };
+                        })
+                      }
+                      className="w-full px-3 py-2 rounded-md bg-[#1E222D] border border-white/[0.06] text-xs flex items-center justify-between text-[#D1D4DC] hover:text-white cursor-pointer"
+                    >
+                      <span>{tr('Tampilkan jam di label box sesi', 'Show hours on session box label')}</span>
+                      <span className="text-[10px] font-semibold text-white">
+                        {activeSessionSettings.showTimeLabels ? tr('Aktif', 'On') : tr('Mati', 'Off')}
+                      </span>
+                    </button>
+
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        data-testid="session-reset-default-btn"
+                        onClick={() =>
+                          updatePrefs((prev) => ({
+                            ...prev,
+                            sessionSettings: sanitizeMarketSessionSettings(
+                              DEFAULT_MARKET_SESSION_SETTINGS
+                            ),
+                          }))
+                        }
+                        className="py-2 px-3 rounded-md bg-[#1E222D] hover:bg-[#2A2E39] border border-white/[0.08] text-xs font-medium text-[#D1D4DC] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        <span>{tr('Reset Default', 'Reset Default')}</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="session-settings-done-btn"
+                        onClick={() => {
+                          if (!prefs.studies.includes('SESSION_BOX')) {
+                            updatePrefs((prev) => ({
+                              ...prev,
+                              studies: prev.studies.includes('SESSION_BOX')
+                                ? prev.studies
+                                : [...prev.studies, 'SESSION_BOX'],
+                            }));
+                          }
+                          setIsIndicatorsOpen(false);
+                          setIndicatorsModalTab('list');
+                        }}
+                        className="py-2 px-3 rounded-md bg-[#2A2E39] hover:bg-[#363A45] border border-white/20 text-xs font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        <span>
+                          {prefs.studies.includes('SESSION_BOX')
+                            ? tr('Selesai', 'Done')
+                            : tr('Aktifkan & Tutup', 'Enable & Close')}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -9480,9 +9764,32 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                 </div>
               </div>
 
-              {/* 3. Twelve Data API Key Configuration (Only shown in Replay Mode) */}
+              {/* 3. Pengaturan Waktu Sesi Pasar & Twelve Data API Key (Only shown in Replay Mode) */}
               {isReplayMode && (
-                <div className="pt-2 border-t border-white/[0.08] space-y-1.5">
+                <div className="pt-2 border-t border-white/[0.08] space-y-2">
+                  <button
+                    type="button"
+                    data-testid="more-menu-session-settings-btn"
+                    onClick={() => {
+                      setIsMoreMenuOpen(false);
+                      setIndicatorsModalTab('session_settings');
+                      setIsIndicatorsOpen(true);
+                    }}
+                    className="w-full px-3 py-2 rounded-md bg-[#1E222D] border border-white/[0.06] hover:border-white/20 text-left flex items-center justify-between gap-2 cursor-pointer transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-white flex items-center gap-1.5">
+                        <Clock className="h-3.5 w-3.5 text-[#38BDF8] shrink-0" />
+                        <span>{tr('Atur Waktu Sesi Pasar', 'Configure Market Session Hours')}</span>
+                      </div>
+                      <p className="mt-0.5 pl-5 text-[10px] text-[#868993] font-mono-numbers tabular-nums truncate">
+                        {formatSessionSummaryLine(activeSessionSettings)}
+                      </p>
+                    </div>
+                    <ChevronRight className="h-3.5 w-3.5 text-[#868993] shrink-0" />
+                  </button>
+
+                  <div className="space-y-1.5 pt-1">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[#868993]">
                       Twelve Data API Key (Candle OANDA/Forex)
@@ -9525,6 +9832,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                       'Used in Replay Studio mode so XAUUSD & Forex candle structures match OANDA spot market data.'
                     )}
                   </p>
+                  </div>
                 </div>
               )}
 
@@ -9980,6 +10288,7 @@ export const MarketChartView: React.FC<MarketChartViewProps> = ({
                 onClick={() => {
                   setIsMoreMenuOpen(false);
                   setIsSyncModalOpen(false);
+                  setIndicatorsModalTab('list');
                   setIsIndicatorsOpen((prev) => !prev);
                 }}
                 data-testid="chart-bottom-indicators-button"

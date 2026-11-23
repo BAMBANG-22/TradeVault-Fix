@@ -189,14 +189,16 @@ jobs:
             exit 1
           fi
           "$APKSIGNER" verify --verbose --print-certs "$APK_PATH"
+          NAMED_APK_PATH="android/app/build/outputs/apk/debug/Vlo Journal.apk"
+          cp "$APK_PATH" "$NAMED_APK_PATH"
           echo "SUCCESS: Debug APK generated and signature verified."
-          echo "Path: $APK_PATH"
+          echo "Path: $NAMED_APK_PATH"
           echo "Size: $APK_SIZE bytes"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Vlo-Journal-Persistent-Signed-Debug-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: Vlo Journal
+          path: android/app/build/outputs/apk/debug/Vlo Journal.apk
           if-no-files-found: error
           retention-days: 14
