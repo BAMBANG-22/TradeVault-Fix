@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppSettings } from '../types/settings';
 import { Trade, HistoricalExchangeRateSnapshot } from '../types/trade';
+import { isNativeAndroidOrIos, nativeHttpGetText } from './apiConfig';
 
 export const USD_IDR_CACHE_KEY = 'tradevault_usd_idr_rate_v1';
 export const PRIVACY_MODE_STORAGE_KEY = 'tradevault_privacy_mode';
@@ -104,46 +105,72 @@ export function saveCachedUsdIdrRate(rate: number, updatedAt: string, provider: 
  * Secondary fallback: Frankfurter ECB API (https://api.frankfurter.app/latest?from=USD&to=IDR)
  * If offline or both fail, returns cached rate with status 'CACHED_OFFLINE' or 'UNAVAILABLE'.
  */
-export async function fetchLiveUsdIdrRate(signal?: AbortSignal): Promise<UsdIdrRateRecord> {
-  // 1. Primary provider: open.er-api.com
-  try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const idrRate = data?.rates?.IDR;
-      if (isValidRate(idrRate)) {
-        const updatedAt =
-          typeof data?.time_last_update_utc === 'string'
-            ? new Date(data.time_last_update_utc).toISOString()
-            : new Date().toISOString();
-        return saveCachedUsdIdrRate(idrRate, updatedAt, 'ExchangeRate-API');
+async function fetchRateJsonWithTimeout(
+  url: string,
+  timeoutMs: number,
+  parentSignal?: AbortSignal
+): Promise<any | null> {
+  if (parentSignal?.aborted) return null;
+
+  if (isNativeAndroidOrIos()) {
+    const nativeText = await nativeHttpGetText(url, timeoutMs, 'application/json');
+    if (nativeText) {
+      try {
+        return JSON.parse(nativeText);
+      } catch {
+        // Fall through to WebView fetch
       }
     }
+  }
+
+  const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  if (parentSignal) {
+    parentSignal.addEventListener('abort', onParentAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (res.ok) {
+      return await res.json();
+    }
   } catch {
-    // Fall through to secondary provider
+    // Handled by caller fallback
+  } finally {
+    clearTimeout(timer);
+    if (parentSignal) {
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+  }
+  return null;
+}
+
+export async function fetchLiveUsdIdrRate(signal?: AbortSignal): Promise<UsdIdrRateRecord> {
+  // 1. Primary provider: open.er-api.com
+  const primaryData = await fetchRateJsonWithTimeout('https://open.er-api.com/v6/latest/USD', 6000, signal);
+  const primaryIdrRate = primaryData?.rates?.IDR;
+  if (isValidRate(primaryIdrRate)) {
+    const updatedAt =
+      typeof primaryData?.time_last_update_utc === 'string'
+        ? new Date(primaryData.time_last_update_utc).toISOString()
+        : new Date().toISOString();
+    return saveCachedUsdIdrRate(primaryIdrRate, updatedAt, 'ExchangeRate-API');
   }
 
   // 2. Secondary provider: api.frankfurter.app (European Central Bank reference rates)
-  try {
-    const res = await fetch('https://api.frankfurter.app/latest?from=USD&to=IDR', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const idrRate = data?.rates?.IDR;
-      if (isValidRate(idrRate)) {
-        const updatedAt = new Date().toISOString();
-        return saveCachedUsdIdrRate(idrRate, updatedAt, 'ECB / Frankfurter');
-      }
-    }
-  } catch {
-    // Fall through to cached offline fallback
+  const fallbackData = await fetchRateJsonWithTimeout(
+    'https://api.frankfurter.app/latest?from=USD&to=IDR',
+    6000,
+    signal
+  );
+  const fallbackIdrRate = fallbackData?.rates?.IDR;
+  if (isValidRate(fallbackIdrRate)) {
+    const updatedAt = new Date().toISOString();
+    return saveCachedUsdIdrRate(fallbackIdrRate, updatedAt, 'ECB / Frankfurter');
   }
 
   // 3. Cached offline rate

@@ -1291,6 +1291,9 @@ export const CycleConfluencePage: React.FC<CycleConfluencePageProps> = ({
                       twelveDataError ||
                       tr('Data candlestick XAU/USD (Senin–Jumat) sedang disinkronkan.', 'Synchronizing XAU/USD candlestick data (Mon–Fri).')}
                   {!isOfflineMode &&
+                    candleSource === 'yahoo_futures' &&
+                    tr(' · Cadangan feed Yahoo Gold Futures (GC=F) aktif.', ' · Yahoo Gold Futures (GC=F) fallback feed active.')}
+                  {!isOfflineMode &&
                     candleSource === 'binance' &&
                     tr(' · Cadangan feed pasar XAU/USD (Senin–Jumat) aktif.', ' · XAU/USD fallback market feed (Mon–Fri) active.')}
                   {!isOfflineMode &&
@@ -1705,6 +1708,25 @@ export const CycleConfluencePage: React.FC<CycleConfluencePageProps> = ({
                 )}
               </span>
             </div>
+
+            {result.rawMacroContext.tacticalStatus &&
+              result.rawMacroContext.tacticalStatus !== 'NORMAL' &&
+              result.rawMacroContext.tacticalNoteId && (
+                <div
+                  data-testid="cycle-tactical-overlay-note"
+                  className={`pl-3 border-l-2 text-[11px] leading-relaxed ${
+                    result.rawMacroContext.tacticalStatus === 'COUNTER_RALLY_RISK'
+                      ? 'border-[#059669] dark:border-[#00A878] text-[#0F172A] dark:text-[#F2F4F7]'
+                      : result.rawMacroContext.tacticalStatus === 'COUNTER_DROP_RISK'
+                      ? 'border-[#E11D48] dark:border-[#E05260] text-[#0F172A] dark:text-[#F2F4F7]'
+                      : 'border-[#D97706] dark:border-[#F59E0B] text-[#526071] dark:text-[#929BA9]'
+                  }`}
+                >
+                  {isEn
+                    ? result.rawMacroContext.tacticalNoteEn || result.rawMacroContext.tacticalNoteId
+                    : result.rawMacroContext.tacticalNoteId}
+                </div>
+              )}
 
             <div
               data-testid="cycle-beginner-compass-strip"

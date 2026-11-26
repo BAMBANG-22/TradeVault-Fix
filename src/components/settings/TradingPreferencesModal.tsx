@@ -1,8 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AppSettings, CurrencyCode } from '../../types/settings';
-import { formatCurrency } from '../../utils/calculations';
+import { Trade } from '../../types/trade';
+import { calculatePerformance, formatCurrency } from '../../utils/calculations';
+import { calculateCapitalGrowthBreakdown } from '../../utils/currencyRate';
+import {
+  PRIMARY_ACCOUNT_ID,
+  filterTradesByAccount,
+  resolveAccountScopedSettings,
+} from '../../utils/journalExtras';
 import { useLanguage } from '../../utils/language';
-import { X, Check } from 'lucide-react';
+import { X, Check, AlertTriangle } from 'lucide-react';
 
 export type PreferenceCategory = 'balance' | 'currency' | 'broker' | 'risk' | 'adjustments';
 
@@ -11,6 +18,7 @@ interface TradingPreferencesModalProps {
   onClose: () => void;
   category: PreferenceCategory;
   settings: AppSettings;
+  trades?: Trade[];
   onSave: (updatedSettings: AppSettings) => void;
 }
 
@@ -19,13 +27,42 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
   onClose,
   category,
   settings,
+  trades = [],
   onSave,
 }) => {
   const { tr } = useLanguage();
+  const activeAccountId = settings.activeAccountId || 'ALL';
+  const scopedSettings = useMemo(
+    () => resolveAccountScopedSettings(settings, activeAccountId),
+    [settings, activeAccountId]
+  );
+  const scopedTrades = useMemo(
+    () => filterTradesByAccount(trades, activeAccountId),
+    [trades, activeAccountId]
+  );
+
+  const journalNetSummary = useMemo(() => {
+    const { metrics } = calculatePerformance(scopedTrades, scopedSettings);
+    return {
+      totalTrades: metrics.totalTrades,
+      netProfit: Number((metrics.totalNetProfit || 0).toFixed(2)),
+    };
+  }, [scopedTrades, scopedSettings]);
+
+  const activeAccountName = useMemo(() => {
+    if (!activeAccountId || activeAccountId === 'ALL' || !Array.isArray(settings.accounts)) {
+      return null;
+    }
+    return settings.accounts.find((a) => a.id === activeAccountId)?.name || null;
+  }, [activeAccountId, settings.accounts]);
+
   const [activeCategory, setActiveCategory] = useState<PreferenceCategory>(category);
-  const [formData, setFormData] = useState<AppSettings>({ ...settings });
+  const [balanceEntryMode, setBalanceEntryMode] = useState<'manual' | 'mt5_sync'>('manual');
+  const [formData, setFormData] = useState<AppSettings>({ ...scopedSettings });
   const [numericInputs, setNumericInputs] = useState({
-    startingBalance: settings.startingBalance ? String(settings.startingBalance) : '',
+    startingBalance: Number.isFinite(scopedSettings.startingBalance)
+      ? String(scopedSettings.startingBalance)
+      : '',
     brokerCommissionPerLot: settings.brokerCommissionPerLot
       ? String(settings.brokerCommissionPerLot)
       : '',
@@ -36,15 +73,24 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
     totalDeposits: settings.totalDeposits ? String(settings.totalDeposits) : '',
     totalWithdrawals: settings.totalWithdrawals ? String(settings.totalWithdrawals) : '',
   });
+  const [mt5CurrentBalanceInput, setMt5CurrentBalanceInput] = useState<string>(() => {
+    const breakdown = calculateCapitalGrowthBreakdown(scopedSettings, journalNetSummary.netProfit);
+    return String(breakdown.currentBalance);
+  });
 
   useEffect(() => {
     setActiveCategory(category);
   }, [category]);
 
   useEffect(() => {
-    setFormData({ ...settings });
+    const nextScoped = resolveAccountScopedSettings(settings, settings.activeAccountId || 'ALL');
+    const breakdown = calculateCapitalGrowthBreakdown(nextScoped, journalNetSummary.netProfit);
+    setFormData({ ...nextScoped });
+    setBalanceEntryMode('manual');
     setNumericInputs({
-      startingBalance: settings.startingBalance ? String(settings.startingBalance) : '',
+      startingBalance: Number.isFinite(nextScoped.startingBalance)
+        ? String(nextScoped.startingBalance)
+        : '',
       brokerCommissionPerLot: settings.brokerCommissionPerLot
         ? String(settings.brokerCommissionPerLot)
         : '',
@@ -55,7 +101,8 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
       totalDeposits: settings.totalDeposits ? String(settings.totalDeposits) : '',
       totalWithdrawals: settings.totalWithdrawals ? String(settings.totalWithdrawals) : '',
     });
-  }, [settings, isOpen]);
+    setMt5CurrentBalanceInput(String(breakdown.currentBalance));
+  }, [settings, isOpen, journalNetSummary.netProfit]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -82,18 +129,62 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
     setFormData({ ...formData, currency: curr, currencySymbol: symbol });
   };
 
+  const netAdjustment = (formData.totalDeposits ?? 0) - (formData.totalWithdrawals ?? 0);
+  const parsedMt5Target = parseFloat(mt5CurrentBalanceInput);
+  const computedMt5StartingBalance = Number.isFinite(parsedMt5Target)
+    ? Number((parsedMt5Target - journalNetSummary.netProfit - netAdjustment).toFixed(2))
+    : NaN;
+  const isMt5SyncInvalidNegative =
+    activeCategory === 'balance' &&
+    balanceEntryMode === 'mt5_sync' &&
+    (!Number.isFinite(parsedMt5Target) ||
+      parsedMt5Target < 0 ||
+      !Number.isFinite(computedMt5StartingBalance) ||
+      computedMt5StartingBalance < 0);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedBalance = parseFloat(numericInputs.startingBalance);
+    if (isMt5SyncInvalidNegative) {
+      return;
+    }
+
+    const parsedBalance =
+      balanceEntryMode === 'mt5_sync' && Number.isFinite(computedMt5StartingBalance)
+        ? computedMt5StartingBalance
+        : parseFloat(numericInputs.startingBalance);
     const parsedCommission = parseFloat(numericInputs.brokerCommissionPerLot);
     const parsedRisk = parseFloat(numericInputs.defaultRiskPercent);
     const parsedTarget = parseFloat(numericInputs.targetMonthlyReturnPercent);
     const parsedDeposits = parseFloat(numericInputs.totalDeposits);
     const parsedWithdrawals = parseFloat(numericInputs.totalWithdrawals);
 
+    const finalStartingBalance =
+      Number.isFinite(parsedBalance) && parsedBalance >= 0 ? Number(parsedBalance.toFixed(2)) : 0;
+
+    let nextAccounts = formData.accounts;
+    let nextRootStartingBalance = finalStartingBalance;
+
+    if (Array.isArray(formData.accounts) && formData.accounts.length > 0) {
+      if (activeAccountId && activeAccountId !== 'ALL') {
+        nextAccounts = formData.accounts.map((acc) =>
+          acc.id === activeAccountId ? { ...acc, startingBalance: finalStartingBalance } : acc
+        );
+        // Preserve root startingBalance for non-primary sub-accounts unless editing primary account
+        if (activeAccountId !== PRIMARY_ACCOUNT_ID) {
+          nextRootStartingBalance = settings.startingBalance;
+        }
+      } else if (formData.accounts.length === 1) {
+        nextAccounts = formData.accounts.map((acc) => ({
+          ...acc,
+          startingBalance: finalStartingBalance,
+        }));
+      }
+    }
+
     onSave({
       ...formData,
-      startingBalance: Number.isFinite(parsedBalance) && parsedBalance >= 0 ? parsedBalance : 0,
+      startingBalance: nextRootStartingBalance,
+      accounts: nextAccounts,
       brokerCommissionPerLot:
         Number.isFinite(parsedCommission) && parsedCommission >= 0 ? parsedCommission : 0,
       defaultRiskPercent:
@@ -127,7 +218,16 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
   const inputClass =
     'w-full min-h-[40px] rounded-lg bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] px-3 py-2 text-xs font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] placeholder-[#929BA9] focus:border-[#0F172A] dark:focus:border-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/25 dark:focus-visible:ring-white/25';
 
-  const netAdjustment = (formData.totalDeposits ?? 0) - (formData.totalWithdrawals ?? 0);
+  const previewBreakdown = calculateCapitalGrowthBreakdown(
+    {
+      ...formData,
+      startingBalance:
+        balanceEntryMode === 'mt5_sync' && Number.isFinite(computedMt5StartingBalance)
+          ? Math.max(0, computedMt5StartingBalance)
+          : formData.startingBalance,
+    },
+    journalNetSummary.netProfit
+  );
 
   return (
     <div
@@ -188,39 +288,223 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
 
             {/* CATEGORY: BALANCE */}
             {activeCategory === 'balance' && (
-              <div className="space-y-3">
-                <div>
-                  <label className={labelClass}>
-                    {tr('Nominal Modal Awal', 'Initial Capital Amount')} ({formData.currencySymbol})
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#526071] dark:text-[#929BA9] font-mono-numbers">
-                      {formData.currencySymbol}
+              <div className="space-y-4">
+                {activeAccountName && (
+                  <div className="px-3 py-2 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] flex items-center justify-between text-[11px]">
+                    <span className="text-[#526071] dark:text-[#929BA9]">
+                      {tr('Sub-Portofolio Aktif', 'Active Sub-Portfolio')}
                     </span>
-                    <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      placeholder="0"
-                      value={numericInputs.startingBalance}
-                      onChange={(e) => {
-                        const clean = sanitizeNumericString(e.target.value);
-                        setNumericInputs((prev) => ({ ...prev, startingBalance: clean }));
-                        const parsed = parseFloat(clean);
-                        setFormData((prev) => ({
-                          ...prev,
-                          startingBalance: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0,
-                        }));
-                      }}
-                      className={`${inputClass} pl-9`}
-                    />
+                    <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                      {activeAccountName}
+                    </span>
                   </div>
-                  <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1.5">
-                    {tr(
-                      'Menjadi acuan perhitungan persentase profit dan kurva ekuitas awal.',
-                      'Serves as the baseline for profit percentage and starting equity curve.'
-                    )}
-                  </p>
+                )}
+
+                {/* Balance Mode Switcher: Manual Starting Balance vs Sync from MT5 Current Balance */}
+                <div className="grid grid-cols-2 gap-1 p-1 rounded-full bg-[#F4F4F5] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D]">
+                  <button
+                    type="button"
+                    data-testid="balance-mode-manual"
+                    onClick={() => setBalanceEntryMode('manual')}
+                    className={`min-h-[34px] py-1.5 px-2 text-[11px] rounded-full transition-colors cursor-pointer text-center truncate ${
+                      balanceEntryMode === 'manual'
+                        ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] font-semibold'
+                        : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] font-medium'
+                    }`}
+                  >
+                    {tr('Atur Saldo Awal', 'Set Starting Balance')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="balance-mode-mt5-sync"
+                    onClick={() => {
+                      const currentEqu = calculateCapitalGrowthBreakdown(
+                        formData,
+                        journalNetSummary.netProfit
+                      ).currentBalance;
+                      setMt5CurrentBalanceInput(String(currentEqu));
+                      setBalanceEntryMode('mt5_sync');
+                    }}
+                    className={`min-h-[34px] py-1.5 px-2 text-[11px] rounded-full transition-colors cursor-pointer text-center truncate ${
+                      balanceEntryMode === 'mt5_sync'
+                        ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#0F172A] font-semibold'
+                        : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] font-medium'
+                    }`}
+                  >
+                    {tr('Selaraskan dgn MT5', 'Sync with MT5')}
+                  </button>
+                </div>
+
+                {balanceEntryMode === 'manual' ? (
+                  <div>
+                    <label className={labelClass}>
+                      {tr(
+                        'Saldo Awal Sebelum Trade Pertama',
+                        'Initial Balance Before First Trade'
+                      )}{' '}
+                      ({formData.currencySymbol})
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#526071] dark:text-[#929BA9] font-mono-numbers">
+                        {formData.currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="0"
+                        data-testid="starting-balance-manual-input"
+                        value={numericInputs.startingBalance}
+                        onChange={(e) => {
+                          const clean = sanitizeNumericString(e.target.value);
+                          setNumericInputs((prev) => ({ ...prev, startingBalance: clean }));
+                          const parsed = parseFloat(clean);
+                          setFormData((prev) => ({
+                            ...prev,
+                            startingBalance: Number.isFinite(parsed) && parsed >= 0 ? parsed : 0,
+                          }));
+                        }}
+                        className={`${inputClass} pl-9`}
+                      />
+                    </div>
+                    <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1.5 leading-relaxed">
+                      {tr(
+                        'Masukkan saldo MT5 Anda tepat sebelum transaksi paling awal yang dicatat di jurnal.',
+                        'Enter your MT5 balance right before the earliest trade recorded in the journal.'
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className={labelClass}>
+                      {tr('Saldo / Balance MT5 Saat Ini', 'Current MT5 Account Balance')} (
+                      {formData.currencySymbol})
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-[#526071] dark:text-[#929BA9] font-mono-numbers">
+                        {formData.currencySymbol}
+                      </span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0"
+                        placeholder="0"
+                        data-testid="mt5-current-balance-input"
+                        value={mt5CurrentBalanceInput}
+                        onChange={(e) => {
+                          const clean = sanitizeNumericString(e.target.value);
+                          setMt5CurrentBalanceInput(clean);
+                          const targetVal = parseFloat(clean);
+                          if (Number.isFinite(targetVal) && targetVal >= 0) {
+                            const computedStart = Number(
+                              (targetVal - journalNetSummary.netProfit - netAdjustment).toFixed(2)
+                            );
+                            if (computedStart >= 0) {
+                              setNumericInputs((prev) => ({
+                                ...prev,
+                                startingBalance: String(computedStart),
+                              }));
+                              setFormData((prev) => ({
+                                ...prev,
+                                startingBalance: computedStart,
+                              }));
+                            }
+                          }
+                        }}
+                        className={`${inputClass} pl-9`}
+                      />
+                    </div>
+                    <p className="text-[11px] text-[#526071] dark:text-[#929BA9] mt-1.5 leading-relaxed">
+                      {tr(
+                        'Masukkan saldo Balance yang tampil di MT5 sekarang. Aplikasi otomatis menghitung mundur Saldo Awal agar Ekuitas sama persis dengan MT5.',
+                        'Enter the Balance currently shown in MT5. The app automatically back-calculates your Starting Balance so Equity matches MT5.'
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                {isMt5SyncInvalidNegative && (
+                  <div className="rounded-xl bg-[#E11D48]/10 dark:bg-[#E05260]/15 border border-[#E11D48]/25 px-3 py-2.5 flex items-start gap-2 text-[11px] text-[#E11D48] dark:text-[#E05260]">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 stroke-[1.75]" />
+                    <span>
+                      {tr(
+                        'Saldo Awal hasil perhitungan menjadi negatif. Periksa kembali nominal Saldo MT5 Saat Ini, atau sesuaikan Deposit/WD jika ada penarikan dana di MT5.',
+                        'Calculated Starting Balance is negative. Verify your Current MT5 Balance or record any Deposit/Withdrawal adjustments.'
+                      )}
+                    </span>
+                  </div>
+                )}
+
+                {/* Real-time Reconciliation Breakdown Card */}
+                <div className="rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] divide-y divide-[#E4E4E7] dark:divide-[#20252D] text-xs font-mono-numbers tabular-nums">
+                  <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+                    <span className="font-sans text-[#526071] dark:text-[#929BA9]">
+                      {balanceEntryMode === 'mt5_sync'
+                        ? tr('Saldo Awal Otomatis', 'Calculated Starting Balance')
+                        : tr('Modal Awal Akun', 'Starting Balance')}
+                    </span>
+                    <span className="font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                      {balanceEntryMode === 'mt5_sync' && !Number.isFinite(computedMt5StartingBalance)
+                        ? '-'
+                        : balanceEntryMode === 'mt5_sync' && computedMt5StartingBalance < 0
+                        ? `-${formatCurrency(Math.abs(computedMt5StartingBalance), formData)}`
+                        : formatCurrency(previewBreakdown.startingBalance, formData)}
+                    </span>
+                  </div>
+
+                  {netAdjustment !== 0 && (
+                    <div className="px-3.5 py-2 flex items-center justify-between gap-2">
+                      <span className="font-sans text-[#526071] dark:text-[#929BA9]">
+                        {tr('Arus Kas (Dep - WD)', 'Net Cashflow (Dep - WD)')}
+                      </span>
+                      <span
+                        className={`font-semibold ${
+                          netAdjustment >= 0
+                            ? 'text-[#059669] dark:text-[#00A878]'
+                            : 'text-[#E11D48] dark:text-[#E05260]'
+                        }`}
+                      >
+                        {netAdjustment >= 0 ? '+' : '-'}
+                        {formatCurrency(Math.abs(netAdjustment), formData)}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="px-3.5 py-2 flex items-center justify-between gap-2">
+                    <span className="font-sans text-[#526071] dark:text-[#929BA9]">
+                      {tr(
+                        `Net P/L Jurnal (${journalNetSummary.totalTrades} trade)`,
+                        `Journal Net P/L (${journalNetSummary.totalTrades} trades)`
+                      )}
+                    </span>
+                    <span
+                      className={`font-semibold ${
+                        journalNetSummary.netProfit > 0
+                          ? 'text-[#059669] dark:text-[#00A878]'
+                          : journalNetSummary.netProfit < 0
+                          ? 'text-[#E11D48] dark:text-[#E05260]'
+                          : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                      }`}
+                    >
+                      {journalNetSummary.netProfit > 0
+                        ? '+'
+                        : journalNetSummary.netProfit < 0
+                        ? '-'
+                        : ''}
+                      {formatCurrency(Math.abs(journalNetSummary.netProfit), formData)}
+                    </span>
+                  </div>
+
+                  <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 bg-white/60 dark:bg-[#101318]/60">
+                    <span className="font-sans font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                      {tr('Ekuitas Akhir di Aplikasi', 'Resulting App Equity')}
+                    </span>
+                    <span className="font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                      {balanceEntryMode === 'mt5_sync' && Number.isFinite(parsedMt5Target) && parsedMt5Target >= 0
+                        ? formatCurrency(parsedMt5Target, formData)
+                        : formatCurrency(previewBreakdown.currentBalance, formData)}
+                    </span>
+                  </div>
                 </div>
               </div>
             )}
@@ -586,7 +870,8 @@ export const TradingPreferencesModal: React.FC<TradingPreferencesModalProps> = (
             </button>
             <button
               type="submit"
-              className="min-h-[38px] px-4 py-2 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+              disabled={isMt5SyncInvalidNegative}
+              className="min-h-[38px] px-4 py-2 rounded-full bg-[#0F172A] hover:bg-[#1E293B] text-white dark:bg-white dark:hover:bg-[#E2E8F0] dark:text-[#0F172A] disabled:opacity-45 disabled:cursor-not-allowed text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
             >
               {tr('Simpan Pengaturan', 'Save Settings')}
             </button>

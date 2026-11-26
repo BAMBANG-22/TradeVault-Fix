@@ -636,7 +636,29 @@ export function mapDatabaseRowToTrade(row: any): Trade {
   const swap = Number(row.swap) || 0;
   const grossProfit = computeGrossFromNet(netPnl, commission, swap);
 
+  const instrument = row.instrument || 'XAUUSD';
+  const position: 'BUY' | 'SELL' = mapDatabaseDirectionToApp(row.direction || row.position);
+  const entryPrice = Number(row.entry_price) || 0;
+  const stopLoss =
+    row.stop_loss !== null && row.stop_loss !== undefined && Number(row.stop_loss) > 0
+      ? Number(row.stop_loss)
+      : undefined;
+  const takeProfit =
+    row.take_profit !== null && row.take_profit !== undefined && Number(row.take_profit) > 0
+      ? Number(row.take_profit)
+      : undefined;
+  const exitPrice =
+    row.exit_price !== null && row.exit_price !== undefined && Number(row.exit_price) > 0
+      ? Number(row.exit_price)
+      : undefined;
+  const lotSize = Number(row.lot_size) || 0.01;
+
   const resolvedR = computeRealizedRMultiple({
+    instrument,
+    position,
+    entryPrice,
+    stopLoss,
+    lotSize,
     netProfit: netPnl,
     grossProfit,
     commission,
@@ -646,7 +668,6 @@ export function mapDatabaseRowToTrade(row: any): Trade {
   });
   rMultiple = resolvedR !== null ? resolvedR : undefined;
 
-  const position: 'BUY' | 'SELL' = mapDatabaseDirectionToApp(row.direction || row.position);
   const strategy = String(row.setup || row.strategy || 'Umum');
   const session = row.trading_session || row.session || 'London';
   const rawDateStr = row.trade_date || row.date_time || row.created_at || new Date();
@@ -655,24 +676,15 @@ export function mapDatabaseRowToTrade(row: any): Trade {
   return {
     id: displayId,
     dateTime: dateStr,
-    instrument: row.instrument || 'XAUUSD',
+    instrument,
     position,
     strategy,
     session,
-    entryPrice: Number(row.entry_price) || 0,
-    stopLoss:
-      row.stop_loss !== null && row.stop_loss !== undefined && Number(row.stop_loss) > 0
-        ? Number(row.stop_loss)
-        : undefined,
-    takeProfit:
-      row.take_profit !== null && row.take_profit !== undefined && Number(row.take_profit) > 0
-        ? Number(row.take_profit)
-        : undefined,
-    exitPrice:
-      row.exit_price !== null && row.exit_price !== undefined && Number(row.exit_price) > 0
-        ? Number(row.exit_price)
-        : undefined,
-    lotSize: Number(row.lot_size) || 0.01,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    exitPrice,
+    lotSize,
     riskAmount,
     riskPercentage,
     outcome: classifyNetProfitOutcome(netPnl),

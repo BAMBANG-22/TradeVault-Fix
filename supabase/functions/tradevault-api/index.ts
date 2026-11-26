@@ -451,9 +451,48 @@ function buildScanFailureResponse(
 
 const scanQuotaCooldownByKeyModel = new Map<
   string,
-  { code: 'QUOTA_429' | 'MODEL_404'; until: number }
+  { code: 'QUOTA_429' | 'MODEL_404' | 'SERVER_503' | 'TIMEOUT'; until: number }
 >();
 const newsQuotaCooldownByModel = new Map<string, number>();
+// Separate cooldown map for googleSearch grounding calls so grounding 429s never block generateContent synthesis
+const newsGroundingQuotaCooldownByModel = new Map<string, number>();
+
+type SanitizedNewsAiErrorCode =
+  | 'NO_API_KEY'
+  | 'KEY_INVALID'
+  | 'QUOTA_429'
+  | 'MODEL_404'
+  | 'TIMEOUT'
+  | 'SERVER_503'
+  | 'BAD_REQUEST_400'
+  | 'INVALID_JSON'
+  | 'EMPTY_RESPONSE'
+  | 'COOLDOWN_ACTIVE'
+  | 'INTERNAL_ERROR'
+  | 'UNKNOWN';
+
+function resolveNewsAiErrorCode(
+  failures: Array<{ model: string; code: string }>,
+  skippedByCooldownCount: number
+): SanitizedNewsAiErrorCode {
+  if (failures.length === 0) {
+    return skippedByCooldownCount > 0 ? 'COOLDOWN_ACTIVE' : 'EMPTY_RESPONSE';
+  }
+  const priority: SanitizedNewsAiErrorCode[] = [
+    'KEY_INVALID',
+    'QUOTA_429',
+    'MODEL_404',
+    'TIMEOUT',
+    'SERVER_503',
+    'BAD_REQUEST_400',
+    'INVALID_JSON',
+    'EMPTY_RESPONSE',
+  ];
+  for (const code of priority) {
+    if (failures.some((f) => f.code === code)) return code;
+  }
+  return 'UNKNOWN';
+}
 
 let cachedEdgeFedWatch: { fetchedAt: number; data: any } | null = null;
 let cachedEdgeTradingViewEvents: { fetchedAt: number; events: any[] } | null = null;
@@ -600,6 +639,10 @@ const ALLOWED_PROXY_DOMAINS = [
   'stooq.com',
   'stlouisfed.org',
   'treasury.gov',
+  'cftc.gov',
+  'gamma-api.polymarket.com',
+  'binance.com',
+  'binance.vision',
 ];
 
 function isAllowedProxyTargetUrl(rawUrl: string): boolean {
@@ -624,24 +667,43 @@ async function handleProxy(reqUrl: URL): Promise<Response> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 9000);
+    const isTradingViewTarget = /tradingview\.com/i.test(targetUrl);
     const upstreamRes = await fetch(targetUrl, {
       cache: 'no-store',
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        Accept: 'application/json, text/plain, text/xml, application/rss+xml, */*',
+        Accept: 'application/json, text/plain, text/xml, application/rss+xml, image/*, */*',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
         Pragma: 'no-cache',
+        ...(isTradingViewTarget
+          ? {
+              Origin: 'https://www.tradingview.com',
+              Referer: 'https://www.tradingview.com/',
+            }
+          : {}),
       },
       signal: controller.signal,
     });
     clearTimeout(timer);
+    const contentType = upstreamRes.headers.get('content-type') || 'application/json';
+    if (/^image\//i.test(contentType)) {
+      const bytes = await upstreamRes.arrayBuffer();
+      return new Response(bytes, {
+        status: upstreamRes.status,
+        headers: {
+          ...CORS_HEADERS,
+          'Content-Type': contentType,
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      });
+    }
     const text = await upstreamRes.text();
     return new Response(text, {
       status: upstreamRes.status,
       headers: {
         ...CORS_HEADERS,
-        'Content-Type': upstreamRes.headers.get('content-type') || 'application/json',
+        'Content-Type': contentType,
         'Cache-Control': 'no-store, no-cache, must-revalidate',
       },
     });
@@ -739,18 +801,10 @@ ${geometryHintBlock}
     let responseText = '';
     let usedModel = '';
     const scanCascadeStartMs = Date.now();
-    const MAX_SCAN_WALL_MS = 45_000;
+    const MAX_SCAN_WALL_MS = 20_000;
     const scanFailures: Array<{ model: string; code: string; summary: string }> = [];
 
-    for (let pass = 0; pass < 2; pass++) {
-      if (pass > 0) {
-        const shouldRetryTransient = scanFailures.some(
-          (f) => f.code === 'SERVER_503' || f.code === 'TIMEOUT'
-        );
-        const remainingBeforePass = MAX_SCAN_WALL_MS - (Date.now() - scanCascadeStartMs);
-        if (!shouldRetryTransient || remainingBeforePass < 5000) break;
-        await new Promise((r) => setTimeout(r, 1200));
-      }
+    for (let pass = 0; pass < 1; pass++) {
 
       for (const model of SCANNER_MODEL_CASCADE) {
         if (MAX_SCAN_WALL_MS - (Date.now() - scanCascadeStartMs) < 2500) break;
@@ -822,7 +876,7 @@ ${geometryHintBlock}
                     },
                   },
                 }),
-              Math.min(18_000, remainingWallMs),
+              Math.min(7_500, remainingWallMs),
               `Scan Kilat (${model})`
             );
             if (response && response.text) {
@@ -839,6 +893,14 @@ ${geometryHintBlock}
                 code: classified.code,
                 until: Date.now() + 20 * 60 * 1000,
               });
+            } else if (classified.code === 'SERVER_503' || classified.code === 'TIMEOUT') {
+              for (let k = 0; k < scannerApiKeys.length; k++) {
+                scanQuotaCooldownByKeyModel.set(`${k}:${model}`, {
+                  code: classified.code,
+                  until: Date.now() + 30 * 1000,
+                });
+              }
+              break;
             }
           }
         }
@@ -1012,23 +1074,25 @@ function normalizeMt5DateTimeOutput(raw: unknown): string | null {
   if (!raw || typeof raw !== 'string') return null;
   const s = raw.trim();
   if (!s) return null;
-  const m = s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})[T\s]+(\d{1,2}):(\d{2})/);
+  const m = s.match(/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (m) {
     const yyyy = m[1];
     const mm = m[2].padStart(2, '0');
     const dd = m[3].padStart(2, '0');
     const hh = m[4].padStart(2, '0');
     const min = m[5].padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    const sec = m[6] ? `:${m[6].padStart(2, '0')}` : '';
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}${sec}`;
   }
-  const eu = s.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})[T\s]+(\d{1,2}):(\d{2})/);
+  const eu = s.match(/\b(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (eu) {
     const dd = eu[1].padStart(2, '0');
     const mm = eu[2].padStart(2, '0');
     const yyyy = eu[3];
     const hh = eu[4].padStart(2, '0');
     const min = eu[5].padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    const sec = eu[6] ? `:${eu[6].padStart(2, '0')}` : '';
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}${sec}`;
   }
   const parsed = new Date(s);
   if (!isNaN(parsed.getTime())) {
@@ -1037,7 +1101,9 @@ function normalizeMt5DateTimeOutput(raw: unknown): string | null {
     const dd = String(parsed.getDate()).padStart(2, '0');
     const hh = String(parsed.getHours()).padStart(2, '0');
     const min = String(parsed.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
+    const secNum = parsed.getSeconds();
+    const sec = secNum > 0 ? `:${String(secNum).padStart(2, '0')}` : '';
+    return `${yyyy}-${mm}-${dd}T${hh}:${min}${sec}`;
   }
   return null;
 }
@@ -1286,18 +1352,19 @@ Inspect ${
     } carefully from top to bottom and extract EVERY closed trade row visible (even if cropped and missing a header).
 
 STRICT EXTRACTION RULES:
-1. SUPPORTED SCREENSHOT VIEWS:
+1. SUPPORTED SCREENSHOT VIEWS & DOUBLE ENTRIES:
    - MT5 / MT4 Mobile "History -> Positions" (e.g. "XAUUSD, sell 0.10", "2615.40 -> 2602.10", timestamp, profit)
    - MT5 Mobile "History -> Deals" (rows showing symbol, buy/sell, "out" / "in/out", volume, price, profit — extract closing/profit deals as closed trades)
    - Indonesian MT5 locale ("beli" = BUY, "jual" = SELL) as well as English ("buy"/"long" = BUY, "sell"/"short" = SELL)
    - MT5 / MT4 Desktop Account History table
+   - CRITICAL DOUBLE-ENTRY RULE: Traders often open multiple rapid positions ("tap-tap" / layering) with IDENTICAL or near-identical symbol, lotSize, entryPrice, stopLoss, takeProfit, exitPrice, and netProfit! Extract EVERY visible trade row separately in top-to-bottom order — NEVER merge, collapse, or skip duplicate-looking rows within a screenshot or across screenshots!
    - IGNORE summary header lines ("Profit:", "Deposit:", "Balance:", "Credit:", "Withdrawal:") and non-trade ledger rows ("balance", "deposit", "credit", "withdrawal") and unfilled "canceled" pending orders.
 2. EXACT NUMERIC & SIGN FIDELITY (ZERO SILENT ERRORS):
    - Left: symbol + direction + lot, e.g. "XAUUSD, sell 0.10", "XAUUSDm, buy 0.05", "GOLD, beli 0.10"
    - Prices: "2615.40 -> 2602.10" -> entryPrice BEFORE "->", exitPrice AFTER "->". Copy EVERY digit and decimal accurately (never drop a digit or decimal!).
    - Profit Sign: Inspect BOTH the "-" / "−" prefix AND font color (red = negative loss, blue/green = positive profit). If a BUY exited lower than entry (or SELL exited higher than entry) and text is red/loss, netProfit MUST be negative (e.g. -45.20)!
-   - Top-right of row: timestamp like "2026.11.14 14:22:10" (closeDateTime)
-   - Expanded row details (if visible): "S / L:" -> stopLoss, "T / P:" -> takeProfit, "Open:" -> openDateTime, "Swap:" -> swap, "Commission:"/"Fee:" -> commission, "ID:"/"#12345" -> ticketId.
+   - Top-right of row: timestamp like "2026.11.14 14:22:10" (closeDateTime — ALWAYS include seconds ":ss" when visible!).
+   - Expanded row details (if visible): "S / L:" -> stopLoss, "T / P:" -> takeProfit, "Open:" -> openDateTime (include ":ss" if visible), "Swap:" -> swap, "Commission:"/"Fee:" -> commission, "ID:"/"#12345" -> ticketId.
 3. READING DESKTOP MT5 ACCOUNT HISTORY TABLE:
    - Map columns: Time (open), Position/Order/Ticket (ticketId), Symbol (instrument), Type (buy->BUY, sell->SELL), Volume (lotSize), Open Price (entryPrice), S/L (stopLoss), T/P (takeProfit), Close Time (closeDateTime), Close Price (exitPrice), Commission, Swap, Profit (netProfit).
 4. CLOSE TYPE DETECTION (TP / SL / Manual):
@@ -1307,7 +1374,7 @@ STRICT EXTRACTION RULES:
 5. FORMATTING${isBatch ? ' & IMAGE ATTRIBUTION' : ''}:
    - ${isBatch ? `Set "imageIndex" strictly to the integer 0..${resolvedImages.length - 1} matching the screenshot containing that trade row.` : 'Set "imageIndex" to 0.'}
    - Return empty string "" (NEVER literal "null") when ticketId, openDateTime, closeDateTime, or notes are not visible.
-   - Output openDateTime / closeDateTime in "YYYY-MM-DD HH:mm" if visible.
+   - Output openDateTime / closeDateTime in "YYYY-MM-DD HH:mm:ss" when seconds are visible (or "YYYY-MM-DD HH:mm" if seconds are not shown).
    - Never invent trades that are not visibly printed on screen.`;
 
     const contentParts: any[] = [];
@@ -1325,18 +1392,10 @@ STRICT EXTRACTION RULES:
     let usedModel = '';
     let confirmedEmptyModel = '';
     const mt5CascadeStartMs = Date.now();
-    const MAX_MT5_WALL_MS = 45_000;
+    const MAX_MT5_WALL_MS = 15_000;
     const mt5Failures: Array<{ model: string; code: string; summary: string }> = [];
 
-    for (let pass = 0; pass < 2; pass++) {
-      if (pass > 0) {
-        const shouldRetryTransient = mt5Failures.some(
-          (f) => f.code === 'SERVER_503' || f.code === 'TIMEOUT'
-        );
-        const remainingBeforePass = MAX_MT5_WALL_MS - (Date.now() - mt5CascadeStartMs);
-        if (!shouldRetryTransient || remainingBeforePass < 5000) break;
-        await new Promise((r) => setTimeout(r, 900));
-      }
+    for (let pass = 0; pass < 1; pass++) {
 
       for (const model of MT5_HISTORY_MODEL_CASCADE) {
         if (MAX_MT5_WALL_MS - (Date.now() - mt5CascadeStartMs) < 2500) break;
@@ -1409,7 +1468,7 @@ STRICT EXTRACTION RULES:
                     },
                   },
                 }),
-              Math.min(isBatch ? 22_000 : 15_000, remainingWallMs),
+              Math.min(isBatch ? 12_000 : 7_500, remainingWallMs),
               `MT5 Scan (${model})`
             );
             if (response && response.text) {
@@ -1441,6 +1500,14 @@ STRICT EXTRACTION RULES:
                 code: classified.code,
                 until: Date.now() + 20 * 60 * 1000,
               });
+            } else if (classified.code === 'SERVER_503' || classified.code === 'TIMEOUT') {
+              for (let k = 0; k < scannerApiKeys.length; k++) {
+                scanQuotaCooldownByKeyModel.set(`${k}:${model}`, {
+                  code: classified.code,
+                  until: Date.now() + 30 * 1000,
+                });
+              }
+              break;
             }
           }
         }
@@ -1557,7 +1624,7 @@ function matchEdgeTradingViewActualForEvent(
   tvEvents: any[]
 ): { formatted: string; numericVal: number; unit: string } | null {
   const evMs = new Date(ffDateIso).getTime();
-  if (!Number.isFinite(evMs) || evMs > Date.now() - 2 * 60 * 1000) return null;
+  if (!Number.isFinite(evMs) || evMs > Date.now() - 30 * 1000) return null;
 
   const t = ffTitle.toLowerCase();
   if (/speech|speaks|press conference|minutes|statement|bank holiday|testimony/i.test(t)) {
@@ -1575,7 +1642,7 @@ function matchEdgeTradingViewActualForEvent(
   for (const tv of tvEvents) {
     if (tv.actual === null || tv.actual === undefined || !Number.isFinite(Number(tv.actual))) continue;
     const tvMs = new Date(String(tv.date || '')).getTime();
-    if (!Number.isFinite(tvMs) || Math.abs(tvMs - evMs) > 35 * 60 * 1000) continue;
+    if (!Number.isFinite(tvMs) || Math.abs(tvMs - evMs) > 90 * 60 * 1000) continue;
 
     const tvTitle = String(tv.title || '').toLowerCase();
     const tvInd = String(tv.indicator || '').toLowerCase();
@@ -1593,7 +1660,7 @@ function matchEdgeTradingViewActualForEvent(
     if (ffIsYoy && !tvIsYoy) continue;
     if (ffIsQoq && !tvIsQoq) continue;
 
-    const tvIsCore = /\bcore\b|ex\s*food|exfood|ex\s*autos/i.test(tvText);
+    const tvIsCore = /\bcore\b|ex\s*food|exfood|ex\s*autos|ex\s*transp/i.test(tvText);
     if (ffIsCore !== tvIsCore) continue;
 
     let score = 0;
@@ -1607,13 +1674,15 @@ function matchEdgeTradingViewActualForEvent(
       if (tvText.includes('pce') || tvText.includes('personal consumption')) score += 60;
     } else if (t.includes('unemployment claims') || t.includes('initial jobless claims')) {
       if (tvText.includes('continuing') || tvText.includes('4-week')) continue;
-      if (tvText.includes('initial jobless')) score += 70;
+      if (tvText.includes('initial jobless') || tvText.includes('unemployment claims')) score += 70;
+    } else if (t.includes('continuing claims') || t.includes('continuing jobless claims')) {
+      if (tvText.includes('continuing jobless')) score += 70;
     } else if (t.includes('non-farm employment change') || t === 'nfp') {
       if (tvText.includes('non farm payrolls') || tvText.includes('nonfarm')) score += 70;
     } else if (t.includes('adp weekly')) {
       if (tvText.includes('adp') && tvText.includes('weekly')) score += 65;
-    } else if (t.includes('adp non-farm')) {
-      if (!tvText.includes('weekly') && tvText.includes('adp employment')) score += 65;
+    } else if (t.includes('adp non-farm') || t.includes('adp employment')) {
+      if (!tvText.includes('weekly') && tvText.includes('adp')) score += 65;
     } else if (t.includes('unemployment rate')) {
       if (tvText.includes('unemployment rate')) score += 70;
     } else if (t.includes('average hourly earnings')) {
@@ -1626,8 +1695,52 @@ function matchEdgeTradingViewActualForEvent(
       if (tvText.includes('gdp growth')) score += 65;
     } else if (t.includes('ism manufacturing pmi')) {
       if (tvText.includes('ism manufacturing pmi')) score += 70;
-    } else if (t.includes('ism services pmi')) {
-      if (tvText.includes('ism services pmi')) score += 70;
+    } else if (t.includes('ism services pmi') || t.includes('ism non-manufacturing pmi')) {
+      if (tvText.includes('ism services pmi') || tvText.includes('ism non-manufacturing pmi')) score += 70;
+    } else if (t.includes('ism manufacturing prices')) {
+      if (tvText.includes('ism manufacturing prices')) score += 70;
+    } else if (t.includes('ism services prices')) {
+      if (tvText.includes('ism services prices')) score += 70;
+    } else if (t.includes('flash manufacturing pmi') || t.includes('s&p global manufacturing pmi')) {
+      if (!tvText.includes('ism') && tvText.includes('manufacturing') && tvText.includes('pmi')) score += 70;
+    } else if (t.includes('flash services pmi') || t.includes('s&p global services pmi')) {
+      if (!tvText.includes('ism') && tvText.includes('services') && tvText.includes('pmi')) score += 70;
+    } else if (t.includes('flash composite pmi') || t.includes('s&p global composite pmi')) {
+      if (!tvText.includes('ism') && tvText.includes('composite') && tvText.includes('pmi')) score += 70;
+    } else if (t.includes('chicago pmi')) {
+      if (tvText.includes('chicago pmi')) score += 70;
+    } else if (t.includes('philly fed') || t.includes('philadelphia fed')) {
+      if ((tvText.includes('philadelphia fed') || tvText.includes('philly fed')) && tvText.includes('manufacturing')) score += 70;
+    } else if (t.includes('empire state')) {
+      if (tvText.includes('empire state') && tvText.includes('manufacturing')) score += 70;
+    } else if (t.includes('richmond') && t.includes('manufacturing')) {
+      if (tvText.includes('richmond') && tvText.includes('manufacturing')) score += 70;
+    } else if (t.includes('cb consumer confidence') || t === 'consumer confidence') {
+      if (tvText.includes('consumer confidence')) score += 70;
+    } else if (t.includes('uom consumer sentiment') || t.includes('michigan consumer sentiment')) {
+      if (tvText.includes('michigan consumer sentiment') || tvText.includes('uom consumer sentiment')) score += 70;
+    } else if (t.includes('uom inflation expectations') || t.includes('michigan inflation expectations')) {
+      if (tvText.includes('michigan inflation') || tvText.includes('uom inflation')) score += 70;
+    } else if (t.includes('durable goods')) {
+      if (tvText.includes('durable goods')) score += 65;
+    } else if (t.includes('factory orders')) {
+      if (tvText.includes('factory orders')) score += 65;
+    } else if (t.includes('existing home sales')) {
+      if (tvText.includes('existing home sales')) score += 65;
+    } else if (t.includes('new home sales')) {
+      if (tvText.includes('new home sales')) score += 65;
+    } else if (t.includes('pending home sales')) {
+      if (tvText.includes('pending home sales')) score += 65;
+    } else if (t.includes('building permits')) {
+      if (tvText.includes('building permits')) score += 65;
+    } else if (t.includes('housing starts')) {
+      if (tvText.includes('housing starts')) score += 65;
+    } else if (t.includes('trade balance')) {
+      if (tvText.includes('balance of trade') || tvText.includes('trade balance')) score += 65;
+    } else if (t.includes('industrial production')) {
+      if (tvText.includes('industrial production')) score += 65;
+    } else if (t.includes('capacity utilization')) {
+      if (tvText.includes('capacity utilization')) score += 65;
     } else if (t.includes('jolts job openings')) {
       if (tvText.includes('jolts job openings')) score += 65;
     } else {
@@ -1635,7 +1748,7 @@ function matchEdgeTradingViewActualForEvent(
       const ffTokens = t.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !stopWords.has(w));
       const overlap = ffTokens.filter((w) => tvText.includes(w)).length;
       if (ffTokens.length > 0 && overlap >= Math.min(2, ffTokens.length)) {
-        score += overlap * 20;
+        score += overlap * 26;
       }
     }
 
@@ -1675,29 +1788,100 @@ async function enrichEdgeEventsWithTradingViewActuals(calendarEvents: any[]): Pr
     .filter((t) => Number.isFinite(t));
   if (times.length === 0) return calendarEvents;
   const tvEvents = await fetchEdgeTradingViewUsEventsWindow(Math.min(...times), Math.max(...times));
-  if (!tvEvents || tvEvents.length === 0) return calendarEvents;
 
-  return calendarEvents.map((ev) => {
+  let tvEnriched = calendarEvents;
+  if (tvEvents && tvEvents.length > 0) {
+    tvEnriched = calendarEvents.map((ev) => {
+      const evMs = new Date(ev.date).getTime();
+      const hasAct = Boolean(ev.actual && String(ev.actual).trim() && !/menunggu|pending|-|—/i.test(String(ev.actual).trim()));
+      if (hasAct || !Number.isFinite(evMs) || evMs > nowMs - 30 * 1000) return ev;
+
+      const matched = matchEdgeTradingViewActualForEvent(
+        String(ev.title || ''),
+        String(ev.date || ''),
+        ev.previousNum ?? null,
+        String(ev.unit || ''),
+        tvEvents
+      );
+      if (!matched) return ev;
+      return {
+        ...ev,
+        actual: matched.formatted,
+        actualNum: matched.numericVal,
+        unit: matched.unit || ev.unit,
+        actualSource: 'TV_ENRICH',
+      };
+    });
+  }
+
+  // Secondary 0-token enrichment: Google News RSS wire consensus for S&P Global Flash PMI / indicators where TradingView JSON leaves actual: null
+  const missingPmiEvents = tvEnriched.filter((ev) => {
     const evMs = new Date(ev.date).getTime();
     const hasAct = Boolean(ev.actual && String(ev.actual).trim() && !/menunggu|pending|-|—/i.test(String(ev.actual).trim()));
-    if (hasAct || !Number.isFinite(evMs) || evMs > nowMs - 2 * 60 * 1000) return ev;
-
-    const matched = matchEdgeTradingViewActualForEvent(
-      String(ev.title || ''),
-      String(ev.date || ''),
-      ev.previousNum ?? null,
-      String(ev.unit || ''),
-      tvEvents
+    const t = String(ev.title || '').toLowerCase();
+    return (
+      !hasAct &&
+      t.includes('pmi') &&
+      Number.isFinite(evMs) &&
+      evMs <= nowMs - 30 * 1000 &&
+      nowMs - evMs <= 72 * 60 * 60 * 1000
     );
-    if (!matched) return ev;
-    return {
-      ...ev,
-      actual: matched.formatted,
-      actualNum: matched.numericVal,
-      unit: matched.unit || ev.unit,
-      actualSource: 'TV_ENRICH',
-    };
   });
+
+  if (missingPmiEvents.length > 0) {
+    try {
+      const q = '"Flash Manufacturing PMI" OR "S&P Global Manufacturing PMI" OR "Flash Services PMI" OR "Services PMI" US';
+      const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+      const res = await fetch(rssUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (res.ok) {
+        const xml = await res.text();
+        const items = [...xml.matchAll(/<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<pubDate>([\s\S]*?)<\/pubDate>[\s\S]*?<\/item>/gi)].map(
+          (m) => ({
+            title: m[1].replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim(),
+            pubMs: new Date(m[2].trim()).getTime(),
+          })
+        );
+        tvEnriched = tvEnriched.map((ev) => {
+          const hasAct = Boolean(ev.actual && String(ev.actual).trim() && !/menunggu|pending|-|—/i.test(String(ev.actual).trim()));
+          if (hasAct) return ev;
+          const evMs = new Date(ev.date).getTime();
+          if (!Number.isFinite(evMs) || evMs > nowMs - 30 * 1000) return ev;
+          const t = String(ev.title || '').toLowerCase();
+          if (!t.includes('pmi')) return ev;
+          const isMfg = t.includes('manufacturing');
+          const isSvc = t.includes('services');
+          if (!isMfg && !isSvc) return ev;
+          const hits: number[] = [];
+          for (const item of items) {
+            if (!Number.isFinite(item.pubMs) || item.pubMs < evMs - 5 * 60_000 || item.pubMs > evMs + 48 * 3600_000) continue;
+            if (/\b(germany|german|uk|united kingdom|eurozone|france|australia|japan|canada)\b/i.test(item.title)) continue;
+            const rx = isMfg
+              ? /manufacturing\s+pmi(?:\s+flash)?\s+(?:at|to|of|is|retreats\s+to|falls\s+to|drops\s+to|slips\s+to|declines\s+to|eases\s+to|rises\s+to|climbs\s+to|comes\s+in\s+at|hits|reaches)?\s*(\d{2}(?:\.\d{1,2})?)/i
+              : /services\s+pmi(?:\s+flash)?\s+(?:at|to|of|is|retreats\s+to|falls\s+to|drops\s+to|slips\s+to|declines\s+to|eases\s+to|rises\s+to|climbs\s+to|comes\s+in\s+at|hits|reaches)?\s*(\d{2}(?:\.\d{1,2})?)/i;
+            const m = item.title.match(rx);
+            if (m && m[1]) {
+              const v = Number(m[1]);
+              if (v >= 25 && v <= 80) hits.push(v);
+            }
+          }
+          if (hits.length > 0) {
+            const best = hits[0];
+            return {
+              ...ev,
+              actual: Number.isInteger(best) ? best.toFixed(1) : String(best),
+              actualNum: best,
+              actualSource: 'TV_ENRICH',
+            };
+          }
+          return ev;
+        });
+      }
+    } catch {
+      // ignore RSS fallback error
+    }
+  }
+
+  return tvEnriched;
 }
 
 async function fetchPastActualsViaGoogleSearch(
@@ -1717,7 +1901,7 @@ async function fetchPastActualsViaGoogleSearch(
   const prompt = `Search the web for the official released ACTUAL economic data values for these US USD economic indicators that have already been published:\n${listDesc}\n\nReturn ONLY a raw JSON object mapping the exact event title to its released actual value string (for example: {"Core CPI m/m": "0.3%", "CPI m/m": "0.2%"}). If an event has genuinely not been released yet, omit it. Do not include markdown fences or explanation.`;
 
   for (const model of NEWS_MODEL_CASCADE) {
-    const cooldownUntil = newsQuotaCooldownByModel.get(model) || 0;
+    const cooldownUntil = newsGroundingQuotaCooldownByModel.get(model) || 0;
     if (Date.now() < cooldownUntil) continue;
     try {
       const response = await withTimeoutAbort(
@@ -1745,7 +1929,7 @@ async function fetchPastActualsViaGoogleSearch(
       if (Object.keys(out).length > 0) return out;
     } catch (err: any) {
       if (isGeminiQuotaError(err) || isGeminiModelUnavailableError(err)) {
-        newsQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
+        newsGroundingQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
       }
       continue;
     }
@@ -1820,7 +2004,7 @@ Return ONLY a valid JSON object (no markdown fences) with these exact fields:
 CRITICAL RULE: Do not invent numbers. If search results do not contain exact figures, set "isAvailable": false.`;
 
   for (const model of NEWS_MODEL_CASCADE) {
-    const cooldownUntil = newsQuotaCooldownByModel.get(model) || 0;
+    const cooldownUntil = newsGroundingQuotaCooldownByModel.get(model) || 0;
     if (Date.now() < cooldownUntil) continue;
     try {
       const response = await withTimeoutAbort(
@@ -1892,7 +2076,7 @@ CRITICAL RULE: Do not invent numbers. If search results do not contain exact fig
       }
     } catch (err: any) {
       if (isGeminiQuotaError(err) || isGeminiModelUnavailableError(err)) {
-        newsQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
+        newsGroundingQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
       }
       continue;
     }
@@ -1942,6 +2126,8 @@ function selectEdgeSupportingContextEvents(events: any[], primaryEventId?: strin
 
 async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
   let baselineSnapshot: any = null;
+  let enrichedCalendar: any[] = [];
+  let groundedFedWatch: any = null;
   try {
     const body = await req.json();
     const {
@@ -1951,6 +2137,7 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       baselineSnapshot: clientBaseline,
     } = body || {};
     baselineSnapshot = clientBaseline || null;
+    groundedFedWatch = clientFeeds?.cmeFedWatch || baselineSnapshot?.cmeFedWatch || null;
 
     if (!baselineSnapshot || !baselineSnapshot.scenarioMatrix) {
       return jsonResponse(
@@ -1975,7 +2162,7 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       : [];
 
     // Enrich missing past actuals from TradingView (0 Gemini tokens) before fingerprint cache check
-    const nowCutoffMs = Date.now() - 5 * 60 * 1000;
+    const nowCutoffMs = Date.now() - 30 * 1000;
     const hasPastMissing = calendarEvents.some(
       (ev: any) =>
         (!ev.actual || !String(ev.actual).trim() || /menunggu|pending|-|—/i.test(String(ev.actual).trim())) &&
@@ -1983,7 +2170,7 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
         (ev.forecastNum !== null || ev.previousNum !== null) &&
         new Date(ev.date).getTime() < nowCutoffMs
     );
-    let enrichedCalendar = hasPastMissing
+    enrichedCalendar = hasPastMissing
       ? await enrichEdgeEventsWithTradingViewActuals(calendarEvents)
       : calendarEvents;
 
@@ -1992,17 +2179,24 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       !forceRefresh &&
       lastEdgeMacroSnapshot &&
       Date.now() - lastEdgeMacroSnapshot.fetchedAt < 30 * 60 * 1000 &&
+      lastEdgeMacroSnapshot.snapshot?.sourceMode === 'GEMINI_AI' &&
       lastEdgeMacroSnapshot.snapshot?.dataFingerprint === baselineSnapshot.dataFingerprint &&
       (!selectedEventId ||
         lastEdgeMacroSnapshot.snapshot?.scenarioMatrix?.primaryEvent?.id === selectedEventId)
     ) {
+      const cachedFedWatch = lastEdgeMacroSnapshot.snapshot?.cmeFedWatch || groundedFedWatch;
       return jsonResponse({
         success: true,
         cached: true,
+        fallbackUsed: false,
+        sourceMode: 'GEMINI_AI',
+        modelUsed: lastEdgeMacroSnapshot.snapshot.modelUsed,
+        cmeFedWatch: cachedFedWatch,
         snapshot: {
           ...lastEdgeMacroSnapshot.snapshot,
           intermarketPulse,
           calendarEvents: enrichedCalendar,
+          cmeFedWatch: cachedFedWatch,
           rssFeedHealth: clientFeeds?.rssFeedHealth || lastEdgeMacroSnapshot.snapshot.rssFeedHealth,
         },
       });
@@ -2012,12 +2206,20 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
     const newsApiKey = getNewsGeminiApiKeys()[0] || '';
 
     if (!newsApiKey) {
-      const updatedBaseline = { ...baselineSnapshot, calendarEvents: enrichedCalendar };
-      lastEdgeMacroSnapshot = { fetchedAt: Date.now(), snapshot: updatedBaseline };
+      const fallbackSnapshot = {
+        ...baselineSnapshot,
+        sourceMode: 'RULE_BASED_FALLBACK',
+        modelUsed: 'deterministic-playbook-v1',
+        calendarEvents: enrichedCalendar,
+        cmeFedWatch: groundedFedWatch,
+      };
       return jsonResponse({
         success: true,
         fallbackUsed: true,
-        snapshot: updatedBaseline,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode: 'NO_API_KEY',
+        cmeFedWatch: groundedFedWatch,
+        snapshot: fallbackSnapshot,
       });
     }
 
@@ -2029,25 +2231,35 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       },
     });
 
-    const groundedFedWatch = await fetchCmeFedWatchWithGrounding(
+    groundedFedWatch = await fetchCmeFedWatchWithGrounding(
       ai,
-      clientFeeds?.cmeFedWatch || baselineSnapshot.cmeFedWatch,
+      groundedFedWatch,
       Boolean(forceRefresh)
     );
 
-    const stillMissing = enrichedCalendar.filter(
-      (ev: any) =>
+    const stillMissing = enrichedCalendar.filter((ev: any) => {
+      const evMs = new Date(ev.date).getTime();
+      const isEligibleImpact =
+        ev.impact === 'High' ||
+        (ev.impact === 'Medium' && Number.isFinite(evMs) && nowCutoffMs - evMs <= 48 * 60 * 60 * 1000);
+      return (
         (!ev.actual || !String(ev.actual).trim() || /menunggu|pending|-|—/i.test(String(ev.actual).trim())) &&
         !/speech|speaks|testimony|fomc\s+press|beige\s+book/i.test(String(ev.title || '')) &&
-        ev.impact === 'High' &&
+        isEligibleImpact &&
         (ev.forecastNum !== null || ev.previousNum !== null) &&
-        new Date(ev.date).getTime() < nowCutoffMs
-    );
+        Number.isFinite(evMs) &&
+        evMs < nowCutoffMs
+      );
+    });
 
     if (stillMissing.length > 0) {
       const searchActuals = await fetchPastActualsViaGoogleSearch(stillMissing, ai);
       if (Object.keys(searchActuals).length > 0) {
         enrichedCalendar = enrichedCalendar.map((ev: any) => {
+          const evMs = new Date(ev.date).getTime();
+          if (!Number.isFinite(evMs) || evMs >= nowCutoffMs) {
+            return ev;
+          }
           if (!ev.actual || !String(ev.actual).trim()) {
             const found = searchActuals[String(ev.title || '').trim().toLowerCase()];
             if (found) return { ...ev, actual: found, actualSource: 'GOOGLE_GROUNDING' };
@@ -2136,10 +2348,23 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
 
     let aiResponseText = '';
     let usedModel = '';
+    const modelFailures: Array<{ model: string; code: string }> = [];
+    let skippedByCooldownCount = 0;
+
+    const macroStaffDraft = await edgeRunSpecialistNewsDraft({
+      division: 'TRADE_NEWS',
+      dataset: promptPayload,
+    });
+    const macroStaffDraftBlock = macroStaffDraft.used
+      ? `\n\n[DRAFT MEMO DIVISI BERITA (${macroStaffDraft.provider?.toUpperCase()} / ${macroStaffDraft.model}) — AUDIT & ACC OLEH BOSS GEMINI: Periksa terhadap dataset mentah di atas; perbaiki jika ada kekeliruan arah/spike/angka, lalu terbitkan JSON final yang di-ACC]:\n${macroStaffDraft.draftText}`
+      : '';
 
     for (const model of NEWS_MODEL_CASCADE) {
       const cooldownUntil = newsQuotaCooldownByModel.get(model) || 0;
-      if (Date.now() < cooldownUntil) continue;
+      if (Date.now() < cooldownUntil) {
+        skippedByCooldownCount += 1;
+        continue;
+      }
       try {
         const response = await withTimeoutAbort(
           (abortSignal) =>
@@ -2147,7 +2372,7 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
               model,
               contents: `Analyze this real-time XAU/USD macro dataset (including CME FedWatch probabilities, simultaneous USD High-Impact events, and preNewsFlow intelligence such as Leading Indicator Chain, Consensus Tightness, 2s10s Yield Curve Spread, VIX risk regime, Gold 3-day GC=F positioning, and FOMC Blackout window while strictly preserving Master Playbook rules) and return the structured JSON Scenario Matrix in both Bahasa Indonesia (Id) and English (En):\n${JSON.stringify(
                 promptPayload
-              )}`,
+              )}${macroStaffDraftBlock}`,
               config: {
                 abortSignal,
                 systemInstruction: XAUUSD_MACRO_MASTER_PLAYBOOK_SYSTEM_INSTRUCTION,
@@ -2193,12 +2418,22 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
           16_000,
           `Macro AI (${model})`
         );
-        if (response && response.text) {
-          aiResponseText = response.text;
-          usedModel = model;
-          break;
+        if (response && response.text && response.text.trim()) {
+          const candidateParsed = parseAiJsonResponse(response.text);
+          if (Object.keys(candidateParsed).length > 0) {
+            aiResponseText = response.text;
+            usedModel = macroStaffDraft.used
+              ? `${macroStaffDraft.provider}+gemini-acc(${model})`
+              : model;
+            break;
+          }
+          modelFailures.push({ model, code: 'INVALID_JSON' });
+          continue;
         }
+        modelFailures.push({ model, code: 'EMPTY_RESPONSE' });
       } catch (err: any) {
+        const classified = classifyGeminiFailure(err);
+        modelFailures.push({ model, code: classified.code });
         if (isGeminiQuotaError(err) || isGeminiModelUnavailableError(err)) {
           newsQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
         }
@@ -2206,12 +2441,18 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       }
     }
 
-    if (!aiResponseText) {
+    if (!aiResponseText || !usedModel) {
+      const aiErrorCode = resolveNewsAiErrorCode(modelFailures, skippedByCooldownCount);
       return jsonResponse({
         success: true,
         fallbackUsed: true,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode,
+        cmeFedWatch: groundedFedWatch,
         snapshot: {
           ...baselineSnapshot,
+          sourceMode: 'RULE_BASED_FALLBACK',
+          modelUsed: 'deterministic-playbook-v1',
           calendarEvents: enrichedCalendar,
           cmeFedWatch: groundedFedWatch,
         },
@@ -2294,7 +2535,7 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       ...baselineSnapshot,
       analyzedAt: new Date().toISOString(),
       sourceMode: 'GEMINI_AI',
-      modelUsed: usedModel || 'gemini-4-hydrogen',
+      modelUsed: usedModel,
       impactLevel,
       dominantBias,
       calendarEvents: enrichedCalendar,
@@ -2337,6 +2578,9 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
     return jsonResponse({
       success: true,
       fallbackUsed: false,
+      sourceMode: 'GEMINI_AI',
+      modelUsed: usedModel,
+      cmeFedWatch: groundedFedWatch,
       snapshot: enrichedSnapshot,
     });
   } catch {
@@ -2344,7 +2588,17 @@ async function handleMacroNewsAnalyze(req: Request): Promise<Response> {
       return jsonResponse({
         success: true,
         fallbackUsed: true,
-        snapshot: baselineSnapshot,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode: 'INTERNAL_ERROR',
+        cmeFedWatch: groundedFedWatch,
+        snapshot: {
+          ...baselineSnapshot,
+          sourceMode: 'RULE_BASED_FALLBACK',
+          modelUsed: 'deterministic-playbook-v1',
+          calendarEvents:
+            enrichedCalendar.length > 0 ? enrichedCalendar : baselineSnapshot.calendarEvents,
+          cmeFedWatch: groundedFedWatch || baselineSnapshot.cmeFedWatch,
+        },
       });
     }
     return jsonResponse({ success: false, error: 'Gagal memproses analisis makro.' }, 500);
@@ -2366,6 +2620,7 @@ function sanitizeNoBuySellEdge(text: string): string {
 
 async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
   let baselineSnapshot: any = null;
+  let resolvedFedWatch: any = null;
   try {
     const body = await req.json();
     const {
@@ -2376,6 +2631,7 @@ async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
       contextSummary,
     } = body || {};
     baselineSnapshot = clientBaseline || null;
+    resolvedFedWatch = clientFedWatch || null;
 
     if (!baselineSnapshot || !baselineSnapshot.horizons || !baselineSnapshot.narrative) {
       return jsonResponse(
@@ -2388,7 +2644,6 @@ async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
     }
 
     const newsApiKey = getNewsGeminiApiKeys()[0] || '';
-    let resolvedFedWatch: any = clientFedWatch || null;
     let edgeAiClient: GoogleGenAI | null = null;
 
     if (newsApiKey) {
@@ -2437,6 +2692,9 @@ async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
       return jsonResponse({
         success: true,
         cached: true,
+        fallbackUsed: false,
+        sourceMode: 'GEMINI_AI',
+        modelUsed: lastEdgeFundamentalSnapshot.snapshot.modelUsed,
         cmeFedWatch: resolvedFedWatch,
         snapshot: {
           ...baselineSnapshot,
@@ -2448,12 +2706,18 @@ async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
     }
 
     if (!edgeAiClient) {
-      lastEdgeFundamentalSnapshot = { fetchedAt: Date.now(), snapshot: baselineSnapshot };
+      const fallbackSnapshot = {
+        ...baselineSnapshot,
+        sourceMode: 'DETERMINISTIC_FALLBACK',
+        modelUsed: 'deterministic-fundamental-v1',
+      };
       return jsonResponse({
         success: true,
         fallbackUsed: true,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode: 'NO_API_KEY',
         cmeFedWatch: resolvedFedWatch,
-        snapshot: baselineSnapshot,
+        snapshot: fallbackSnapshot,
       });
     }
 
@@ -2477,6 +2741,7 @@ async function handleFundamentalGoldAnalyze(req: Request): Promise<Response> {
       regimeLabelEn: baselineSnapshot.regimeLabelEn,
       isDataUnchangedFromLastCheck: isUnchanged,
       changeDetection: baselineSnapshot.changeDetection,
+      tacticalOverlay: baselineSnapshot.tacticalOverlay || null,
       topDrivers: Array.isArray(baselineSnapshot.drivers)
         ? baselineSnapshot.drivers.slice(0, 7)
         : [],
@@ -2495,14 +2760,27 @@ CRITICAL RULES:
 2. Write in clean, authoritative, flowing editorial Indonesian (Id) and English (En) — like a Bloomberg / institutional morning desk note that stays effortless to grasp. Avoid stiff textbook phrasing, robotic translationese, or forced filler (e.g. do not force IPO mentions unless an actual major market event is present). Cite concrete numbers from evidenceSummary/topDrivers and immediately connect each indicator (DXY, US10Y, Real Yield, VIX, GLD, CFTC COT) to its direct impact on Gold.
 3. Preserve the mathematical probabilities computed in baselineSnapshot — explain WHY those probabilities lean Bullish, Bearish, or Neutral with causal clarity.
 4. HONESTY RULE: If isDataUnchangedFromLastCheck is true, explicitly open headline/dataStatusNote/sectionA stating honestly that core fundamental drivers have not shifted since the last check (zero manufactured drama).
-5. Connect the full A-to-Z macro picture seamlessly: (A) Macro Regime & what shifted, (B) Fed rates, Real Yields, US10Y & DXY opportunity-cost engine, (C) Cross-market capital flows (Wall Street risk appetite, VIX / Dash-for-Cash risk, GLD ETF, CFTC COT, Asia/China FX & oil), and (D) Clear 1-Day vs 1-Week vs 1-Month roadmap plus concrete invalidation triggers that would flip the thesis.`;
+5. Connect the full A-to-Z macro picture seamlessly: (A) Macro Regime & what shifted, (B) Fed rates, Real Yields, US10Y & DXY opportunity-cost engine (note if tacticalOverlay.dxyDistortionDetected is true), (C) Cross-market capital flows (Wall Street risk appetite, VIX / Dash-for-Cash risk, GLD ETF, CFTC COT, Asia/China FX & oil), and (D) Clear 1-Day vs 1-Week vs 1-Month roadmap — separating structural 1W/1M trend from any active intraday tacticalOverlay catalyst (medium-impact surprises or short-covering bounce risk) plus concrete invalidation triggers.`;
 
     let aiResponseText = '';
     let usedModel = '';
+    const modelFailures: Array<{ model: string; code: string }> = [];
+    let skippedByCooldownCount = 0;
+
+    const fundamentalStaffDraft = await edgeRunSpecialistNewsDraft({
+      division: 'FUNDAMENTAL_GOLD',
+      dataset: promptData,
+    });
+    const fundamentalStaffDraftBlock = fundamentalStaffDraft.used
+      ? `\n\n[DRAFT MEMO DIVISI FUNDAMENTAL (${fundamentalStaffDraft.provider?.toUpperCase()} / ${fundamentalStaffDraft.model}) — AUDIT & ACC OLEH BOSS GEMINI: Verifikasi terhadap angka mentah & aturan anti-BUY/SELL di atas, perbaiki bila ada penyimpangan, lalu terbitkan JSON final yang di-ACC]:\n${fundamentalStaffDraft.draftText}`
+      : '';
 
     for (const model of NEWS_MODEL_CASCADE) {
-      const cooldownUntil = newsQuotaCooldownUntilByModel.get(model) || 0;
-      if (Date.now() < cooldownUntil) continue;
+      const cooldownUntil = newsQuotaCooldownByModel.get(model) || 0;
+      if (Date.now() < cooldownUntil) {
+        skippedByCooldownCount += 1;
+        continue;
+      }
       try {
         const response = await withTimeoutAbort(
           (abortSignal) =>
@@ -2510,7 +2788,7 @@ CRITICAL RULES:
               model,
               contents: `Synthesize this verified XAU/USD multi-horizon dataset into a crisp, authoritative A-Z Macro Desk Brief in Bahasa Indonesia (Id) and English (En):\n${JSON.stringify(
                 promptData
-              )}`,
+              )}${fundamentalStaffDraftBlock}`,
               config: {
                 abortSignal,
                 systemInstruction: fundamentalSystemInstruction,
@@ -2551,25 +2829,42 @@ CRITICAL RULES:
           20_000,
           `Fundamental Gold Edge AI (${model})`
         );
-        if (response && response.text) {
-          aiResponseText = response.text;
-          usedModel = model;
-          break;
+        if (response && response.text && response.text.trim()) {
+          const candidateParsed = parseAiJsonResponse(response.text);
+          if (Object.keys(candidateParsed).length > 0) {
+            aiResponseText = response.text;
+            usedModel = fundamentalStaffDraft.used
+              ? `${fundamentalStaffDraft.provider}+gemini-acc(${model})`
+              : model;
+            break;
+          }
+          modelFailures.push({ model, code: 'INVALID_JSON' });
+          continue;
         }
+        modelFailures.push({ model, code: 'EMPTY_RESPONSE' });
       } catch (err: any) {
+        const classified = classifyGeminiFailure(err);
+        modelFailures.push({ model, code: classified.code });
         if (isGeminiQuotaError(err) || isGeminiModelUnavailableError(err)) {
-          newsQuotaCooldownUntilByModel.set(model, Date.now() + 30 * 60 * 1000);
+          newsQuotaCooldownByModel.set(model, Date.now() + 30 * 60 * 1000);
         }
         continue;
       }
     }
 
-    if (!aiResponseText) {
+    if (!aiResponseText || !usedModel) {
+      const aiErrorCode = resolveNewsAiErrorCode(modelFailures, skippedByCooldownCount);
       return jsonResponse({
         success: true,
         fallbackUsed: true,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode,
         cmeFedWatch: resolvedFedWatch,
-        snapshot: baselineSnapshot,
+        snapshot: {
+          ...baselineSnapshot,
+          sourceMode: 'DETERMINISTIC_FALLBACK',
+          modelUsed: 'deterministic-fundamental-v1',
+        },
       });
     }
 
@@ -2578,7 +2873,7 @@ CRITICAL RULES:
       ...baselineSnapshot,
       analyzedAt: new Date().toISOString(),
       sourceMode: 'GEMINI_AI',
-      modelUsed: usedModel || 'gemini-4-hydrogen',
+      modelUsed: usedModel,
       narrative: {
         id: {
           headlineSummary: sanitizeNoBuySellEdge(
@@ -2633,6 +2928,8 @@ CRITICAL RULES:
     return jsonResponse({
       success: true,
       fallbackUsed: false,
+      sourceMode: 'GEMINI_AI',
+      modelUsed: usedModel,
       cmeFedWatch: resolvedFedWatch,
       snapshot: enrichedSnapshot,
     });
@@ -2641,10 +2938,842 @@ CRITICAL RULES:
       return jsonResponse({
         success: true,
         fallbackUsed: true,
-        snapshot: baselineSnapshot,
+        sourceMode: 'CLIENT_FALLBACK',
+        aiErrorCode: 'INTERNAL_ERROR',
+        cmeFedWatch: resolvedFedWatch,
+        snapshot: {
+          ...baselineSnapshot,
+          sourceMode: 'DETERMINISTIC_FALLBACK',
+          modelUsed: 'deterministic-fundamental-v1',
+        },
       });
     }
     return jsonResponse({ success: false, error: 'Gagal memproses Fundamental Gold.' }, 500);
+  }
+}
+
+// ============================================================================
+// MULTI-AGENT OFFICE & SINGLE-PASS AI DESK ORCHESTRATOR
+// - Trade News & Fundamental Gold: Specialist Staff Draft (Groq/OpenRouter) -> Boss Gemini ACC
+// - Tanya AI Chat: Single-Pass Smart Assistant Brain with 18.5s global deadline & fast circuit-breaker
+// ============================================================================
+
+const AGENT_GEMINI_FAST_CHAT_MODELS = ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
+const AGENT_GEMINI_DEEP_CHAT_MODELS = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+const AGENT_GROQ_MODELS = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+const AGENT_OPENROUTER_FREE_MODELS = ['meta-llama/llama-3.3-70b-instruct:free'];
+
+function parseEdgeKeyList(raw: string | undefined): string[] {
+  if (!raw || typeof raw !== 'string') return [];
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map((k) => k.trim())
+        .filter((k) => k.length >= 8)
+    )
+  );
+}
+
+function getEdgeAgentDeskKeys() {
+  const geminiKeys = Array.from(
+    new Set([...getNewsGeminiApiKeys(), ...getScannerGeminiApiKeys()])
+  );
+  const groqKeys = parseEdgeKeyList(Deno.env.get('GROQ_API_KEY'));
+  const openRouterKeys = parseEdgeKeyList(Deno.env.get('OPENROUTER_API_KEY'));
+  return { geminiKeys, groqKeys, openRouterKeys };
+}
+
+function sanitizeEdgeAgentError(err: unknown): string {
+  return String((err as any)?.message || err || 'Unknown error')
+    .replace(/AIza[0-9A-Za-z\-_]{16,}/g, '[REDACTED_KEY]')
+    .replace(/gsk_[0-9A-Za-z\-_]{16,}/g, '[REDACTED_KEY]')
+    .replace(/sk-or-[a-zA-Z0-9\-_]{16,}/g, '[REDACTED_KEY]')
+    .replace(/Bearer\s+[A-Za-z0-9\-_.]{12,}/gi, 'Bearer [REDACTED]')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+}
+
+function parseEdgeJsonLoose(rawText: string): Record<string, any> | null {
+  if (!rawText || typeof rawText !== 'string') return null;
+  const cleaned = rawText
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        const parsed = JSON.parse(cleaned.slice(start, end + 1));
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+function getEdgeRemainingBudgetMs(deadlineMs: number | undefined, capMs: number): number {
+  if (!deadlineMs) return capMs;
+  return Math.min(capMs, Math.max(0, deadlineMs - Date.now()));
+}
+
+async function edgeCallGeminiAgent(params: {
+  keys: string[];
+  models: string[];
+  systemInstruction: string;
+  userPrompt: string;
+  expectJson: boolean;
+  timeoutMs: number;
+  temperature?: number;
+  deadlineMs?: number;
+}) {
+  if (params.keys.length === 0) throw new Error('Gemini API key not configured');
+  let lastErr: unknown = new Error('Gemini call failed');
+  for (const model of params.models) {
+    for (const apiKey of params.keys) {
+      const budgetMs = getEdgeRemainingBudgetMs(params.deadlineMs, params.timeoutMs);
+      if (budgetMs < 1500) {
+        throw new Error(sanitizeEdgeAgentError(lastErr || new Error('Request deadline reached')));
+      }
+      const start = Date.now();
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: { 'User-Agent': 'aistudio-build' },
+          retryOptions: { attempts: 1 },
+        },
+      });
+      try {
+        const response = await withTimeoutAbort(
+          (abortSignal) =>
+            ai.models.generateContent({
+              model,
+              contents: params.userPrompt,
+              config: {
+                abortSignal,
+                systemInstruction: params.systemInstruction,
+                ...(typeof params.temperature === 'number' ? { temperature: params.temperature } : {}),
+                ...(model === 'gemini-4-hydrogen'
+                  ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                  : {}),
+                ...(params.expectJson ? { responseMimeType: 'application/json' } : {}),
+              },
+            }),
+          budgetMs,
+          `EdgeGemini(${model})`
+        );
+        const text = (response?.text || '').trim();
+        if (text) {
+          const json = params.expectJson ? parseEdgeJsonLoose(text) : null;
+          if (!params.expectJson || json) {
+            return { provider: 'gemini', model, text, json, latencyMs: Date.now() - start };
+          }
+          lastErr = new Error(`Gemini(${model}) non-JSON`);
+        } else {
+          lastErr = new Error(`Gemini(${model}) empty response`);
+        }
+      } catch (err) {
+        lastErr = err;
+        const msg = sanitizeEdgeAgentError(err);
+        if (/\b(401|403|API_KEY_INVALID)\b/i.test(msg)) {
+          continue;
+        }
+      }
+    }
+  }
+  throw new Error(sanitizeEdgeAgentError(lastErr));
+}
+
+async function edgeCallOpenAiCompatibleAgent(params: {
+  provider: 'groq' | 'openrouter';
+  endpoint: string;
+  keys: string[];
+  models: string[];
+  systemInstruction: string;
+  userPrompt: string;
+  expectJson: boolean;
+  timeoutMs: number;
+  temperature?: number;
+  deadlineMs?: number;
+}) {
+  if (params.keys.length === 0) throw new Error(`${params.provider} API key not configured`);
+  let lastErr: unknown = new Error(`${params.provider} call failed`);
+  for (const apiKey of params.keys) {
+    let keyFatal = false;
+    for (const model of params.models) {
+      if (keyFatal) break;
+      const budgetMs = getEdgeRemainingBudgetMs(params.deadlineMs, params.timeoutMs);
+      if (budgetMs < 1500) {
+        throw new Error(sanitizeEdgeAgentError(lastErr || new Error('Request deadline reached')));
+      }
+      const start = Date.now();
+      try {
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        };
+        if (params.provider === 'openrouter') {
+          headers['HTTP-Referer'] = 'https://tradevault.app';
+          headers['X-Title'] = 'TradeVault AI Desk';
+        }
+        const body: Record<string, unknown> = {
+          model,
+          messages: [
+            { role: 'system', content: params.systemInstruction },
+            { role: 'user', content: params.userPrompt },
+          ],
+          temperature: params.temperature ?? (params.expectJson ? 0.35 : 0.7),
+          max_tokens: 950,
+        };
+        if (params.expectJson && params.provider === 'groq') {
+          body.response_format = { type: 'json_object' };
+        }
+        const res = await withTimeoutAbort(
+          (signal) => fetch(params.endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal }),
+          budgetMs,
+          `Edge-${params.provider}(${model})`
+        );
+        if (!res.ok) {
+          const txt = await res.text().catch(() => '');
+          lastErr = new Error(`HTTP ${res.status}: ${txt.slice(0, 120)}`);
+          // Fast circuit-breaker: auth/quota/rate-limit errors won't succeed on sibling models
+          if (res.status === 401 || res.status === 402 || res.status === 403 || res.status === 429) {
+            keyFatal = true;
+          }
+          continue;
+        }
+        const data = await res.json();
+        const text = String(data?.choices?.[0]?.message?.content || '').trim();
+        if (!text) {
+          lastErr = new Error(`${params.provider}(${model}) empty content`);
+          continue;
+        }
+        const json = params.expectJson ? parseEdgeJsonLoose(text) : null;
+        if (!params.expectJson || json) {
+          return { provider: params.provider, model, text, json, latencyMs: Date.now() - start };
+        }
+        lastErr = new Error(`${params.provider}(${model}) invalid JSON`);
+      } catch (err) {
+        lastErr = err;
+        if (/timed out|abort/i.test(String((err as any)?.message || err))) {
+          keyFatal = true;
+        }
+      }
+    }
+  }
+  throw new Error(sanitizeEdgeAgentError(lastErr));
+}
+
+async function edgeRunAgentCascade(params: {
+  order: Array<'gemini' | 'groq' | 'openrouter'>;
+  keys: ReturnType<typeof getEdgeAgentDeskKeys>;
+  preferDeepGemini?: boolean;
+  isBoss?: boolean;
+  systemInstruction: string;
+  userPrompt: string;
+  expectJson: boolean;
+  timeoutMs: number;
+  temperature?: number;
+  deadlineMs?: number;
+}) {
+  const errors: string[] = [];
+  const useDeepGemini = params.preferDeepGemini ?? Boolean(params.isBoss);
+
+  for (const prov of params.order) {
+    if (params.deadlineMs && params.deadlineMs - Date.now() < 1500) {
+      errors.push(`${prov}: skipped (deadline budget reached)`);
+      break;
+    }
+    try {
+      if (prov === 'groq' && params.keys.groqKeys.length > 0) {
+        const res = await edgeCallOpenAiCompatibleAgent({
+          provider: 'groq',
+          endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+          keys: params.keys.groqKeys,
+          models: AGENT_GROQ_MODELS,
+          systemInstruction: params.systemInstruction,
+          userPrompt: params.userPrompt,
+          expectJson: params.expectJson,
+          timeoutMs: Math.min(params.timeoutMs, 4_500),
+          temperature: params.temperature,
+          deadlineMs: params.deadlineMs,
+        });
+        return { ...res, skippedErrors: errors.length > 0 ? errors : undefined };
+      }
+      if (prov === 'openrouter' && params.keys.openRouterKeys.length > 0) {
+        const res = await edgeCallOpenAiCompatibleAgent({
+          provider: 'openrouter',
+          endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+          keys: params.keys.openRouterKeys,
+          models: AGENT_OPENROUTER_FREE_MODELS,
+          systemInstruction: params.systemInstruction,
+          userPrompt: params.userPrompt,
+          expectJson: params.expectJson,
+          timeoutMs: Math.min(params.timeoutMs, 4_500),
+          temperature: params.temperature,
+          deadlineMs: params.deadlineMs,
+        });
+        return { ...res, skippedErrors: errors.length > 0 ? errors : undefined };
+      }
+      if (prov === 'gemini' && params.keys.geminiKeys.length > 0) {
+        const res = await edgeCallGeminiAgent({
+          keys: params.keys.geminiKeys,
+          models: useDeepGemini ? AGENT_GEMINI_DEEP_CHAT_MODELS : AGENT_GEMINI_FAST_CHAT_MODELS,
+          systemInstruction: params.systemInstruction,
+          userPrompt: params.userPrompt,
+          expectJson: params.expectJson,
+          timeoutMs: Math.min(params.timeoutMs, 9_500),
+          temperature: params.temperature,
+          deadlineMs: params.deadlineMs,
+        });
+        return { ...res, skippedErrors: errors.length > 0 ? errors : undefined };
+      }
+    } catch (err) {
+      errors.push(`${prov}: ${sanitizeEdgeAgentError(err)}`);
+    }
+  }
+  throw new Error(errors.join(' | ') || 'No configured AI provider succeeded');
+}
+
+async function edgeRunSpecialistNewsDraft(params: {
+  division: 'TRADE_NEWS' | 'FUNDAMENTAL_GOLD';
+  dataset: Record<string, unknown>;
+}): Promise<{ used: boolean; provider: string | null; model: string | null; draftText: string }> {
+  const keys = getEdgeAgentDeskKeys();
+  if (keys.groqKeys.length === 0 && keys.openRouterKeys.length === 0) {
+    return { used: false, provider: null, model: null, draftText: '' };
+  }
+  const order: Array<'groq' | 'openrouter'> =
+    params.division === 'TRADE_NEWS' ? ['groq', 'openrouter'] : ['openrouter', 'groq'];
+  const systemInstruction =
+    params.division === 'TRADE_NEWS'
+      ? `Kamu adalah Divisi Riset Berita & Spike XAU/USD. Susun DRAFT MEMO padat (maks 280 kata) dari data nyata untuk diaudit & di-ACC Boss Gemini: arah dominan (BUY/SELL/MIXED), pola 1-Arah vs 2-Arah Sweep First (Fase 0-5m vs 15m+), jebakan speech/priced-in, dan tesis lintas aset.`
+      : `Kamu adalah Divisi Riset Fundamental Emas (XAU/USD). DILARANG menulis kata "BUY" atau "SELL" — pakai BULLISH/BEARISH/NEUTRAL. Susun DRAFT MEMO padat (maks 320 kata) untuk diaudit & di-ACC Boss Gemini: rezim makro, Real Yield/US10Y/DXY/FedWatch, arus modal lintas pasar, dan proyeksi 1D/1W/1M.`;
+  try {
+    const res = await edgeRunAgentCascade({
+      order,
+      keys,
+      isBoss: false,
+      systemInstruction,
+      userPrompt: `Dataset ${params.division}:\n${JSON.stringify(params.dataset).slice(0, 13_500)}\nSusun draft memo riset untuk Boss Gemini.`,
+      expectJson: false,
+      timeoutMs: 7000,
+      temperature: 0.2,
+    });
+    if (res.provider === 'groq' || res.provider === 'openrouter') {
+      return { used: true, provider: res.provider, model: res.model, draftText: res.text.slice(0, 2600) };
+    }
+  } catch {
+    // Non-blocking fallback directly to Boss Gemini
+  }
+  return { used: false, provider: null, model: null, draftText: '' };
+}
+
+function edgeGetPersonaStyle(persona: string, agentName: string, isEn: boolean): string {
+  if (isEn) {
+    if (persona === 'concise') {
+      return `Your name is ${agentName}, the user's personal trading assistant inside TradeVault. Reply crisp, sharp, natural, and direct (2–4 short sentences). Zero robotic filler.`;
+    }
+    if (persona === 'mentor') {
+      return `Your name is ${agentName}, the user's trusted personal trading partner & mentor inside TradeVault (calm, perceptive, grounded like Alfred). Speak warmly and honestly like a real human partner.`;
+    }
+    return `Your name is ${agentName}, the user's close personal trading assistant inside TradeVault (smart, warm, witty like Jarvis/Alfred). Chat like a real human friend on WhatsApp/DM — match the user's vibe naturally, never use repetitive cliché lines like "Copy that, boss! I'm always standing by" on every reply.`;
+  }
+  if (persona === 'concise') {
+    return `Namamu ${agentName}, asisten pribadi trading di dalam aplikasi TradeVault. Balas singkat, lugas, dan langsung ke intinya (2–4 kalimat pendek). Tanpa basa-basi robot.`;
+  }
+  if (persona === 'mentor') {
+    return `Namamu ${agentName}, asisten pribadi sekaligus mentor trading di TradeVault (tenang, jeli membaca risiko, hangat seperti Alfred). Ngobrol jujur dan membumi seperti partner manusia sungguhan.`;
+  }
+  return `Namamu ${agentName}, asisten pribadi trading pengguna di TradeVault. Ngobrol santai, akrab, cerdas, dan luwes layaknya teman dekat/partner di WhatsApp.
+GAYA BAHASA WAJIB:
+- Ikuti nada bicara user secara alami (kalau user pakai aku/kamu atau santai, imbangi dengan natural — jangan kaku seperti customer service).
+- DILARANG mengulang-ulang kalimat klise bot seperti "Siap, bos!", "Saya standby kalau butuh bantuan apa-apa hari ini", atau format daftar kaku "1. ... 2. ... 3. ..." setiap kali membalas.
+- Pahami partikel percakapan Indonesia (yaa, deh, dong, aja, nih, sih, kan, kok, yuk) sebagai nada bicara biasa, BUKAN bagian dari nama atau istilah.`;
+}
+
+function edgeCleanExtractedAgentName(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  let cleaned = raw
+    .replace(/["'`~!?.,()[\]{}]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return undefined;
+
+  cleaned = cleaned
+    .replace(
+      /\b(ya+h?|yakk?|de+h+|do+ng+|a+ja+|sa+ja+|ni+h+|si+h+|la+h+|ka+n|ko+k|yu+k+|o+ke+y?h?|si+p+|bo+s+|bro+|ga+n|ka+k|bang|min|pls|please|biar|supaya|karena|soal|soalnya|aja|gitu)\b.*$/i,
+      ''
+    )
+    .trim();
+
+  const words = cleaned.split(/\s+/).filter(Boolean).slice(0, 2);
+  cleaned = words.join(' ').trim();
+  if (cleaned.length < 2 || cleaned.length > 24) return undefined;
+  if (/^(kamu|lu|lo|anda|aku|saya|gue|gw|nama|panggil|ai|bot|null|none|undefined)$/i.test(cleaned)) {
+    return undefined;
+  }
+  return cleaned
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function edgeExtractNicknameFallback(message: string): string | undefined {
+  const m = message.match(
+    /(?:panggil(?:\s+kamu|\s+lu|\s+lo|\s+anda)?(?:\s+dengan)?|namamu(?:\s+sekarang)?|mulai\s+sekarang\s+(?:kamu\s+)?(?:saya\s+|aku\s+)?panggil(?:\s+kamu)?|call\s+you|your\s+name\s+is)\s+["']?([A-Za-z][A-Za-z0-9._\- ]{1,30})["']?/i
+  );
+  if (!m || !m[1]) return undefined;
+  return edgeCleanExtractedAgentName(m[1]);
+}
+
+function edgeFormatMemoryList(contextObj: any): string {
+  const rawList = Array.isArray(contextObj?.memoryNotes) ? contextObj.memoryNotes : [];
+  if (rawList.length === 0) return '(Belum ada memori tersimpan)';
+  return rawList
+    .slice(0, 20)
+    .map((item: any, idx: number) => {
+      if (typeof item === 'string') return `${idx + 1}. ${item.slice(0, 200)}`;
+      if (item && typeof item.text === 'string') return `${idx + 1}. [${String(item.category || 'general')}] ${item.text.slice(0, 200)}`;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function edgePreClassifySpeedHint(message: string): {
+  likelyHeavyMarket: boolean;
+  likelyLivePrice: boolean;
+} {
+  const q = message.trim().toLowerCase();
+  const hasPriceCue =
+    /\b(harga|price|spot|level|berapa|brp|skrg|sekarang|saat ini|di angka|dimana|di mana|running|update harga|cek harga)\b/i.test(
+      q
+    );
+  const hasAssetCue = /\b(xau|xauusd|gold|emas|dxy|us10y|us02y|usoil|oil|btc|eurusd)\b/i.test(q);
+  const asksDeepAnalysis =
+    /\b(kenapa|mengapa|analisis|analisa|fundamental|berita|news|jurnal|journal|spike|sweep|prediksi|arah|kemana|ke mana|buy|sell|entry|posisi|risiko|risk|drawdown|win\s?rate|fomc|cpi|nfp|evaluasi|audit|bagusnya|ambil)\b/i.test(
+      q
+    );
+  const asksLivePrice = hasPriceCue && hasAssetCue && !asksDeepAnalysis;
+  const asksMarketOrJournal =
+    /\b(xau|xauusd|gold|emas|dxy|yield|us10y|us02y|usoil|oil|forex|market|pasar|chart|candle|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|powell|polymarket|cycle|confluence|smc|heatmap|spike|sweep|whipsaw|buy|sell|long|short|entry|sl|tp|jurnal|journal|trade|trading|posisi|open|planned|lot|risiko|risk|drawdown|dd|win\s?rate|profit|loss|rugi|equity|saldo|balance|guardrail|evaluasi|audit|rekap)\b/i.test(
+      q
+    );
+  return {
+    likelyHeavyMarket: asksMarketOrJournal && !asksLivePrice,
+    likelyLivePrice: asksLivePrice,
+  };
+}
+
+function edgeBuildCompactDeviceContext(contextObj: any): Record<string, unknown> {
+  return {
+    runtime: contextObj?.runtime ?? null,
+    liveMarketQuote: contextObj?.liveMarketQuote ?? null,
+    macroNews: contextObj?.macroNews
+      ? {
+          analyzedAt: contextObj.macroNews.analyzedAt,
+          dominantBias: contextObj.macroNews.dominantBias,
+          buyProbability: contextObj.macroNews.buyProbability,
+          sellProbability: contextObj.macroNews.sellProbability,
+          mixedProbability: contextObj.macroNews.mixedProbability,
+          primaryEvent: contextObj.macroNews.primaryEvent,
+          institutionalDeskThesis: contextObj.macroNews.institutionalDeskThesis,
+          actionPlan: contextObj.macroNews.actionPlan,
+          whipsawWarning: contextObj.macroNews.whipsawWarning,
+          dualHorizon: contextObj.macroNews.dualHorizon,
+          intermarketPulse: contextObj.macroNews.intermarketPulse,
+          topHeadlines: contextObj.macroNews.topHeadlines,
+        }
+      : null,
+    fundamentalGold: contextObj?.fundamentalGold
+      ? {
+          analyzedAt: contextObj.fundamentalGold.analyzedAt,
+          overallBias: contextObj.fundamentalGold.overallBias,
+          bullishProbability: contextObj.fundamentalGold.bullishProbability,
+          bearishProbability: contextObj.fundamentalGold.bearishProbability,
+          regime: contextObj.fundamentalGold.regime,
+          horizons: contextObj.fundamentalGold.horizons,
+          tacticalOverlayStatus: contextObj.fundamentalGold.tacticalOverlayStatus,
+          tacticalOverlayHeadline: contextObj.fundamentalGold.tacticalOverlayHeadline,
+          headlineSummary: contextObj.fundamentalGold.headlineSummary,
+        }
+      : null,
+    cmeFedWatch: contextObj?.cmeFedWatch ?? null,
+    polymarket: contextObj?.polymarket ?? null,
+    smcSignal: contextObj?.smcSignal ?? null,
+    journal: contextObj?.journal ?? null,
+    syncStatus: contextObj?.syncStatus ?? null,
+  };
+}
+
+async function handleAgentDeskChat(req: Request): Promise<Response> {
+  const startedAt = Date.now();
+  const deadlineMs = startedAt + 18_500; // Strict global budget so APK NEVER hits 38s timeout!
+  try {
+    const rawBody = (await req.json()) || {};
+    const message = typeof rawBody.message === 'string' ? rawBody.message.trim().slice(0, 2000) : '';
+    const language: 'id' | 'en' = rawBody.language === 'en' ? 'en' : 'id';
+    const isEn = language === 'en';
+    const rawPersona = String(rawBody.persona || 'casual').toLowerCase();
+    const persona = rawPersona === 'concise' || rawPersona === 'mentor' ? rawPersona : 'casual';
+    const agentName =
+      typeof rawBody.agentName === 'string' && rawBody.agentName.trim()
+        ? rawBody.agentName.trim().slice(0, 40)
+        : 'Head Desk';
+
+    if (!message) {
+      return jsonResponse({ success: false, error: 'Pertanyaan tidak boleh kosong.' }, 400);
+    }
+
+    const keys = getEdgeAgentDeskKeys();
+    if (keys.geminiKeys.length + keys.groqKeys.length + keys.openRouterKeys.length === 0) {
+      return jsonResponse(
+        {
+          success: false,
+          error: isEn
+            ? 'No AI provider key configured in Supabase Secrets.'
+            : 'Belum ada API Key AI yang terpasang di Supabase Secrets.',
+        },
+        503
+      );
+    }
+
+    const history = (Array.isArray(rawBody.history) ? rawBody.history : [])
+      .slice(-10)
+      .filter(
+        (h: any) =>
+          h &&
+          (h.role === 'user' || h.role === 'assistant') &&
+          typeof h.content === 'string' &&
+          h.content.trim().length > 0
+      )
+      .map((h: any) => ({ role: h.role, content: String(h.content).trim().slice(0, 800) }));
+
+    const contextObj =
+      rawBody.context && typeof rawBody.context === 'object' && !Array.isArray(rawBody.context)
+        ? rawBody.context
+        : {};
+
+    const historyText =
+      history.length > 0
+        ? history.slice(-8).map((h: any) => `${h.role === 'user' ? 'USER' : 'ASISTEN'}: ${h.content}`).join('\n')
+        : '(Baru memulai obrolan)';
+
+    const fmtProv = (p: string) => (p === 'gemini' ? 'Gemini' : p === 'groq' ? 'Groq' : p === 'openrouter' ? 'OpenRouter' : 'System');
+    const speedHint = edgePreClassifySpeedHint(message);
+    const memoryText = edgeFormatMemoryList(contextObj);
+    const personaGuide = edgeGetPersonaStyle(persona, agentName, isEn);
+
+    const includeFullData = speedHint.likelyHeavyMarket || speedHint.likelyLivePrice || history.length >= 2;
+    const compactContext = includeFullData
+      ? edgeBuildCompactDeviceContext(contextObj)
+      : {
+          runtime: contextObj?.runtime ?? null,
+          liveMarketQuote: contextObj?.liveMarketQuote?.xauusd
+            ? { xauusd: contextObj.liveMarketQuote.xauusd }
+            : null,
+        };
+
+    const systemInstruction = `${personaGuide}
+
+TUGAS UTAMA (OTAK TUNGGAL CERDAS):
+Pahami MAKSUD & KONTEKS pesan user secara menyeluruh dari riwayat obrolan, lalu pilih SATU jalur paling tepat di field "intent":
+1. "SMALL_TALK" — Sapaan, perkenalan, obrolan santai, curhat ringan, terima kasih, atau user memberi nama panggilan baru (mis. "saya panggil kamu Wowo yaa").
+   - ATURAN KERAS: DILARANG membocorkan/membahas arah market, bias BUY/SELL, harga XAU, berita, atau data jurnal jika user tidak menanyakannya!
+   - Jika user memberi nama panggilan baru, isi "renamedTo" HANYA dengan NAMA BERSIHNYA saja tanpa kata penyambung/partikel (contoh: "saya panggil kamu Wowo yaa" -> renamedTo: "Wowo", BUKAN "Wowo yaa").
+2. "OUT_OF_SCOPE" — Pertanyaan topik umum di luar trading & TradeVault (cuaca, bola, resep makanan, gosip, film, obat, dll).
+   - Tolak dengan santai, sopan, dan tetap hangat sesuai karaktermu; jelaskan ranah tugasmu khusus di market XAU/USD, berita makro, fundamental emas, dan jurnal trading TradeVault. Jangan pernah mengarang jawaban topik di luar ranah itu.
+3. "LIVE_PRICE_CHECK" — User menanyakan harga spot terkini (mis. harga XAU/USD sekarang berapa).
+   - Gunakan HANYA angka nyata dari "DATA PERANGKAT -> liveMarketQuote". Sebutkan angka + sumber + jam update dengan natural. DILARANG mengarang harga jika data kosong/offline.
+4. "DIRECT_FOLLOWUP" — Tanggapan lanjutan singkat dalam obrolan trading yang sedang berlangsung.
+5. "FULL_OFFICE" — Analisis arah market XAU/USD, Trade News, Spike/Sweep, Fundamental Gold, Polymarket, FedWatch, evaluasi jurnal offline, posisi aktif, atau manajemen risiko.
+   - ATURAN ANTI-SALAH BACA:
+     * "Bearish Spike awal" = harga XAU/USD berpotensi TURUN tajam dulu, BUKAN sinyal BUY langsung!
+     * "Bullish Spike awal" = harga XAU/USD berpotensi NAIK tajam dulu, jangan dikejar buta jika bias utama SELL!
+     * "TWO_WAY_SWEEP_FIRST" = rawan sapuan 2 arah di menit 0–5, tunggu konfirmasi struktur di menit 15+.
+   - Gunakan HANYA data nyata dari DATA PERANGKAT. Jangan mengarang angka.
+   - Jelaskan mengalir seperti partner trading di chat WA (bukan laporan template bernomor kaku).
+
+ATURAN MEMORI:
+- Isi "newMemories" (0–2 item singkat) HANYA jika ada fakta baru yang benar-benar penting diingat untuk hari-hari mendatang (mis. nama panggilan baru, preferensi user, level XAU penting, atau pola jurnal penting). Jangan simpan basa-basi kosong.
+
+Keluarkan HANYA JSON valid:
+{
+  "intent": "SMALL_TALK" | "OUT_OF_SCOPE" | "LIVE_PRICE_CHECK" | "DIRECT_FOLLOWUP" | "FULL_OFFICE",
+  "reply": "Balasan percakapan natural & manusiawi dalam ${isEn ? 'English' : 'Bahasa Indonesia'}",
+  "renamedTo": null | "NamaPanggilanBersih",
+  "directionClarity": "BUY" | "SELL" | "WAIT_MIXED" | "INFO_ONLY",
+  "newMemories": [{"text": "1 kalimat fakta penting", "category": "preference" | "market" | "journal" | "general"}]
+}`;
+
+    const userPrompt = `Bahasa: ${isEn ? 'English' : 'Bahasa Indonesia'}
+Nama asisten saat ini: "${agentName}"
+
+MEMORI JANGKA PANJANG:
+${memoryText}
+
+RIWAYAT OBROLAN TERAKHIR:
+${historyText}
+
+DATA PERANGKAT (hanya baca jika user memang bertanya soal harga/market/jurnal):
+${JSON.stringify(compactContext).slice(0, 13_500)}
+
+PESAN TERBARU USER:
+"${message}"
+
+Keluarkan HANYA JSON valid.`;
+
+    const order: Array<'gemini' | 'groq' | 'openrouter'> = speedHint.likelyHeavyMarket
+      ? ['gemini', 'groq', 'openrouter']
+      : ['groq', 'gemini', 'openrouter'];
+
+    const res = await edgeRunAgentCascade({
+      order,
+      keys,
+      preferDeepGemini: speedHint.likelyHeavyMarket,
+      systemInstruction,
+      userPrompt,
+      expectJson: true,
+      timeoutMs: 9_500,
+      temperature: speedHint.likelyHeavyMarket || speedHint.likelyLivePrice ? 0.35 : 0.7,
+      deadlineMs,
+    });
+
+    const parsed = res.json || {};
+    const rawIntent = String(parsed.intent || 'FULL_OFFICE').toUpperCase();
+    const routeType =
+      rawIntent === 'SMALL_TALK' ||
+      rawIntent === 'OUT_OF_SCOPE' ||
+      rawIntent === 'LIVE_PRICE_CHECK' ||
+      rawIntent === 'DIRECT_FOLLOWUP'
+        ? rawIntent
+        : 'FULL_OFFICE';
+
+    const answer = String(parsed.reply || res.text || '').trim();
+    const llmRename = edgeCleanExtractedAgentName(parsed.renamedTo);
+    const regexRename = edgeExtractNicknameFallback(message);
+    const detectedAgentName = llmRename || regexRename;
+
+    const dirRaw = String(parsed.directionClarity || 'INFO_ONLY').toUpperCase();
+    const directionClarity =
+      dirRaw === 'BUY' || dirRaw === 'SELL' || dirRaw === 'WAIT_MIXED' ? dirRaw : 'INFO_ONLY';
+
+    const rawMem = Array.isArray(parsed.newMemories) ? parsed.newMemories : [];
+    const normalizedMems = rawMem
+      .slice(0, 3)
+      .filter((m: any) => m && typeof m.text === 'string' && m.text.trim().length > 4)
+      .map((m: any) => ({
+        text: String(m.text).trim().slice(0, 220),
+        category:
+          m.category === 'preference' || m.category === 'market' || m.category === 'journal'
+            ? m.category
+            : 'general',
+      }));
+
+    if (
+      detectedAgentName &&
+      !normalizedMems.some(
+        (m: any) => m.category === 'preference' && m.text.toLowerCase().includes(detectedAgentName.toLowerCase())
+      )
+    ) {
+      normalizedMems.unshift({
+        text: `User memanggil asisten dengan nama "${detectedAgentName}".`,
+        category: 'preference',
+      });
+    }
+
+    const traceSummary =
+      res.skippedErrors && res.skippedErrors.length > 0
+        ? `${routeType} via ${fmtProv(res.provider)} (${res.model}) · skip: ${res.skippedErrors.join('; ').slice(0, 120)}`
+        : `${routeType} via ${fmtProv(res.provider)} (${res.model})`;
+
+    return jsonResponse({
+      success: true,
+      routeType,
+      answer,
+      actionCard: {
+        directionClarity,
+        directionLabel: (detectedAgentName || agentName).slice(0, 120),
+        spikeWarning: '-',
+        riskReminder: '-',
+      },
+      workflowTrace: [
+        {
+          stepNumber: 1,
+          role: 'BOSS_DIRECT',
+          divisionName: `${detectedAgentName || agentName} (Single-Pass)`,
+          provider: res.provider,
+          model: res.model,
+          action:
+            routeType === 'SMALL_TALK'
+              ? isEn
+                ? 'Personal Assistant Chat'
+                : 'Mode Asisten (Santai)'
+              : routeType === 'OUT_OF_SCOPE'
+              ? isEn
+                ? 'Scope Guard'
+                : 'Penjaga Batas Ranah'
+              : routeType === 'LIVE_PRICE_CHECK'
+              ? isEn
+                ? 'Live XAU/USD Lookup'
+                : 'Cek Harga Live'
+              : isEn
+              ? 'Smart Unified Desk Brain'
+              : 'Otak Terpadu (Hemat Kuota)',
+          status: res.skippedErrors && res.skippedErrors.length > 0 ? 'fallback' : 'completed',
+          summary: traceSummary,
+          latencyMs: res.latencyMs,
+        },
+      ],
+      revisionTriggered: false,
+      activeProviders: [fmtProv(res.provider)],
+      detectedAgentName,
+      newMemoryNotes: normalizedMems.slice(0, 3),
+      totalLatencyMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    return jsonResponse(
+      {
+        success: false,
+        answer: '',
+        workflowTrace: [],
+        revisionTriggered: false,
+        activeProviders: [],
+        totalLatencyMs: Date.now() - startedAt,
+        error: `Asisten AI sementara tidak dapat merespons: ${sanitizeEdgeAgentError(err)}`,
+      },
+      502
+    );
+  }
+}
+
+async function handleAgentDeskEndSession(req: Request): Promise<Response> {
+  const startedAt = Date.now();
+  try {
+    const body = (await req.json()) || {};
+    const language: 'id' | 'en' = body.language === 'en' ? 'en' : 'id';
+    const isEn = language === 'en';
+    const history = (Array.isArray(body.history) ? body.history : [])
+      .slice(-24)
+      .filter(
+        (h: any) =>
+          h &&
+          (h.role === 'user' || h.role === 'assistant') &&
+          typeof h.content === 'string' &&
+          h.content.trim().length > 0
+      )
+      .map((h: any) => ({ role: h.role, content: String(h.content).trim().slice(0, 600) }));
+
+    if (history.length === 0) {
+      return jsonResponse({ success: true, sessionSummary: isEn ? 'Empty session closed.' : 'Sesi kosong ditutup.', memoryFacts: [], latencyMs: 1 });
+    }
+
+    const keys = getEdgeAgentDeskKeys();
+    if (keys.geminiKeys.length + keys.groqKeys.length + keys.openRouterKeys.length === 0) {
+      return jsonResponse({ success: false, sessionSummary: '', memoryFacts: [], error: 'No AI key configured.' }, 503);
+    }
+
+    const existingMem = Array.isArray(body.existingMemories)
+      ? body.existingMemories.slice(0, 20).map((m: any) => (typeof m === 'string' ? m : m?.text || '')).filter(Boolean)
+      : [];
+
+    const res = await edgeRunAgentCascade({
+      order: ['groq', 'gemini', 'openrouter'],
+      keys,
+      isBoss: false,
+      systemInstruction: `Kamu adalah MANAJER MEMORI ASISTEN PRIBADI TradeVault.
+Ringkas sesi yang baru selesai menjadi JSON: {"sessionSummary":string,"memoryFacts":[{"text":string,"category":"preference"|"market"|"journal"|"general"}]} (maksimal 3 memoryFacts paling penting, jangan ulangi memori lama atau basa-basi kosong).`,
+      userPrompt: `Bahasa: ${isEn ? 'English' : 'Bahasa Indonesia'}\nMemori lama:\n${existingMem.join('\n') || '(kosong)'}\nTranskrip:\n${history.map((h: any) => `${h.role === 'user' ? 'USER' : 'ASISTEN'}: ${h.content}`).join('\n')}\nKeluarkan HANYA JSON.`,
+      expectJson: true,
+      timeoutMs: 9000,
+    });
+    const parsed = res.json || {};
+    const facts = (Array.isArray(parsed.memoryFacts) ? parsed.memoryFacts : [])
+      .slice(0, 3)
+      .filter((f: any) => f && typeof f.text === 'string' && f.text.trim().length > 4)
+      .map((f: any) => ({
+        text: String(f.text).trim().slice(0, 220),
+        category: f.category === 'preference' || f.category === 'market' || f.category === 'journal' ? f.category : 'general',
+      }));
+
+    return jsonResponse({
+      success: true,
+      sessionSummary: String(parsed.sessionSummary || (isEn ? 'Session archived.' : 'Sesi diarsipkan.')).slice(0, 280),
+      memoryFacts: facts,
+      providerUsed: res.provider,
+      latencyMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    return jsonResponse(
+      { success: false, sessionSummary: '', memoryFacts: [], latencyMs: Date.now() - startedAt, error: sanitizeEdgeAgentError(err) },
+      502
+    );
+  }
+}
+
+async function handleAgentDeskQaDiagnose(req: Request): Promise<Response> {
+  const startedAt = Date.now();
+  try {
+    const body = (await req.json()) || {};
+    const language: 'id' | 'en' = body.language === 'en' ? 'en' : 'id';
+    const isEn = language === 'en';
+    const diagnostics = body.diagnostics && typeof body.diagnostics === 'object' ? body.diagnostics : null;
+    if (!diagnostics) {
+      return jsonResponse({ success: false, error: isEn ? 'Missing diagnostics payload.' : 'Payload diagnostik kosong.' }, 400);
+    }
+    const keys = getEdgeAgentDeskKeys();
+    if (keys.geminiKeys.length + keys.groqKeys.length + keys.openRouterKeys.length === 0) {
+      return jsonResponse({ success: false, error: 'Belum ada API key AI aktif di Supabase Secrets.' }, 503);
+    }
+    const sys = `Kamu adalah DIVISI QA / CLEANING SERVICE ENGINEER untuk TradeVault (Web & Android APK Capacitor).
+Analisis JSON diagnostik + log error secara objektif. Jangan mengarang masalah yang tidak ada di data.
+Keluarkan HANYA JSON valid: {"healthGrade":"HEALTHY"|"WARNING"|"CRITICAL","summary":string,"rootCauses":string[],"recommendedActions":string[]}`;
+    const res = await edgeRunAgentCascade({
+      order: ['groq', 'gemini', 'openrouter'],
+      keys,
+      isBoss: false,
+      systemInstruction: sys,
+      userPrompt: `Bahasa: ${isEn ? 'English' : 'Bahasa Indonesia'}\nData Diagnostik:\n${JSON.stringify(diagnostics).slice(0, 15_000)}\nKeluarkan HANYA JSON.`,
+      expectJson: true,
+      timeoutMs: 11_000,
+    });
+    const parsed = res.json || {};
+    const gradeRaw = String(parsed.healthGrade || 'WARNING').toUpperCase();
+    const healthGrade = gradeRaw === 'HEALTHY' || gradeRaw === 'CRITICAL' ? gradeRaw : 'WARNING';
+    return jsonResponse({
+      success: true,
+      healthGrade,
+      summary: String(parsed.summary || '').slice(0, 600),
+      rootCauses: Array.isArray(parsed.rootCauses) ? parsed.rootCauses.slice(0, 6).map((x: any) => String(x).slice(0, 220)) : [],
+      recommendedActions: Array.isArray(parsed.recommendedActions)
+        ? parsed.recommendedActions.slice(0, 6).map((x: any) => String(x).slice(0, 220))
+        : [],
+      providerUsed: res.provider === 'gemini' ? 'Gemini' : res.provider === 'groq' ? 'Groq' : 'OpenRouter',
+      modelUsed: res.model,
+      latencyMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    return jsonResponse(
+      {
+        success: false,
+        healthGrade: 'WARNING',
+        summary: '',
+        rootCauses: [],
+        recommendedActions: [],
+        latencyMs: Date.now() - startedAt,
+        error: sanitizeEdgeAgentError(err),
+      },
+      502
+    );
   }
 }
 
@@ -2659,14 +3788,31 @@ Deno.serve(async (req: Request) => {
   if (req.method === 'GET' && (path.endsWith('/api/health') || path.endsWith('/tradevault-api'))) {
     const scannerKeys = getScannerGeminiApiKeys();
     const newsKeys = getNewsGeminiApiKeys();
+    const agentKeys = getEdgeAgentDeskKeys();
     return jsonResponse({
       ok: true,
       service: 'tradevault-supabase-edge-api',
+      agentDeskEngine: 'single-pass-v1.3.9',
       geminiConfigured: Boolean(scannerKeys.length > 0 || newsKeys.length > 0),
       scannerGeminiConfigured: scannerKeys.length > 0,
       newsGeminiConfigured: newsKeys.length > 0,
+      groqConfigured: agentKeys.groqKeys.length > 0,
+      openRouterConfigured: agentKeys.openRouterKeys.length > 0,
+      agentDeskReady: Boolean(
+        agentKeys.geminiKeys.length > 0 ||
+          agentKeys.groqKeys.length > 0 ||
+          agentKeys.openRouterKeys.length > 0
+      ),
       apiKeysStrictlySeparated: true,
       scannerModelCascade: SCANNER_MODEL_CASCADE,
+      proxyCapabilities: {
+        polymarket: ALLOWED_PROXY_DOMAINS.includes('gamma-api.polymarket.com'),
+        cftc: ALLOWED_PROXY_DOMAINS.includes('cftc.gov'),
+        twelvedata: ALLOWED_PROXY_DOMAINS.includes('twelvedata.com'),
+        binance:
+          ALLOWED_PROXY_DOMAINS.includes('binance.com') ||
+          ALLOWED_PROXY_DOMAINS.includes('binance.vision'),
+      },
       isMarketOpen: isMarketDayUtc(new Date()),
       timestamp: new Date().toISOString(),
     });
@@ -2690,6 +3836,18 @@ Deno.serve(async (req: Request) => {
 
   if (req.method === 'POST' && path.endsWith('/api/macro-news/fundamental')) {
     return handleFundamentalGoldAnalyze(req);
+  }
+
+  if (req.method === 'POST' && path.endsWith('/api/agent-desk/chat')) {
+    return handleAgentDeskChat(req);
+  }
+
+  if (req.method === 'POST' && path.endsWith('/api/agent-desk/end-session')) {
+    return handleAgentDeskEndSession(req);
+  }
+
+  if (req.method === 'POST' && path.endsWith('/api/agent-desk/qa-diagnose')) {
+    return handleAgentDeskQaDiagnose(req);
   }
 
   return jsonResponse(

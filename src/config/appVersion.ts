@@ -13,11 +13,151 @@ export interface AppVersionEntry {
   summaryEn: string;
 }
 
-export const APP_VERSION = '1.3.0';
-export const APP_CHANGE_CODE = 'VLO-2611-PRO01';
-export const APP_RELEASE_DATE = '2026-11-22';
+declare const __BUILD_GIT_SHA__: string | undefined;
+declare const __BUILD_TIMESTAMP__: string | undefined;
+declare const __BUILD_RUN_NUMBER__: string | undefined;
+declare const __TESSERACT_VERSION__: string | undefined;
+declare const __TESSERACT_CORE_VERSION__: string | undefined;
+
+export const APP_VERSION = '1.3.9';
+export const APP_CHANGE_CODE = 'VLO-2611-SPC12';
+export const APP_RELEASE_DATE = '2026-11-26';
+export const OCR_PIPELINE_VERSION = 'offline-mt5-ocr-v3.2-lossless-png';
+
+export const BUILD_GIT_SHA: string =
+  typeof __BUILD_GIT_SHA__ !== 'undefined' && __BUILD_GIT_SHA__ ? __BUILD_GIT_SHA__ : 'dev-local';
+export const BUILD_TIMESTAMP: string =
+  typeof __BUILD_TIMESTAMP__ !== 'undefined' && __BUILD_TIMESTAMP__
+    ? __BUILD_TIMESTAMP__
+    : APP_RELEASE_DATE;
+export const BUILD_RUN_NUMBER: string =
+  typeof __BUILD_RUN_NUMBER__ !== 'undefined' && __BUILD_RUN_NUMBER__
+    ? __BUILD_RUN_NUMBER__
+    : 'local';
+export const OCR_ENGINE_NAME = 'tesseract.js (Local WASM LSTM)';
+export const OCR_ENGINE_VERSION: string =
+  typeof __TESSERACT_VERSION__ !== 'undefined' && __TESSERACT_VERSION__
+    ? `${__TESSERACT_VERSION__} (core ${
+        typeof __TESSERACT_CORE_VERSION__ !== 'undefined' && __TESSERACT_CORE_VERSION__
+          ? __TESSERACT_CORE_VERSION__
+          : '7.0.0'
+      })`
+    : '7.0.0 (core 7.0.0)';
+
+export interface AppBuildIdentity {
+  appVersion: string;
+  changeCode: string;
+  releaseDate: string;
+  gitCommitSha: string;
+  buildTimestamp: string;
+  ciRunNumber: string;
+  ocrEngine: string;
+  ocrEngineVersion: string;
+  ocrPipelineVersion: string;
+}
+
+export function getAppBuildIdentity(): AppBuildIdentity {
+  return {
+    appVersion: APP_VERSION,
+    changeCode: APP_CHANGE_CODE,
+    releaseDate: APP_RELEASE_DATE,
+    gitCommitSha: BUILD_GIT_SHA,
+    buildTimestamp: BUILD_TIMESTAMP,
+    ciRunNumber: BUILD_RUN_NUMBER,
+    ocrEngine: OCR_ENGINE_NAME,
+    ocrEngineVersion: OCR_ENGINE_VERSION,
+    ocrPipelineVersion: OCR_PIPELINE_VERSION,
+  };
+}
 
 export const APP_VERSION_HISTORY: AppVersionEntry[] = [
+  {
+    version: '1.3.9',
+    changeCode: 'VLO-2611-SPC12',
+    date: '2026-11-26',
+    titleId: 'Tanya AI Single-Pass Anti-Timeout, Panggilan Bersih & Bahasa Fallback Manusiawi',
+    titleEn: 'Single-Pass Anti-Timeout AI Desk, Clean Nicknames & Humanized Fallback',
+    summaryId:
+      'Mengupgrade Tanya AI (server lokal & Supabase Edge Function) menjadi Single-Pass Smart Assistant dengan batas waktu global 18,5 dtk, fast circuit-breaker (hemat kuota 3–5×), jalur cepat 7,5 dtk khusus cek harga XAU/USD, pembersih partikel panggilan Indonesia ("Wowo yaa" -> "Wowo"), auto-sync latar belakang khusus harga live tanpa tabrakan AI, serta mesin fallback lokal berbahasa manusiawi sesuai persona.',
+    summaryEn:
+      'Upgraded Tanya AI (local server & Supabase Edge Function) to a Single-Pass Smart Assistant with an 18.5s global deadline, fast circuit-breaker (3–5x lower quota usage), 7.5s fast-fail live XAU/USD price lane, Indonesian particle cleanup for agent nicknames, zero-AI background price sync, and natural persona-matched local fallback replies.',
+  },
+  {
+    version: '1.3.8',
+    changeCode: 'VLO-2611-JRV11',
+    date: '2026-11-26',
+    titleId: "Asisten Pribadi AI ala Jarvis/Alfred, Live XAUUSD & Memori Offline",
+    titleEn: "Asisten Pribadi AI ala Jarvis/Alfred, Live XAUUSD & Memori Offline",
+    summaryId: "Menambahkan 4-jalur router cerdas (basa-basi & ganti panggilan nama tanpa bocor data market, penjaga batas ranah, cek harga XAU/USD real-time dari Vela, serta auto-sync latar belakang berita/fundamental/Polymarket), memori jangka panjang offline (maks. 25 catatan + pengelola di menu Tema), serta tombol Akhiri Sesi & Auto-New-Day rollover (sinkron penuh dengan Supabase Edge Function).",
+    summaryEn: "Menambahkan 4-jalur router cerdas (basa-basi & ganti panggilan nama tanpa bocor data market, penjaga batas ranah, cek harga XAU/USD real-time dari Vela, serta auto-sync latar belakang berita/fundamental/Polymarket), memori jangka panjang offline (maks. 25 catatan + pengelola di menu Tema), serta tombol Akhiri Sesi & Auto-New-Day rollover (sinkron penuh dengan Supabase Edge Function).",
+  },
+  {
+    version: '1.3.7',
+    changeCode: 'VLO-2611-AGT10',
+    date: '2026-11-25',
+    titleId: 'Multi-Agent News + ACC Boss Gemini, Chat AI Kustom (WA/IG DM) & Developer Console Tersembunyi',
+    titleEn: 'Multi-Agent News + Boss Gemini ACC, Customizable AI Messenger & Hidden Developer Console',
+    summaryId:
+      'Membagi beban analisis Trade News (Groq) & Fundamental Emas (OpenRouter) dengan validasi ACC wajib Boss Gemini; meningkatkan Tanya AI menjadi asisten pribadi ala Jarvis/Alfred dengan 4-jalur router cerdas (basa-basi & panggilan nama tanpa bocor data market, tolak sopan di luar ranah, cek harga XAU/USD real-time dari Vela, dan auto-sync background berita/fundamental/Polymarket), memori jangka panjang offline (hingga 25 fakta), tombol Akhiri Sesi + Auto-New-Day rollover, serta Developer Console tersembunyi (7x tap + kode seri, Cleaning Service, Perekam Error & Analisa AI QA).',
+    summaryEn:
+      'Distributed Trade News (Groq) & Fundamental Gold (OpenRouter) analysis with mandatory Boss Gemini ACC sign-off; upgraded Tanya AI into a Jarvis/Alfred-style personal assistant featuring a 4-path intent router (zero-leak small talk & nickname detection, polite out-of-scope guard, real-time Vela XAU/USD spot lookup, and background Trade News/Fundamental/Polymarket auto-sync), persistent offline long-term memory (up to 25 items), Akhiri Sesi / Auto-New-Day rollover, and hidden Developer Console (7x tap + serial code, safe Cleaning Service, Error Recorder & AI QA Diagnosis).',
+  },
+  {
+    version: '1.3.6',
+    changeCode: 'VLO-2611-APK09',
+    date: '2026-11-25',
+    titleId: 'Vela Replay Chart, Auto-Fullscreen, APK Cache-Purge Native & Diagnostik Lengkap',
+    titleEn: 'Vela Replay Chart, Auto-Fullscreen, Native APK Cache-Purge & Full Diagnostics',
+    summaryId:
+      'Menghapus Light Chart dan menjadikan Vela Replay (Twelve Data + Binance fallback + Bar Replay + Sesi Kustom + Auto-Fullscreen) sebagai chart kedua, menambahkan pembersihan HTTP cache WebView native saat upgrade APK, proxy fallback Binance/TwelveData, sinkronisasi 3-modul Makro/Fundamental/Cycle, serta panel Diagnostik Sistem APK di Pengaturan.',
+    summaryEn:
+      'Removed Light Chart in favor of Vela Replay (Twelve Data + Binance proxy fallback + Bar Replay + customizable Sessions + Auto-Fullscreen), added native Android WebView HTTP cache purge on APK upgrade, 3-module Macro/Fundamental/Cycle synchronization, and full APK System Diagnostics in Settings.',
+  },
+  {
+    version: '1.3.5',
+    changeCode: 'VLO-2611-AUD08',
+    date: '2026-11-24',
+    titleId: "Forensic Offline OCR diagnostics, build identity & Android high-res lossless pipeline",
+    titleEn: "Forensic Offline OCR diagnostics, build identity & Android high-res lossless pipeline",
+    summaryId: "Added deterministic build identity (Git SHA, timestamp, CI run, OCR pipeline version), forensic OCR diagnostics inspector, full legacy Service Worker & OCR CacheStorage purge with forced reload on upgrade, lossless high-res PNG preprocessing for tall Android MT5 screenshots, and restored multi-pass completeness gate.",
+    summaryEn: "Added deterministic build identity (Git SHA, timestamp, CI run, OCR pipeline version), forensic OCR diagnostics inspector, full legacy Service Worker & OCR CacheStorage purge with forced reload on upgrade, lossless high-res PNG preprocessing for tall Android MT5 screenshots, and restored multi-pass completeness gate.",
+  },
+  {
+    version: '1.3.4',
+    changeCode: 'VLO-2611-SCN07',
+    date: '2026-11-24',
+    titleId: "Fix APK Offline OCR eng.traineddata tanpa .gz & anti-hang guard",
+    titleEn: "Fix APK Offline OCR eng.traineddata tanpa .gz & anti-hang guard",
+    summaryId: "Gunakan eng.traineddata tidak terkompresi (gzip: false) agar kompatibel dengan Android AAPT2 serta tambah errorHandler dan timeout guard Tesseract",
+    summaryEn: "Gunakan eng.traineddata tidak terkompresi (gzip: false) agar kompatibel dengan Android AAPT2 serta tambah errorHandler dan timeout guard Tesseract",
+  },
+  {
+    version: '1.3.3',
+    changeCode: 'VLO-2611-SCN06',
+    date: '2026-11-24',
+    titleId: "Purge SW cache APK & akselerasi SIMD + Parallel OCR",
+    titleEn: "Purge SW cache APK & akselerasi SIMD + Parallel OCR",
+    summaryId: "Hapus jebakan cache Service Worker lama di APK, aktifkan WebAssembly SIMD, Blob zero-split, dan eksekusi OCR paralel",
+    summaryEn: "Hapus jebakan cache Service Worker lama di APK, aktifkan WebAssembly SIMD, Blob zero-split, dan eksekusi OCR paralel",
+  },
+  {
+    version: '1.3.2',
+    changeCode: 'VLO-2611-SCN05',
+    date: '2026-11-24',
+    titleId: "Optimasi kecepatan Scan APK (Offline & Online)",
+    titleEn: "Optimasi kecepatan Scan APK (Offline & Online)",
+    summaryId: "Mempercepat OCR Offline 4-5x di HP (2.1MP single-pass early exit, non-IndexedDB worker init) dan mempercepat fallback Online Scan",
+    summaryEn: "Mempercepat OCR Offline 4-5x di HP (2.1MP single-pass early exit, non-IndexedDB worker init) dan mempercepat fallback Online Scan",
+  },
+  {
+    version: '1.3.1',
+    changeCode: 'VLO-2611-MAC04',
+    date: '2026-11-24',
+    titleId: "Sinkronisasi Fundamental 3-Fitur & Real-Time Actual APK",
+    titleEn: "Sinkronisasi Fundamental 3-Fitur & Real-Time Actual APK",
+    summaryId: "Penyeragaman warna XAU/USD, ekstraksi actual PMI real-time, Intraday Tactical Overlay, dan dukungan native APK TradingView.",
+    summaryEn: "Penyeragaman warna XAU/USD, ekstraksi actual PMI real-time, Intraday Tactical Overlay, dan dukungan native APK TradingView.",
+  },
   {
     version: '1.3.0',
     changeCode: 'VLO-2611-PRO01',

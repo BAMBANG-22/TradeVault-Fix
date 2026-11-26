@@ -205,7 +205,13 @@ export function buildXauSmartHeatmap(
     const absDxy = Math.abs(dxyPct);
     const effect: FundamentalDirectionBias =
       dxyPct <= -0.08 ? 'BULLISH' : dxyPct >= 0.08 ? 'BEARISH' : 'NEUTRAL';
-    const intensity = effect === 'NEUTRAL' ? 0 : getIntensityFromMagnitude(absDxy, 0.25, 0.55);
+    const baseIntensity = effect === 'NEUTRAL' ? 0 : getIntensityFromMagnitude(absDxy, 0.25, 0.55);
+    const hasDxyDistortion = Boolean(
+      effect === 'BEARISH' && fundamental?.tacticalOverlay?.dxyDistortionDetected
+    );
+    const intensity: 0 | 1 | 2 | 3 = hasDxyDistortion
+      ? (Math.max(1, baseIntensity - 1) as 1 | 2 | 3)
+      : baseIntensity;
     tiles.push({
       id: 'dxy',
       labelId: 'DXY (Dolar AS)',
@@ -213,32 +219,42 @@ export function buildXauSmartHeatmap(
       sourceTagId: 'Makro',
       sourceTagEn: 'Macro',
       metricValue: dxyPrice.toFixed(2),
-      metricSub: formatSigned(dxyPct),
+      metricSub: hasDxyDistortion
+        ? `${formatSigned(dxyPct)} · EUR Skew`
+        : formatSigned(dxyPct),
       xauEffect: effect,
       intensity,
       impactShortId:
         effect === 'BULLISH'
           ? 'Dukung Bullish'
           : effect === 'BEARISH'
-          ? 'Tekan Bearish'
+          ? hasDxyDistortion
+            ? 'Tekan · Distorsi EUR'
+            : 'Tekan Bearish'
           : 'Netral · Datar',
       impactShortEn:
         effect === 'BULLISH'
           ? 'Bullish Tailwind'
           : effect === 'BEARISH'
-          ? 'Bearish Headwind'
+          ? hasDxyDistortion
+            ? 'Headwind · EUR Skew'
+            : 'Bearish Headwind'
           : 'Neutral · Flat',
       detailId:
         effect === 'BULLISH'
           ? `DXY melemah ${formatSigned(dxyPct)} ke ${dxyPrice.toFixed(2)}. Pelemahan Dolar AS membuat harga emas lebih murah bagi pembeli global dan membuka ruang penguatan XAU/USD.`
           : effect === 'BEARISH'
-          ? `DXY menguat ${formatSigned(dxyPct)} ke ${dxyPrice.toFixed(2)}. Penguatan Dolar AS biasanya menjadi rem alami bagi reli XAU/USD dan memperbesar risiko rejection.`
+          ? hasDxyDistortion
+            ? `DXY menguat ${formatSigned(dxyPct)} ke ${dxyPrice.toFixed(2)}, namun sebagian didorong melemahnya EUR/USD sementara yield obligasi AS belum mengonfirmasi — daya tekan bearish pada Emas relatif lebih lunak.`
+            : `DXY menguat ${formatSigned(dxyPct)} ke ${dxyPrice.toFixed(2)}. Penguatan Dolar AS biasanya menjadi rem alami bagi reli XAU/USD dan memperbesar risiko rejection.`
           : `DXY bergerak sempit (${formatSigned(dxyPct)}) di ${dxyPrice.toFixed(2)}, sehingga dorongan dari sisi mata uang Dolar sementara netral.`,
       detailEn:
         effect === 'BULLISH'
           ? `DXY slipped ${formatSigned(dxyPct)} to ${dxyPrice.toFixed(2)}. A softer US Dollar lowers Gold’s global cost and supports XAU/USD upside.`
           : effect === 'BEARISH'
-          ? `DXY rose ${formatSigned(dxyPct)} to ${dxyPrice.toFixed(2)}. Dollar strength creates a direct headwind for Gold rallies.`
+          ? hasDxyDistortion
+            ? `DXY rose ${formatSigned(dxyPct)} to ${dxyPrice.toFixed(2)}, but strength is partly skewed by EUR/USD weakness without matching US Treasury yield confirmation — softening its near-term drag on Gold.`
+            : `DXY rose ${formatSigned(dxyPct)} to ${dxyPrice.toFixed(2)}. Dollar strength creates a direct headwind for Gold rallies.`
           : `DXY is trading flat (${formatSigned(dxyPct)}) around ${dxyPrice.toFixed(2)}, leaving USD pressure neutral for now.`,
       isAvailable: true,
     });
@@ -879,6 +895,10 @@ export function buildXauSmartHeatmap(
   const lastSyncedAt =
     useMacroLive && macroSnap?.analyzedAt ? macroSnap.analyzedAt : fundamental.analyzedAt;
 
+  const tact = fundamental?.tacticalOverlay;
+  const tactSuffixId = tact && tact.status !== 'NORMAL' ? ` Catatan taktis 1D: ${tact.detailId}` : '';
+  const tactSuffixEn = tact && tact.status !== 'NORMAL' ? ` 1D tactical note: ${tact.detailEn}` : '';
+
   return {
     tiles,
     bullishCount,
@@ -889,8 +909,8 @@ export function buildXauSmartHeatmap(
     verdict,
     verdictTitleId: verdictCopy[verdict].titleId,
     verdictTitleEn: verdictCopy[verdict].titleEn,
-    verdictSummaryId: verdictCopy[verdict].summaryId,
-    verdictSummaryEn: verdictCopy[verdict].summaryEn,
+    verdictSummaryId: `${verdictCopy[verdict].summaryId}${tactSuffixId}`,
+    verdictSummaryEn: `${verdictCopy[verdict].summaryEn}${tactSuffixEn}`,
     syncedSourcesId: activeSourcesId.join(' · '),
     syncedSourcesEn: activeSourcesEn.join(' · '),
     lastSyncedAt,

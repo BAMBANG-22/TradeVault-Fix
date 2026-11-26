@@ -8,6 +8,7 @@ import { AppSettings } from '../../types/settings';
 import {
   computePlannedRiskReward,
   computeRealizedRMultiple,
+  deriveHonestRiskAmountFromTrade,
   formatCurrency,
   formatPlannedRR,
   formatRMultiple,
@@ -605,7 +606,17 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
 
   const isProfit = isClosed && trade.netProfit >= 0.01;
   const isLoss = isClosed && trade.netProfit <= -0.01;
-  const realizedR = isClosed ? computeRealizedRMultiple(trade) : null;
+  const realizedR = isClosed ? computeRealizedRMultiple(trade, settings) : null;
+  const effectiveActualRisk =
+    trade.riskAmount > 0
+      ? trade.riskAmount
+      : deriveHonestRiskAmountFromTrade(trade, settings) ?? 0;
+  const effectiveActualRiskPercentage =
+    trade.riskPercentage > 0
+      ? trade.riskPercentage
+      : effectiveActualRisk > 0 && settings.startingBalance > 0
+      ? Number(((effectiveActualRisk / settings.startingBalance) * 100).toFixed(2))
+      : 0;
   const compliance = evaluateTradeCompliance(trade, settings);
   const { cleanNotes: cleanExecutionNotes } = parseExecutionAdherenceTag(trade.executionNotes);
   const parsedEvalView = parseStructuredEvaluation(trade.postTradeEvaluation);
@@ -1899,9 +1910,9 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
                     ? formatDynamic(planLotMetrics.riskAmount)
                     : formatCurrency(planLotMetrics.riskAmount, settings)
                   : preferredCurrency === 'IDR'
-                  ? formatDynamic(trade.riskAmount)
-                  : formatCurrency(trade.riskAmount, settings)}
-                {trade.riskPercentage > 0 ? ` (${trade.riskPercentage.toFixed(2)}%)` : ''}
+                  ? formatDynamic(effectiveActualRisk)
+                  : formatCurrency(effectiveActualRisk, settings)}
+                {effectiveActualRiskPercentage > 0 ? ` (${effectiveActualRiskPercentage.toFixed(2)}%)` : ''}
               </span>
             </div>
 
@@ -2152,9 +2163,9 @@ export const TradeDetailModal: React.FC<TradeDetailModalProps> = ({
                   </span>
                   <span className="mt-1 block text-base font-semibold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
                     {preferredCurrency === 'IDR'
-                      ? formatDynamic(trade.riskAmount)
-                      : formatCurrency(trade.riskAmount, settings)}
-                    {trade.riskPercentage > 0 ? ` (${trade.riskPercentage.toFixed(2)}%)` : ''}
+                      ? formatDynamic(effectiveActualRisk)
+                      : formatCurrency(effectiveActualRisk, settings)}
+                    {effectiveActualRiskPercentage > 0 ? ` (${effectiveActualRiskPercentage.toFixed(2)}%)` : ''}
                   </span>
                 </div>
 

@@ -330,15 +330,111 @@ export function computePlannedRiskReward(
   return Number(ratio.toFixed(2));
 }
 
+function resolveFallbackPipSpec(
+  symbolRaw?: string,
+  settings?: Partial<AppSettings>
+): { pipSize: number; pipValuePerStandardLot: number } {
+  const cleanSymbol = (symbolRaw || 'XAUUSD').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  if (
+    cleanSymbol.startsWith('EURUSD') ||
+    cleanSymbol.startsWith('GBPUSD') ||
+    cleanSymbol.startsWith('AUDUSD') ||
+    cleanSymbol.startsWith('NZDUSD') ||
+    cleanSymbol.startsWith('USDCAD') ||
+    cleanSymbol.startsWith('USDCHF')
+  ) {
+    return { pipSize: 0.0001, pipValuePerStandardLot: 10.0 };
+  }
+  if (cleanSymbol.startsWith('USDJPY') || cleanSymbol.endsWith('JPY')) {
+    return { pipSize: 0.01, pipValuePerStandardLot: 10.0 };
+  }
+  if (cleanSymbol.startsWith('BTC')) {
+    return { pipSize: 1.0, pipValuePerStandardLot: 1.0 };
+  }
+  if (cleanSymbol.startsWith('US30') || cleanSymbol.startsWith('NAS100')) {
+    return { pipSize: 1.0, pipValuePerStandardLot: 10.0 };
+  }
+
+  const pipSize =
+    typeof settings?.xauusdPipSize === 'number' &&
+    Number.isFinite(settings.xauusdPipSize) &&
+    settings.xauusdPipSize > 0
+      ? settings.xauusdPipSize
+      : 0.1;
+  const contractSize =
+    typeof settings?.xauusdContractSize === 'number' &&
+    Number.isFinite(settings.xauusdContractSize) &&
+    settings.xauusdContractSize > 0
+      ? settings.xauusdContractSize
+      : 100;
+  const pipVal001 =
+    typeof settings?.xauusdPipValuePer001Lot === 'number' &&
+    Number.isFinite(settings.xauusdPipValuePer001Lot) &&
+    settings.xauusdPipValuePer001Lot > 0
+      ? settings.xauusdPipValuePer001Lot
+      : 0.1;
+  const pipValuePerStandardLot = Number((pipVal001 * contractSize).toFixed(4));
+  return { pipSize, pipValuePerStandardLot };
+}
+
+/**
+ * Derives monetary Risk Amount honestly from Entry Price, Stop Loss, Lot Size, and Position
+ * when a trade has valid SL geometry but stored riskAmount is 0/missing (e.g. older scanned trades).
+ * Returns null if SL is absent, non-positive, or directionally invalid.
+ */
+export function deriveHonestRiskAmountFromTrade(
+  trade: Partial<Trade>,
+  settings?: Partial<AppSettings>
+): number | null {
+  const entry = Number(trade.entryPrice);
+  const sl = Number(trade.stopLoss);
+  const lot = Number(trade.lotSize);
+
+  if (
+    !Number.isFinite(entry) ||
+    entry <= 0 ||
+    !Number.isFinite(sl) ||
+    sl <= 0 ||
+    !Number.isFinite(lot) ||
+    lot <= 0
+  ) {
+    return null;
+  }
+
+  const pos = String(trade.position || 'BUY').toUpperCase() === 'SELL' ? 'SELL' : 'BUY';
+  if (pos === 'BUY' && sl >= entry) {
+    return null;
+  }
+  if (pos === 'SELL' && sl <= entry) {
+    return null;
+  }
+
+  const { pipSize, pipValuePerStandardLot } = resolveFallbackPipSpec(trade.instrument, settings);
+  if (!(pipSize > 0) || !(pipValuePerStandardLot > 0)) {
+    return null;
+  }
+
+  const slDistancePrice = Math.abs(entry - sl);
+  const slDistancePips = slDistancePrice / pipSize;
+  const derivedRisk = Number((slDistancePips * lot * pipValuePerStandardLot).toFixed(2));
+  return Number.isFinite(derivedRisk) && derivedRisk > 0 ? derivedRisk : null;
+}
+
 /**
  * Computes Realized R-Multiple for a closed trade.
  * 1. If a valid positive riskAmount (> 0) is available, computes Net Profit / riskAmount.
  *    Losing trades remain negative (e.g. -1R), winning trades positive (+2R), breakeven 0R.
  * 2. If riskAmount is unavailable, falls back to stored trade.rMultiple ONLY after validating
  *    finite numeric value and sign consistency with Net Profit.
- * 3. Returns null if no valid R-Multiple can be determined.
+ * 3. If both riskAmount and rMultiple are unavailable, honestly derives risk from
+ *    valid (entryPrice, stopLoss, lotSize, position) when present.
+ * 4. Returns null if no valid R-Multiple can be determined (displayed as N/A).
  */
-export function computeRealizedRMultiple(trade: Partial<Trade>): number | null {
+export function computeRealizedRMultiple(
+  trade: Partial<Trade>,
+  settings?: Partial<AppSettings>
+): number | null {
   const net = computeTradeNetProfit(trade);
   const risk = Number(trade.riskAmount);
 
@@ -361,19 +457,26 @@ export function computeRealizedRMultiple(trade: Partial<Trade>): number | null {
       if (Math.abs(net) < 0.01) {
         return 0;
       }
-      // A non-zero P/L trade with storedR === 0 and no positive riskAmount has no valid R data
-      if (storedR === 0) {
-        return null;
-      }
       // Enforce sign consistency with realized Net Profit (protects against legacy Math.abs bugs)
-      if (net <= -0.01 && storedR > 0) {
-        return Number((-Math.abs(storedR)).toFixed(2));
+      if (storedR !== 0) {
+        if (net <= -0.01 && storedR > 0) {
+          return Number((-Math.abs(storedR)).toFixed(2));
+        }
+        if (net >= 0.01 && storedR < 0) {
+          return Number(Math.abs(storedR).toFixed(2));
+        }
+        return Number(storedR.toFixed(2));
       }
-      if (net >= 0.01 && storedR < 0) {
-        return Number(Math.abs(storedR).toFixed(2));
-      }
-      return Number(storedR.toFixed(2));
     }
+  }
+
+  const derivedRisk = deriveHonestRiskAmountFromTrade(trade, settings);
+  if (derivedRisk !== null && derivedRisk > 0) {
+    if (Math.abs(net) < 0.01) {
+      return 0;
+    }
+    const r = net / derivedRisk;
+    return Number.isFinite(r) ? Number(r.toFixed(2)) : null;
   }
 
   return null;
@@ -1009,8 +1112,8 @@ export function calculatePerformance(
       currentStreakCount = 0;
     }
 
-    // Realized R-Multiple calculation (strictly prioritizes valid riskAmount > 0, then validated stored rMultiple)
-    const realizedR = computeRealizedRMultiple(t);
+    // Realized R-Multiple calculation (prioritizes riskAmount > 0, then stored rMultiple, then valid SL geometry)
+    const realizedR = computeRealizedRMultiple(t, settings);
     if (realizedR !== null) {
       sumRR += realizedR;
       countWithRR++;

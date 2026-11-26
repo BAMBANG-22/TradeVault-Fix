@@ -66,6 +66,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     detail: tr('Detail Transaksi', 'Trade Detail'),
     analytics: tr('Analitik', 'Analytics'),
     risk: tr('Manajemen Risiko', 'Risk Management'),
+    'ai-desk': tr('Tanya AI', 'AI Desk'),
     'market-chart': tr('Chart Pasar', 'Market Chart'),
     'macro-news': tr('Berita Trading', 'Trade News'),
     'fundamental-gold': tr('Fundamental Emas', 'Fundamental Gold'),
@@ -75,6 +76,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
   const desktopSectionTitle = desktopSectionLabels[activeTab] || 'VLO';
   const isSecondaryMenuTab =
+    activeTab === 'ai-desk' ||
     activeTab === 'market-chart' ||
     activeTab === 'macro-news' ||
     activeTab === 'fundamental-gold' ||

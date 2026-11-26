@@ -22,6 +22,7 @@ import {
   Sun,
   Settings,
   Layers,
+  MessageSquareText,
 } from 'lucide-react';
 import { AppSettings } from '../../types/settings';
 import { useTheme } from '../../utils/theme';
@@ -97,6 +98,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({
   ];
 
   const insightMenuItems = [
+    { id: 'ai-desk', label: tr('Tanya AI', 'AI Desk'), icon: MessageSquareText },
     { id: 'market-chart', label: tr('Chart Pasar', 'Market Chart'), icon: CandlestickChart },
     { id: 'macro-news', label: tr('Berita Trading', 'Trade News'), icon: Newspaper },
     { id: 'fundamental-gold', label: tr('Fundamental Emas', 'Fundamental Gold'), icon: Globe },

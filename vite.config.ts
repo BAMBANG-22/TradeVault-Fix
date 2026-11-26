@@ -1,15 +1,53 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 import {VitePWA} from 'vite-plugin-pwa';
 
+function resolveBuildGitSha(): string {
+  const envSha = (process.env.VITE_BUILD_GIT_SHA || process.env.GITHUB_SHA || '').trim();
+  if (envSha) return envSha.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short=7 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString('utf8')
+      .trim() || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function readInstalledPkgVersion(pkgName: string): string {
+  try {
+    const pkgPath = path.resolve(__dirname, 'node_modules', pkgName, 'package.json');
+    const parsed = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return String(parsed?.version || 'unknown');
+  } catch {
+    return 'unknown';
+  }
+}
+
 export default defineConfig(() => {
+  const buildGitSha = resolveBuildGitSha();
+  const buildTimestamp = (process.env.VITE_BUILD_TIMESTAMP || new Date().toISOString()).trim();
+  const buildRunNumber = (process.env.VITE_BUILD_RUN_NUMBER || process.env.GITHUB_RUN_NUMBER || 'local').trim();
+  const tesseractVersion = readInstalledPkgVersion('tesseract.js');
+  const tesseractCoreVersion = readInstalledPkgVersion('tesseract.js-core');
+
   return {
+    define: {
+      __BUILD_GIT_SHA__: JSON.stringify(buildGitSha),
+      __BUILD_TIMESTAMP__: JSON.stringify(buildTimestamp),
+      __BUILD_RUN_NUMBER__: JSON.stringify(buildRunNumber),
+      __TESSERACT_VERSION__: JSON.stringify(tesseractVersion),
+      __TESSERACT_CORE_VERSION__: JSON.stringify(tesseractCoreVersion),
+    },
     plugins: [
       react(),
       tailwindcss(),
       VitePWA({
+        selfDestroying: true,
         registerType: 'autoUpdate',
         includeAssets: [
           'favicon.svg',
@@ -19,7 +57,9 @@ export default defineConfig(() => {
           'pwa-maskable-512x512.png',
           'ocr/worker.min.js',
           'ocr/tesseract-core-lstm.wasm.js',
-          'ocr/eng.traineddata.gz',
+          'ocr/tesseract-core-simd-lstm.wasm.js',
+          'ocr/tesseract-core-relaxedsimd-lstm.wasm.js',
+          'ocr/eng.traineddata',
         ],
         manifest: {
           id: '/',
@@ -102,15 +142,26 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module',
         },
       }),
     ],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'lucide-react',
+      ],
     },
     server: {
       host: '0.0.0.0',

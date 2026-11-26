@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sun,
   Moon,
@@ -37,16 +37,28 @@ import {
   BookOpen,
   ClipboardCheck,
   Plus,
+  Terminal,
+  Copy,
+  EyeOff,
+  Lock,
+  Sparkles,
+  Wrench,
+  ShieldAlert,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import { AppSettings } from '../../types/settings';
 import { Trade } from '../../types/trade';
 import {
   resolveConfiguredAccounts,
+  resolveAccountScopedSettings,
+  filterTradesByAccount,
   getActivePlaybooks,
   getActiveChecklist,
 } from '../../utils/journalExtras';
 import { PWAInstallButton } from '../layout/PWAInstallButton';
-import { formatCurrency } from '../../utils/calculations';
+import { formatCurrency, calculatePerformance } from '../../utils/calculations';
+import { calculateCapitalGrowthBreakdown } from '../../utils/currencyRate';
 import { isDemoTrade, DEMO_TRADES } from '../../utils/demoData';
 import { mergeTradesDatasets } from '../../utils/supabaseSync';
 import {
@@ -83,7 +95,30 @@ import {
   APP_VERSION,
   APP_RELEASE_DATE,
   APP_VERSION_HISTORY,
+  BUILD_GIT_SHA,
+  getAppBuildIdentity,
 } from '../../config/appVersion';
+import {
+  clearMt5OcrScanDiagnostics,
+  getRecentMt5OcrScanDiagnostics,
+  Mt5OcrScanDiagnostic,
+  OfflineOcrRuntimeProbe,
+  probeOfflineOcrRuntimeEnvironment,
+} from '../../utils/offlineMt5Ocr';
+import {
+  runFullApkSystemProbe,
+  type FullApkSystemProbeResult,
+} from '../../utils/apkDiagnostics';
+import {
+  verifyDeveloperPasscode,
+  getAppDiagnosticEvents,
+  clearAppDiagnosticEvents,
+  runSafeCleaningService,
+  runAiQaDiagnosticsAnalysis,
+  type AppDiagnosticEvent,
+  type CleaningServiceReport,
+  type AiQaDiagnosisClientResult,
+} from '../../utils/devDiagnosticsStore';
 
 interface SettingsViewProps {
   settings: AppSettings;
@@ -105,6 +140,7 @@ interface SettingsViewProps {
   onReloadFromCloud?: () => void;
   isDeveloperMode?: boolean;
   onUnlockDeveloperMode?: () => void;
+  onLockDeveloperMode?: () => void;
   onUserUpdated?: (user: any) => void;
   onOpenPlaybook?: () => void;
   onOpenAccountSwitcher?: () => void;
@@ -130,6 +166,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onReloadFromCloud,
   isDeveloperMode = false,
   onUnlockDeveloperMode,
+  onLockDeveloperMode,
   onUserUpdated,
   onOpenPlaybook,
   onOpenAccountSwitcher,
@@ -160,13 +197,204 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [backendHealth, setBackendHealth] = useState<StandaloneBackendHealthResult | null>(null);
   const [isNewsCycleOffline, setIsNewsCycleOffline] = useState(() => isNewsCycleOfflineMode());
   const [devTapCount, setDevTapCount] = useState(0);
+  const devLastTapRef = useRef<number>(0);
+  const [isDevPasscodeModalOpen, setIsDevPasscodeModalOpen] = useState(false);
+  const [devPasscodeInput, setDevPasscodeInput] = useState('');
+  const [devPasscodeError, setDevPasscodeError] = useState<string | null>(null);
+  const [isVerifyingPasscode, setIsVerifyingPasscode] = useState(false);
+
   const [showVersionHistory, setShowVersionHistory] = useState(false);
+  const [ocrRuntimeProbe, setOcrRuntimeProbe] = useState<OfflineOcrRuntimeProbe | null>(null);
+  const [apkSystemProbe, setApkSystemProbe] = useState<FullApkSystemProbeResult | null>(null);
+  const [isProbingOcr, setIsProbingOcr] = useState(false);
+  const [ocrScanHistory, setOcrScanHistory] = useState<Mt5OcrScanDiagnostic[]>(() =>
+    getRecentMt5OcrScanDiagnostics()
+  );
+  const [recentErrorLogs, setRecentErrorLogs] = useState<AppDiagnosticEvent[]>(() =>
+    getAppDiagnosticEvents()
+  );
+  const [isCleaningRunning, setIsCleaningRunning] = useState(false);
+  const [cleaningReport, setCleaningReport] = useState<CleaningServiceReport | null>(null);
+  const [isRunningAiQa, setIsRunningAiQa] = useState(false);
+  const [aiQaResult, setAiQaResult] = useState<AiQaDiagnosisClientResult | null>(null);
+  const [aiQaError, setAiQaError] = useState<string | null>(null);
+  const [copiedOcrReport, setCopiedOcrReport] = useState(false);
+  const appBuildIdentity = useMemo(() => getAppBuildIdentity(), []);
   const [isChecklistEditorOpen, setIsChecklistEditorOpen] = useState(false);
   const [newChecklistLabel, setNewChecklistLabel] = useState('');
+
+  const handleRunOcrRuntimeProbe = async () => {
+    setIsProbingOcr(true);
+    try {
+      const [probe, apkProbe] = await Promise.all([
+        probeOfflineOcrRuntimeEnvironment(),
+        runFullApkSystemProbe(),
+      ]);
+      setOcrRuntimeProbe(probe);
+      setApkSystemProbe(apkProbe);
+      setOcrScanHistory(getRecentMt5OcrScanDiagnostics());
+      setRecentErrorLogs(getAppDiagnosticEvents());
+    } finally {
+      setIsProbingOcr(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isDeveloperMode) {
+      setRecentErrorLogs(getAppDiagnosticEvents());
+      setOcrScanHistory(getRecentMt5OcrScanDiagnostics());
+      if (!ocrRuntimeProbe && !isProbingOcr) {
+        void handleRunOcrRuntimeProbe();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDeveloperMode]);
+
+  const handleVersionBadgeTap = () => {
+    if (isDeveloperMode) return;
+    const now = Date.now();
+    const withinWindow = now - devLastTapRef.current <= 3000;
+    devLastTapRef.current = now;
+    const next = withinWindow ? devTapCount + 1 : 1;
+    if (next >= 7) {
+      setDevTapCount(0);
+      setDevPasscodeInput('');
+      setDevPasscodeError(null);
+      setIsDevPasscodeModalOpen(true);
+    } else {
+      setDevTapCount(next);
+    }
+  };
+
+  const handleSubmitDevPasscode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!devPasscodeInput.trim() || isVerifyingPasscode) return;
+    setIsVerifyingPasscode(true);
+    setDevPasscodeError(null);
+    try {
+      const ok = await verifyDeveloperPasscode(devPasscodeInput);
+      if (ok) {
+        setIsDevPasscodeModalOpen(false);
+        setDevPasscodeInput('');
+        onUnlockDeveloperMode?.();
+        showFeedback(
+          tr('Mode Pengembang aktif. Cloud, Backend & Diagnostik ditampilkan.', 'Developer Mode enabled.')
+        );
+      } else {
+        setDevPasscodeError(tr('Kode akses tidak cocok.', 'Invalid access code.'));
+      }
+    } finally {
+      setIsVerifyingPasscode(false);
+    }
+  };
+
+  const handleHideDeveloperMode = () => {
+    setIsEditingBackend(false);
+    setAiQaResult(null);
+    setAiQaError(null);
+    setCleaningReport(null);
+    onLockDeveloperMode?.();
+    showFeedback(
+      tr('Mode Pengembang disembunyikan kembali.', 'Developer Mode hidden.')
+    );
+  };
+
+  const handleRunCleaningService = async () => {
+    setIsCleaningRunning(true);
+    setCleaningReport(null);
+    try {
+      const report = await runSafeCleaningService();
+      setCleaningReport(report);
+      setRecentErrorLogs(getAppDiagnosticEvents());
+      setOcrScanHistory(getRecentMt5OcrScanDiagnostics());
+      await handleRunOcrRuntimeProbe();
+      showFeedback(
+        tr('Cleaning Service selesai — cache usang dibersihkan, data jurnal aman.', 'Cleaning Service complete.')
+      );
+    } finally {
+      setIsCleaningRunning(false);
+    }
+  };
+
+  const handleRunAiQaDiagnosis = async () => {
+    setIsRunningAiQa(true);
+    setAiQaError(null);
+    try {
+      let currentProbe = ocrRuntimeProbe;
+      let currentApk = apkSystemProbe;
+      if (!currentProbe || !currentApk) {
+        const [p, a] = await Promise.all([
+          probeOfflineOcrRuntimeEnvironment(),
+          runFullApkSystemProbe(),
+        ]);
+        currentProbe = p;
+        currentApk = a;
+        setOcrRuntimeProbe(p);
+        setApkSystemProbe(a);
+      }
+      const latestErrors = getAppDiagnosticEvents();
+      setRecentErrorLogs(latestErrors);
+      const latestScans = getRecentMt5OcrScanDiagnostics();
+      setOcrScanHistory(latestScans);
+
+      const diagnosis = await runAiQaDiagnosticsAnalysis({
+        language,
+        diagnosticReport: {
+          build: appBuildIdentity,
+          apkSystemProbe: currentApk,
+          runtimeProbe: currentProbe,
+          recentScans: latestScans.slice(0, 5),
+          recentErrorLogs: latestErrors.slice(0, 15),
+        },
+      });
+      setAiQaResult(diagnosis);
+    } catch (err) {
+      setAiQaError(
+        err instanceof Error
+          ? err.message
+          : tr('Gagal menjalankan analisa AI QA.', 'Failed to run AI QA diagnosis.')
+      );
+    } finally {
+      setIsRunningAiQa(false);
+    }
+  };
+
+  const handleCopyFullOcrDiagnostics = async () => {
+    const payload = {
+      build: appBuildIdentity,
+      apkSystemProbe,
+      runtimeProbe: ocrRuntimeProbe,
+      recentScans: ocrScanHistory,
+      recentErrorLogs,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setCopiedOcrReport(true);
+      window.setTimeout(() => setCopiedOcrReport(false), 1800);
+    } catch {
+      // ignore clipboard errors on restricted WebViews
+    }
+  };
 
   const effectiveAccounts = resolveConfiguredAccounts(settings);
   const effectivePlaybooks = getActivePlaybooks(settings);
   const effectiveChecklist = getActiveChecklist(settings);
+  const activeAccountId = settings.activeAccountId || 'ALL';
+
+  const scopedSettings = useMemo(
+    () => resolveAccountScopedSettings(settings, activeAccountId),
+    [settings, activeAccountId]
+  );
+
+  const scopedTrades = useMemo(
+    () => filterTradesByAccount(trades, activeAccountId),
+    [trades, activeAccountId]
+  );
+
+  const capitalBreakdown = useMemo(() => {
+    const { metrics } = calculatePerformance(scopedTrades, scopedSettings);
+    return calculateCapitalGrowthBreakdown(scopedSettings, metrics.totalNetProfit || 0);
+  }, [scopedTrades, scopedSettings]);
 
   const handleToggleChecklistEnabled = (itemId: string) => {
     const next = effectiveChecklist.map((item) =>
@@ -910,7 +1138,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           {tr('Parameter Trading & Modal', 'Trading & Capital Parameters')}
         </span>
         <div className={cardClass}>
-          {/* Saldo Awal */}
+          {/* Saldo Awal & Sinkronisasi MT5 */}
           <button
             type="button"
             onClick={() => setActivePrefModal('balance')}
@@ -920,17 +1148,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <Wallet className={`${iconClass} mt-0.5`} />
               <div className="min-w-0">
                 <span className="text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] block">
-                  {tr('Modal Awal Akun', 'Initial Account Capital')}
+                  {tr('Modal Awal & Saldo MT5', 'Initial Capital & MT5 Balance')}
                 </span>
                 <span className="text-[11px] text-[#526071] dark:text-[#929BA9] block mt-0.5">
-                  {tr('Basis perhitungan pertumbuhan ekuitas & batas risiko', 'Baseline for equity growth & risk sizing')}
+                  {tr(
+                    'Atur saldo awal manual atau selaraskan otomatis dengan saldo MT5',
+                    'Set starting balance manually or auto-align with current MT5 balance'
+                  )}
                 </span>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]">
-                {formatCurrency(settings.startingBalance, settings)}
-              </span>
+              <div className="text-right">
+                <span className="text-xs font-bold font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7] block">
+                  {formatCurrency(scopedSettings.startingBalance, scopedSettings)}
+                </span>
+                <span className="text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] block mt-0.5">
+                  {tr('Ekuitas:', 'Equity:')}{' '}
+                  {formatCurrency(capitalBreakdown.currentBalance, scopedSettings)}
+                </span>
+              </div>
               <ChevronRight className={chevronClass} />
             </div>
           </button>
@@ -1209,11 +1446,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       {/* 3. KONEKSI & MODE DATA (PLUS PENGATURAN DEVELOPER BILA AKTIF)         */}
       {/* ===================================================================== */}
       <section className="space-y-2">
-        <span className={sectionLabelClass}>
-          {isDeveloperMode
-            ? tr('Koneksi, Cloud & Backend (Developer)', 'Connection, Cloud & Backend (Developer)')
-            : tr('Koneksi & Mode Data', 'Connection & Data Mode')}
-        </span>
+        <div className="flex items-center justify-between gap-2">
+          <span className={sectionLabelClass}>
+            {isDeveloperMode
+              ? tr('Koneksi, Cloud & Backend (Developer)', 'Connection, Cloud & Backend (Developer)')
+              : tr('Koneksi & Mode Data', 'Connection & Data Mode')}
+          </span>
+          {isDeveloperMode && onLockDeveloperMode && (
+            <button
+              type="button"
+              onClick={handleHideDeveloperMode}
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] text-[10px] font-semibold text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer"
+            >
+              <EyeOff className="h-3 w-3" />
+              <span>{tr('Sembunyikan (Hide)', 'Hide Dev')}</span>
+            </button>
+          )}
+        </div>
         <div className={cardClass}>
           {isDeveloperMode && (
             <>
@@ -1587,41 +1836,492 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </section>
 
-      {/* Minimalist App Version & Change Code Footer (5-tap unlocks Developer Mode) */}
+      {/* Minimalist App Version & Build Identity Footer (7-tap + Secret Code unlocks Developer Mode) */}
       <div className="pt-2 space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-[#526071] dark:text-[#929BA9]">
+          <div className="inline-flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowVersionHistory((v) => !v)}
+              className="inline-flex items-center gap-1.5 hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer"
+            >
+              <span>{tr('Vlo Journal', 'Vlo Journal')}</span>
+              <span className="text-[#929BA9] dark:text-[#64748B]">·</span>
+              <span className="underline underline-offset-2 decoration-[#E4E4E7] dark:decoration-[#20252D]">
+                {showVersionHistory
+                  ? tr('Tutup Riwayat Versi', 'Hide Version Log')
+                  : tr('Riwayat Perubahan', 'Changelog')}
+              </span>
+            </button>
+          </div>
           <button
             type="button"
-            onClick={() => setShowVersionHistory((v) => !v)}
-            className="inline-flex items-center gap-1.5 hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer"
+            onClick={handleVersionBadgeTap}
+            className="font-mono-numbers tabular-nums hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-default select-none"
+            title={`${tr('Versi', 'Version')} v${APP_VERSION} · ${BUILD_GIT_SHA} (${APP_RELEASE_DATE})`}
           >
-            <span>{tr('Vlo Journal', 'Vlo Journal')}</span>
-            <span className="text-[#929BA9] dark:text-[#64748B]">·</span>
-            <span className="underline underline-offset-2 decoration-[#E4E4E7] dark:decoration-[#20252D]">
-              {showVersionHistory
-                ? tr('Tutup Riwayat Versi', 'Hide Version Log')
-                : tr('Riwayat Perubahan', 'Changelog')}
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (isDeveloperMode) return;
-              const next = devTapCount + 1;
-              if (next >= 5) {
-                setDevTapCount(0);
-                onUnlockDeveloperMode?.();
-                showFeedback(tr('Mode Developer diaktifkan.', 'Developer Mode enabled.'));
-              } else {
-                setDevTapCount(next);
-              }
-            }}
-            className="font-mono-numbers tabular-nums hover:text-[#0F172A] dark:hover:text-[#F2F4F7] transition-colors cursor-default"
-            title={`${tr('Versi', 'Version')} v${APP_VERSION} (${APP_RELEASE_DATE})`}
-          >
-            v{APP_VERSION}
+            v{APP_VERSION} · {BUILD_GIT_SHA}
           </button>
         </div>
+
+        {isDeveloperMode && (
+          <div className="rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] p-4 space-y-3 text-[11px]">
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#E4E4E7] dark:border-[#20252D]">
+              <div className="flex items-center gap-1.5">
+                <Terminal className="h-3.5 w-3.5 text-[#0F172A] dark:text-[#F2F4F7]" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7]">
+                  {tr('Konsol Developer, Cleaning Service & AI QA', 'Developer Console, Cleaning Service & AI QA')}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={isProbingOcr}
+                  onClick={() => void handleRunOcrRuntimeProbe()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#E4E4E7] dark:border-[#20252D] text-[10px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-2.5 w-2.5 ${isProbingOcr ? 'animate-spin' : ''}`} />
+                  <span>{isProbingOcr ? tr('Menguji...', 'Probing...') : tr('Uji Lengkap APK', 'Probe All')}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isCleaningRunning}
+                  onClick={() => void handleRunCleaningService()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#E4E4E7] dark:border-[#20252D] text-[10px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] cursor-pointer disabled:opacity-50"
+                >
+                  <Wrench className={`h-2.5 w-2.5 ${isCleaningRunning ? 'animate-spin' : ''}`} />
+                  <span>
+                    {isCleaningRunning
+                      ? tr('Membersihkan...', 'Cleaning...')
+                      : tr('Cleaning Service', 'Cleaning Service')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isRunningAiQa}
+                  onClick={() => void handleRunAiQaDiagnosis()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] text-[10px] font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className={`h-2.5 w-2.5 ${isRunningAiQa ? 'animate-pulse' : ''}`} />
+                  <span>
+                    {isRunningAiQa
+                      ? tr('Menganalisa...', 'Analyzing...')
+                      : tr('Analisa AI QA', 'AI QA Diagnose')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyFullOcrDiagnostics()}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#E4E4E7] dark:border-[#20252D] text-[10px] font-semibold text-[#0F172A] dark:text-[#F2F4F7] hover:bg-[#FAFAFA] dark:hover:bg-[#161A22] cursor-pointer"
+                >
+                  {copiedOcrReport ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                  <span>{copiedOcrReport ? tr('Disalin', 'Copied') : 'Copy JSON'}</span>
+                </button>
+                {onLockDeveloperMode && (
+                  <button
+                    type="button"
+                    onClick={handleHideDeveloperMode}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-[#E11D48]/30 text-[10px] font-semibold text-[#E11D48] dark:text-[#FB7185] hover:bg-[#FFF1F2] dark:hover:bg-[#2A1215] cursor-pointer"
+                  >
+                    <EyeOff className="h-2.5 w-2.5" />
+                    <span>{tr('Sembunyikan', 'Hide')}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Cleaning Service Result Banner */}
+            {cleaningReport && (
+              <div className="p-3 rounded-xl bg-[#ECFDF5] dark:bg-[#052E16]/40 border border-[#A7F3D0] dark:border-[#065F46] text-[11px] text-[#065F46] dark:text-[#A7F3D0] flex items-start gap-2">
+                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-semibold">
+                    {tr('Cleaning Service (Auto-Repair Aman)', 'Cleaning Service (Safe Auto-Repair)')}
+                  </div>
+                  <p className="leading-relaxed">
+                    {tr(cleaningReport.summaryId, cleaningReport.summaryEn)}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* AI QA Diagnosis Result Card */}
+            {aiQaError && (
+              <div className="p-3 rounded-xl bg-[#FEF2F2] dark:bg-[#2A1215] border border-[#FECACA] dark:border-[#7F1D1D] text-[11px] text-[#DC2626] dark:text-[#FCA5A5]">
+                {aiQaError}
+              </div>
+            )}
+            {aiQaResult && (
+              <div className="p-3.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-[#0F172A] dark:text-[#F2F4F7]" />
+                    <span className="text-[11px] font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                      {tr('Laporan Analis AI QA', 'AI QA Analyst Report')}
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      aiQaResult.healthGrade === 'HEALTHY'
+                        ? 'bg-[#DCFCE7] text-[#166534] dark:bg-[#052E16] dark:text-[#86EFAC]'
+                        : aiQaResult.healthGrade === 'WARNING'
+                        ? 'bg-[#FEF3C7] text-[#92400E] dark:bg-[#451A03] dark:text-[#FDE68A]'
+                        : 'bg-[#FEE2E2] text-[#991B1B] dark:bg-[#450A0A] dark:text-[#FCA5A5]'
+                    }`}
+                  >
+                    {aiQaResult.healthGrade} · {aiQaResult.provider} ({aiQaResult.latencyMs}ms)
+                  </span>
+                </div>
+                <p className="text-[11.5px] text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed">
+                  {aiQaResult.summary}
+                </p>
+                {aiQaResult.rootCauses.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#929BA9]">
+                      {tr('Temuan / Akar Masalah', 'Findings / Root Causes')}
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#526071] dark:text-[#CBD5E1]">
+                      {aiQaResult.rootCauses.map((rc, i) => (
+                        <li key={i}>{rc}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {aiQaResult.recommendedActions.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-[#64748B] dark:text-[#929BA9]">
+                      {tr('Langkah Perbaikan Disarankan', 'Recommended Fixes')}
+                    </div>
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#0F172A] dark:text-[#F2F4F7]">
+                      {aiQaResult.recommendedActions.map((act, i) => (
+                        <li key={i}>{act}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Deterministic Build Identity */}
+            <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[#526071] dark:text-[#929BA9] select-text">
+              <div>
+                <span className="text-[#94A3B8]">App Version: </span>
+                <span className="text-[#0F172A] dark:text-[#F2F4F7] font-semibold">
+                  v{appBuildIdentity.appVersion} ({appBuildIdentity.changeCode})
+                </span>
+              </div>
+              <div>
+                <span className="text-[#94A3B8]">Git Commit: </span>
+                <span className="text-[#0F172A] dark:text-[#F2F4F7] font-semibold">
+                  {appBuildIdentity.gitCommitSha} · run #{appBuildIdentity.ciRunNumber}
+                </span>
+              </div>
+              <div className="sm:col-span-2 break-all">
+                <span className="text-[#94A3B8]">Build Timestamp: </span>
+                <span className="text-[#0F172A] dark:text-[#F2F4F7]">{appBuildIdentity.buildTimestamp}</span>
+              </div>
+              <div>
+                <span className="text-[#94A3B8]">OCR Engine: </span>
+                <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                  {appBuildIdentity.ocrEngine} {appBuildIdentity.ocrEngineVersion}
+                </span>
+              </div>
+              <div>
+                <span className="text-[#94A3B8]">OCR Pipeline: </span>
+                <span className="text-[#0F172A] dark:text-[#F2F4F7]">{appBuildIdentity.ocrPipelineVersion}</span>
+              </div>
+            </div>
+
+            {/* Live Runtime & Bundled OCR Assets Probe */}
+            {ocrRuntimeProbe && (
+              <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] space-y-2 select-text">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 text-[#526071] dark:text-[#929BA9]">
+                  <div>
+                    <span className="text-[#94A3B8]">Runtime: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      {ocrRuntimeProbe.isNativeCapacitor
+                        ? `Capacitor (${ocrRuntimeProbe.capacitorPlatform})`
+                        : `Web (${ocrRuntimeProbe.capacitorPlatform})`}
+                    </span>
+                  </div>
+                  <div className="break-all">
+                    <span className="text-[#94A3B8]">Origin: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">{ocrRuntimeProbe.origin}</span>
+                  </div>
+                  <div>
+                    <span className="text-[#94A3B8]">Service Workers: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      {ocrRuntimeProbe.serviceWorkerCount} (ctrl:{ocrRuntimeProbe.hasServiceWorkerController ? 'YES' : 'no'})
+                    </span>
+                  </div>
+                  <div className="break-all">
+                    <span className="text-[#94A3B8]">CacheStorage: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      {ocrRuntimeProbe.cacheBucketNames.length > 0
+                        ? ocrRuntimeProbe.cacheBucketNames.join(', ')
+                        : '(empty)'}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1 pt-1.5 border-t border-[#E4E4E7] dark:border-[#20252D]">
+                  <div className="text-[#94A3B8] uppercase">Bundled Offline OCR Assets</div>
+                  {ocrRuntimeProbe.assetChecks.map((a) => (
+                    <div key={a.name} className="flex items-center justify-between gap-2 text-[10px]">
+                      <span className="truncate text-[#0F172A] dark:text-[#F2F4F7]">{a.name}</span>
+                      <span
+                        className={`shrink-0 ${
+                          a.ok
+                            ? 'text-[#059669] dark:text-[#34D399]'
+                            : 'text-[#E11D48] dark:text-[#E05260]'
+                        }`}
+                      >
+                        {a.ok
+                          ? `OK (${a.status}) · ${a.bytes !== null ? `${(a.bytes / 1024).toFixed(0)} KB` : '?'}`
+                          : `FAIL (${a.status}${a.error ? `: ${a.error}` : ''})`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Full APK Live Feeds, AI Backend & 3-Feature Macro Sync Audit */}
+            {apkSystemProbe && (
+              <div className="p-3 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] space-y-2 select-text">
+                <div className="text-[#94A3B8] uppercase">
+                  {tr('Status Subsistem APK, AI & Sinkronisasi', 'APK Subsystems, AI & Sync Status')}
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#526071] dark:text-[#929BA9]">Native APK / Cache Purge</span>
+                    <span
+                      className={
+                        apkSystemProbe.cachePurgeMatchesBuild
+                          ? 'text-[#059669] dark:text-[#34D399]'
+                          : 'text-[#E11D48] dark:text-[#E05260]'
+                      }
+                    >
+                      {apkSystemProbe.nativeApp.available
+                        ? `v${apkSystemProbe.nativeApp.versionName} (code ${apkSystemProbe.nativeApp.versionCode}) · WebViewPurged:${
+                            apkSystemProbe.nativeApp.webViewCacheClearedOnBoot ? 'YES' : 'cached-ok'
+                          }`
+                        : `Web · SW-Code:${apkSystemProbe.swPurgedChangeCode || 'none'}`}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#526071] dark:text-[#929BA9]">AI Backend & Proxy</span>
+                    <span
+                      className={
+                        apkSystemProbe.backend.status === 'ok'
+                          ? 'text-[#059669] dark:text-[#34D399]'
+                          : apkSystemProbe.backend.status === 'degraded' ||
+                            apkSystemProbe.backend.status === 'offline_skipped'
+                          ? 'text-[#B45309] dark:text-[#FBBF24]'
+                          : 'text-[#E11D48] dark:text-[#E05260]'
+                      }
+                    >
+                      {apkSystemProbe.backend.status === 'offline_skipped'
+                        ? 'SKIP (Offline Mode)'
+                        : `${apkSystemProbe.backend.status.toUpperCase()} · ScanAI:${
+                            apkSystemProbe.backend.scannerGeminiConfigured ? 'ON' : 'OFF'
+                          } · NewsAI:${
+                            apkSystemProbe.backend.newsGeminiConfigured ? 'ON' : 'OFF'
+                          } · ${apkSystemProbe.backend.latencyMs}ms`}
+                    </span>
+                  </div>
+                  {apkSystemProbe.backend.note && (
+                    <div className="text-[9.5px] text-[#64748B] dark:text-[#929BA9] pl-2 border-l border-[#E4E4E7] dark:border-[#20252D]">
+                      {apkSystemProbe.backend.note}
+                      {` · MultiAgent[Desk:${apkSystemProbe.backend.agentDeskReady ? 'ON' : 'OFF'}, Groq:${
+                        apkSystemProbe.backend.groqConfigured ? 'ON' : 'OFF'
+                      }, OR:${apkSystemProbe.backend.openRouterConfigured ? 'ON' : 'OFF'}]`}
+                      {apkSystemProbe.backend.proxyCapabilities
+                        ? ` · Proxy[Poly:${apkSystemProbe.backend.proxyCapabilities.polymarket ? 'OK' : 'NO'}, CFTC:${
+                            apkSystemProbe.backend.proxyCapabilities.cftc ? 'OK' : 'NO'
+                          }, TD:${apkSystemProbe.backend.proxyCapabilities.twelvedata ? 'OK' : 'NO'}, BIN:${
+                            apkSystemProbe.backend.proxyCapabilities.binance ? 'OK' : 'NO'
+                          }]`
+                        : ''}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#526071] dark:text-[#929BA9]">Vela Chart Feed (XAU H1)</span>
+                    <span
+                      className={
+                        apkSystemProbe.velaChartFeed.status === 'ok'
+                          ? 'text-[#059669] dark:text-[#34D399]'
+                          : apkSystemProbe.velaChartFeed.status === 'cache' ||
+                            apkSystemProbe.velaChartFeed.status === 'offline_skipped'
+                          ? 'text-[#B45309] dark:text-[#FBBF24]'
+                          : 'text-[#E11D48] dark:text-[#E05260]'
+                      }
+                    >
+                      {apkSystemProbe.velaChartFeed.source.toUpperCase()} · {apkSystemProbe.velaChartFeed.count} bars ·{' '}
+                      {apkSystemProbe.velaChartFeed.latencyMs}ms
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[#526071] dark:text-[#929BA9]">Polymarket Macro Feed</span>
+                    <span
+                      className={
+                        apkSystemProbe.polymarketFeed.status === 'ok'
+                          ? 'text-[#059669] dark:text-[#34D399]'
+                          : apkSystemProbe.polymarketFeed.status === 'cache' ||
+                            apkSystemProbe.polymarketFeed.status === 'offline_skipped'
+                          ? 'text-[#B45309] dark:text-[#FBBF24]'
+                          : 'text-[#E11D48] dark:text-[#E05260]'
+                      }
+                    >
+                      {apkSystemProbe.polymarketFeed.source} · {apkSystemProbe.polymarketFeed.count} events ·{' '}
+                      {apkSystemProbe.polymarketFeed.latencyMs}ms
+                    </span>
+                  </div>
+
+                  <div className="pt-1.5 border-t border-[#E4E4E7] dark:border-[#20252D] space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[#526071] dark:text-[#929BA9]">Sync Makro · Fundamental · Cycle</span>
+                      <span
+                        className={
+                          apkSystemProbe.macroSync.status === 'aligned'
+                            ? 'text-[#059669] dark:text-[#34D399]'
+                            : apkSystemProbe.macroSync.status === 'drift'
+                            ? 'text-[#E11D48] dark:text-[#E05260]'
+                            : 'text-[#526071] dark:text-[#929BA9]'
+                        }
+                      >
+                        {apkSystemProbe.macroSync.status.toUpperCase()} (News:{apkSystemProbe.macroSync.macroBias} / Fund:
+                        {apkSystemProbe.macroSync.fundamentalBias})
+                      </span>
+                    </div>
+                    <div className="text-[9.5px] text-[#64748B] dark:text-[#929BA9]">
+                      {tr(apkSystemProbe.macroSync.noteId, apkSystemProbe.macroSync.noteEn)}
+                    </div>
+                    <div className="text-[9.5px] text-[#64748B] dark:text-[#929BA9]">
+                      Offline Caches: Actuals({apkSystemProbe.macroSync.offlineActualsCount}) · Candles(
+                      {apkSystemProbe.macroSync.localCandleBuckets}) · Polymarket(
+                      {apkSystemProbe.macroSync.polymarketCachedCount}) · FedWatch(
+                      {apkSystemProbe.macroSync.fedWatchDominant || 'none'})
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Recorded Offline OCR Scans */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  {tr('Riwayat Scan OCR Sesi Ini', 'Session OCR Scan Telemetry')} ({ocrScanHistory.length})
+                </span>
+                {ocrScanHistory.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearMt5OcrScanDiagnostics();
+                      setOcrScanHistory([]);
+                    }}
+                    className="text-[10px] text-[#526071] dark:text-[#929BA9] hover:text-[#E11D48] cursor-pointer"
+                  >
+                    {tr('Bersihkan', 'Clear')}
+                  </button>
+                )}
+              </div>
+              {ocrScanHistory.length === 0 ? (
+                <p className="text-[11px] text-[#697586] dark:text-[#929BA9]">
+                  {tr(
+                    'Belum ada scan offline di sesi ini. Lakukan scan MT5 mode Offline lalu buka panel ini untuk memeriksa hasil mentah.',
+                    'No offline scans recorded in this session yet. Run an Offline MT5 scan then open this panel to inspect raw telemetry.'
+                  )}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {ocrScanHistory.slice(0, 3).map((rec) => (
+                    <div
+                      key={rec.id}
+                      className="p-2.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] space-y-1 select-text"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[#0F172A] dark:text-[#F2F4F7]">
+                        <span className="font-semibold">
+                          {rec.resolvedEngine} · {rec.parserOutputSummary.length} trades · {rec.totalDurationMs}ms
+                        </span>
+                        <span className="text-[#526071] dark:text-[#929BA9]">
+                          conf {rec.finalConfidence}% · {rec.finalWordBoxCount} words
+                        </span>
+                      </div>
+                      <div className="text-[#526071] dark:text-[#929BA9]">
+                        input:{' '}
+                        {rec.inputDimensions
+                          ? `${rec.inputDimensions.width}x${rec.inputDimensions.height}`
+                          : 'n/a'}{' '}
+                        · passes: {rec.passes.length} · fallback: {rec.invokedFallback ? 'YES' : 'no'}
+                      </div>
+                      {rec.validationFailures.length > 0 && (
+                        <div className="text-[#E11D48] dark:text-[#E05260]">
+                          validation issues: {rec.validationFailures.length}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Silent App Error Recorder */}
+            <div className="space-y-1.5 pt-2 border-t border-[#E4E4E7] dark:border-[#20252D]">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  <ShieldAlert className="h-3 w-3" />
+                  {tr('Perekam Error Terbaru', 'Recorded Runtime & API Errors')} ({recentErrorLogs.length})
+                </span>
+                {recentErrorLogs.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAppDiagnosticEvents();
+                      setRecentErrorLogs([]);
+                    }}
+                    className="text-[10px] text-[#526071] dark:text-[#929BA9] hover:text-[#E11D48] cursor-pointer"
+                  >
+                    {tr('Bersihkan', 'Clear')}
+                  </button>
+                )}
+              </div>
+              {recentErrorLogs.length === 0 ? (
+                <p className="text-[11px] text-[#059669] dark:text-[#34D399]">
+                  {tr(
+                    'Tidak ada error runtime/API yang terekam sejauh ini.',
+                    'No runtime or API errors recorded so far.'
+                  )}
+                </p>
+              ) : (
+                <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                  {recentErrorLogs.slice(0, 8).map((ev) => (
+                    <div
+                      key={ev.id}
+                      className="p-2 rounded-lg bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] space-y-0.5 select-text"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-semibold text-[#E11D48] dark:text-[#FB7185]">
+                          [{ev.source}]
+                        </span>
+                        <span className="text-[#94A3B8] text-[9px]">{ev.timestamp}</span>
+                      </div>
+                      <div className="text-[#0F172A] dark:text-[#F2F4F7] break-words">{ev.message}</div>
+                      {ev.detail && (
+                        <div className="text-[#64748B] dark:text-[#929BA9] text-[9.5px] break-all">
+                          {ev.detail}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {showVersionHistory && (
           <div className="rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] p-4 space-y-3">
@@ -1630,8 +2330,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 {tr('Riwayat Versi', 'Version History')}
               </span>
               <span className="text-[11px] font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9]">
-                v{APP_VERSION}
+                v{APP_VERSION} · {BUILD_GIT_SHA}
               </span>
+            </div>
+            <div className="p-2.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] font-mono text-[10px] text-[#526071] dark:text-[#929BA9] space-y-0.5 select-text">
+              <div>
+                Build: v{appBuildIdentity.appVersion} · #{appBuildIdentity.changeCode} · git {appBuildIdentity.gitCommitSha} · run #{appBuildIdentity.ciRunNumber}
+              </div>
+              <div className="break-all">Built: {appBuildIdentity.buildTimestamp}</div>
+              <div>
+                OCR: {appBuildIdentity.ocrEngine} {appBuildIdentity.ocrEngineVersion} ({appBuildIdentity.ocrPipelineVersion})
+              </div>
             </div>
             <div className="space-y-2.5">
               {APP_VERSION_HISTORY.map((entry) => (
@@ -1668,6 +2377,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         onClose={() => setActivePrefModal(null)}
         category={activePrefModal || 'balance'}
         settings={settings}
+        trades={trades}
         onSave={handleSavePreferences}
       />
 
@@ -1683,6 +2393,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         isOpen={isAuditModalOpen}
         onClose={() => setIsAuditModalOpen(false)}
       />
+
+      {/* Secret Developer Mode Passcode Gate Modal (triggered by 7x version tap) */}
+      {isDevPasscodeModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-[2px] flex items-center justify-center p-4"
+          onClick={() => setIsDevPasscodeModalOpen(false)}
+        >
+          <form
+            onSubmit={(e) => void handleSubmitDevPasscode(e)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xs rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] p-5 space-y-4 shadow-xl"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-[#0F172A] dark:text-[#F2F4F7]" />
+                <h3 className="text-sm font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                  {tr('Akses Pengembang', 'Developer Access')}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDevPasscodeModalOpen(false)}
+                className="p-1 rounded-full text-[#64748B] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] cursor-pointer"
+                aria-label={tr('Tutup', 'Close')}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-[#526071] dark:text-[#929BA9] leading-relaxed">
+              {tr(
+                'Masukkan seri kode akses untuk membuka pengaturan Cloud, Backend, Cleaning Service & Diagnostik.',
+                'Enter the access serial code to unlock Cloud, Backend, Cleaning Service & Diagnostics.'
+              )}
+            </p>
+
+            <div className="space-y-1.5">
+              <input
+                type="password"
+                inputMode="numeric"
+                autoFocus
+                maxLength={20}
+                value={devPasscodeInput}
+                onChange={(e) => {
+                  setDevPasscodeInput(e.target.value);
+                  if (devPasscodeError) setDevPasscodeError(null);
+                }}
+                placeholder={tr('Masukkan kode seri...', 'Enter serial code...')}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#FAFAFA] dark:bg-[#0B0E13] border border-[#E4E4E7] dark:border-[#20252D] text-sm tracking-widest font-mono text-center text-[#0F172A] dark:text-[#F2F4F7] focus:outline-none focus:border-[#0F172A] dark:focus:border-white"
+              />
+              {devPasscodeError && (
+                <p className="text-[11px] text-[#E11D48] text-center font-medium">
+                  {devPasscodeError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setIsDevPasscodeModalOpen(false)}
+                className="px-3.5 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] text-xs font-medium text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] cursor-pointer"
+              >
+                {tr('Batal', 'Cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={!devPasscodeInput.trim() || isVerifyingPasscode}
+                className="px-4 py-1.5 rounded-full bg-[#0F172A] dark:bg-white text-white dark:text-[#0F172A] text-xs font-semibold disabled:opacity-40 cursor-pointer"
+              >
+                {isVerifyingPasscode ? tr('Memeriksa...', 'Checking...') : tr('Buka', 'Unlock')}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 };

@@ -18,6 +18,9 @@ const SUPABASE_EDGE_SUPPORTED_PATHS = new Set([
   '/api/extract-mt5-history',
   '/api/macro-news/analyze',
   '/api/macro-news/fundamental',
+  '/api/agent-desk/chat',
+  '/api/agent-desk/end-session',
+  '/api/agent-desk/qa-diagnose',
 ]);
 
 /**
@@ -224,7 +227,7 @@ export function isSupabaseEdgeUrl(url: string): boolean {
  * when calling a Supabase Edge Function endpoint so both signed-in and offline
  * guest users can invoke the Edge Function seamlessly.
  */
-function buildBackendAuthHeaders(targetUrl: string): Record<string, string> {
+export function buildBackendAuthHeaders(targetUrl: string): Record<string, string> {
   if (!isSupabaseEdgeUrl(targetUrl)) {
     return {};
   }
@@ -419,6 +422,13 @@ export async function nativeHttpGetText(
   }
 
   const authHeaders = buildBackendAuthHeaders(targetUrl);
+  const isTradingViewTarget = /tradingview\.com/i.test(targetUrl);
+  const domainHeaders: Record<string, string> = isTradingViewTarget
+    ? {
+        Origin: 'https://www.tradingview.com',
+        Referer: 'https://www.tradingview.com/',
+      }
+    : {};
 
   try {
     const response = await CapacitorHttp.get({
@@ -431,6 +441,7 @@ export async function nativeHttpGetText(
         'User-Agent':
           'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
         'Cache-Control': 'no-cache, no-store, must-revalidate',
+        ...domainHeaders,
         ...authHeaders,
       },
     });
@@ -445,6 +456,73 @@ export async function nativeHttpGetText(
     }
   } catch {
     // Native HTTP failed; caller will try next fallback
+  }
+
+  return null;
+}
+
+/**
+ * Executes a CORS-free native Android/iOS HTTP GET for external image URLs (such as TradingView snapshots)
+ * returning a base64 `data:image/...` Data URL via CapacitorHttp.
+ */
+export async function nativeHttpGetImageDataUrl(
+  targetUrl: string,
+  timeoutMs = 8000
+): Promise<string | null> {
+  if (!isNativeAndroidOrIos() || !/^https?:\/\//i.test(targetUrl)) {
+    return null;
+  }
+
+  const authHeaders = buildBackendAuthHeaders(targetUrl);
+  const isTradingViewTarget = /tradingview\.com/i.test(targetUrl);
+  const domainHeaders: Record<string, string> = isTradingViewTarget
+    ? {
+        Origin: 'https://www.tradingview.com',
+        Referer: 'https://www.tradingview.com/',
+      }
+    : {};
+
+  try {
+    const response = await CapacitorHttp.get({
+      url: targetUrl,
+      connectTimeout: timeoutMs,
+      readTimeout: timeoutMs,
+      responseType: 'blob',
+      headers: {
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        ...domainHeaders,
+        ...authHeaders,
+      },
+    });
+
+    if (response.status >= 200 && response.status < 300 && typeof response.data === 'string' && response.data.length > 200) {
+      const headersObj = (response.headers || {}) as Record<string, string>;
+      const rawCt =
+        headersObj['content-type'] ||
+        headersObj['Content-Type'] ||
+        headersObj['CONTENT-TYPE'] ||
+        '';
+      const mimeType = rawCt.split(';')[0].trim().toLowerCase();
+      if (mimeType.includes('text/html')) {
+        return null;
+      }
+      const cleanBase64 = response.data.replace(/\s+/g, '');
+      if (cleanBase64.startsWith('data:image/')) {
+        return cleanBase64;
+      }
+      const inferredMime = mimeType.startsWith('image/')
+        ? mimeType
+        : /\.jpe?g(\?|$)/i.test(targetUrl)
+        ? 'image/jpeg'
+        : /\.webp(\?|$)/i.test(targetUrl)
+        ? 'image/webp'
+        : 'image/png';
+      return `data:${inferredMime};base64,${cleanBase64}`;
+    }
+  } catch {
+    // Native image fetch failed; caller falls back to next candidate
   }
 
   return null;

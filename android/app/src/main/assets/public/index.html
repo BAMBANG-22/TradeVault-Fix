@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#050607" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="VLO Journal" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>VLO Journal - XAUUSD Trading Analytics</title>
     <meta name="description" content="Trading journal dan analytics dashboard profesional khusus trader XAUUSD dengan manajemen risiko, kurva ekuitas, dan kalkulator lot." />
@@ -32,7 +37,7 @@
             root.classList.add('light');
             root.classList.remove('dark');
             var meta = document.querySelector('meta[name="theme-color"]');
-            if (meta) meta.setAttribute('content', '#EEF2F6');
+            if (meta) meta.setAttribute('content', '#FFFFFF');
           } else {
             root.classList.add('dark');
             root.classList.remove('light');
@@ -43,16 +48,11 @@
         } catch (e) {}
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-BwFl674D.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/jsx-dev-runtime-DHr59sI3.js">
-    <link rel="modulepreload" crossorigin href="/assets/x-DrI3utCN.js">
-    <link rel="modulepreload" crossorigin href="/assets/riskCalculator-cn9WEwUq.js">
-    <link rel="modulepreload" crossorigin href="/assets/dist-D9JmVlIv.js">
-    <link rel="modulepreload" crossorigin href="/assets/tradeLifecycle-CMnBGu9R.js">
-    <link rel="modulepreload" crossorigin href="/assets/currencyRate-L6Rhp1xg.js">
-    <link rel="modulepreload" crossorigin href="/assets/trending-up-9lDUgSzt.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-eGlWDTYN.css">
-  </head>
+    <script type="module" crossorigin src="/assets/index-7iVa4Gnb.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/rolldown-runtime-BCiCTKAo.js">
+    <link rel="modulepreload" crossorigin href="/assets/jsx-dev-runtime-1n_Y3mdv.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-CEJ1WxJM.css">
+  <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
     <div id="root"></div>
   </body>

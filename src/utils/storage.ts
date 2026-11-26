@@ -1,11 +1,216 @@
 import { Trade } from '../types/trade';
 import { AppSettings, DEFAULT_SETTINGS } from '../types/settings';
 import { DEMO_TRADES } from './demoData';
+import {
+  decodeLifecycleMetaFromExecutionNotes,
+  encodeLifecycleMetaIntoExecutionNotes,
+} from './tradeLifecycle';
 
 export const GUEST_TRADES_STORAGE_KEY = 'tradevault_trades_guest';
 export const USER_TRADES_STORAGE_KEY_PREFIX = 'tradevault_trades_user_';
 export const SETTINGS_STORAGE_KEY = 'tradevault_settings_v1';
 export const USER_SETTINGS_STORAGE_KEY_PREFIX = 'tradevault_settings_user_';
+
+const CANDLE_CACHE_KEY_PREFIX = 'tradevault_candle_cache_';
+const CYCLE_CANDLE_CACHE_KEY = 'tradevault_cycle_confluence_td_v1';
+const OFFLINE_SYNC_QUEUE_KEY_PREFIX = 'tradevault_offline_sync_queue_v1:';
+const USER_AVATAR_CACHE_KEY_PREFIX = 'tradevault_user_avatar_';
+
+const EXPENDABLE_MACRO_AND_CACHE_KEYS: readonly string[] = [
+  'tradevault_macro_news_snapshot_v1',
+  'tradevault_macro_group_snapshots_v1',
+  'tradevault_macro_bias_history_v1',
+  'tradevault_macro_actuals_archive_v1',
+  'tradevault_macro_prenews_locks_v1',
+  'tradevault_macro_postnews_locks_v1',
+  'tradevault_macro_monthly_news_speech_v1',
+  'tradevault_cme_fedwatch_cache_v1',
+  'tradevault_fundamental_gold_snapshot_v1',
+  'tradevault_macro_notified_fp_v1',
+  'tradevault_macro_hist_backfill_last_v1',
+  'tradevault_smc_offline_signals_v1',
+  'tradevault_usd_idr_rate_v1',
+  'vlo_app_notifications_v1',
+];
+
+function isQuotaExceededError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as { name?: unknown; code?: unknown; message?: unknown };
+  const name = typeof err.name === 'string' ? err.name : '';
+  const code = typeof err.code === 'number' ? err.code : -1;
+  const message = typeof err.message === 'string' ? err.message.toLowerCase() : '';
+  return (
+    name === 'QuotaExceededError' ||
+    name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    code === 22 ||
+    code === 1014 ||
+    message.includes('quota')
+  );
+}
+
+function collectLocalStorageKeys(): string[] {
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (k) keys.push(k);
+    }
+  } catch {
+    // ignore enumeration failures
+  }
+  return keys;
+}
+
+function removeStorageKeys(keys: string[]): number {
+  let removed = 0;
+  for (const k of keys) {
+    try {
+      if (localStorage.getItem(k) !== null) {
+        localStorage.removeItem(k);
+        removed += 1;
+      }
+    } catch {
+      // ignore individual removal errors
+    }
+  }
+  return removed;
+}
+
+/**
+ * Stages eviction of strictly rebuildable caches when localStorage throws QuotaExceededError.
+ * Never removes active user trades, guest trades, settings, auth sessions (sb-*), or offline sync queues.
+ */
+function trySetItemWithCacheEviction(
+  targetKey: string,
+  serializedValue: string,
+  activeUserId?: string | null
+): { ok: boolean; lastError?: unknown; evictedAny: boolean } {
+  try {
+    localStorage.setItem(targetKey, serializedValue);
+    return { ok: true, evictedAny: false };
+  } catch (initialError) {
+    if (!isQuotaExceededError(initialError)) {
+      return { ok: false, lastError: initialError, evictedAny: false };
+    }
+
+    let evictedAny = false;
+    const allKeys = collectLocalStorageKeys();
+    const normalizedActiveUser =
+      activeUserId && typeof activeUserId === 'string' && activeUserId.trim() !== ''
+        ? activeUserId.trim()
+        : null;
+
+    // Tier 1A: Market chart & cycle candle caches (largest & 100% re-fetchable)
+    const candleCacheKeys = allKeys.filter(
+      (k) => k.startsWith(CANDLE_CACHE_KEY_PREFIX) || k === CYCLE_CANDLE_CACHE_KEY
+    );
+    if (removeStorageKeys(candleCacheKeys) > 0) {
+      evictedAny = true;
+      try {
+        localStorage.setItem(targetKey, serializedValue);
+        return { ok: true, evictedAny };
+      } catch (err1A) {
+        if (!isQuotaExceededError(err1A)) {
+          return { ok: false, lastError: err1A, evictedAny };
+        }
+      }
+    }
+
+    // Tier 1B: Macro news snapshots/archives, notifications, & orphaned scan caches
+    const macroAndScanKeys = [
+      ...EXPENDABLE_MACRO_AND_CACHE_KEYS,
+      ...allKeys.filter((k) => k.startsWith('tradevault_mt5_scan_cache_v')),
+    ];
+    if (removeStorageKeys(macroAndScanKeys) > 0) {
+      evictedAny = true;
+      try {
+        localStorage.setItem(targetKey, serializedValue);
+        return { ok: true, evictedAny };
+      } catch (err1B) {
+        if (!isQuotaExceededError(err1B)) {
+          return { ok: false, lastError: err1B, evictedAny };
+        }
+      }
+    }
+
+    // Tier 1C: Inactive other-user mirrors only when they have NO pending offline sync queue
+    const inactiveUserMirrorKeys = allKeys.filter((k) => {
+      if (k === targetKey) return false;
+      if (k.startsWith(USER_TRADES_STORAGE_KEY_PREFIX)) {
+        const ownerId = k.slice(USER_TRADES_STORAGE_KEY_PREFIX.length);
+        if (!ownerId || ownerId === normalizedActiveUser) return false;
+        try {
+          const hasPendingQueue = localStorage.getItem(`${OFFLINE_SYNC_QUEUE_KEY_PREFIX}${ownerId}`);
+          return !hasPendingQueue;
+        } catch {
+          return false;
+        }
+      }
+      if (k.startsWith(USER_AVATAR_CACHE_KEY_PREFIX)) {
+        const ownerId = k.slice(USER_AVATAR_CACHE_KEY_PREFIX.length);
+        return Boolean(ownerId && ownerId !== normalizedActiveUser);
+      }
+      return false;
+    });
+
+    if (removeStorageKeys(inactiveUserMirrorKeys) > 0) {
+      evictedAny = true;
+      try {
+        localStorage.setItem(targetKey, serializedValue);
+        return { ok: true, evictedAny };
+      } catch (err1C) {
+        return { ok: false, lastError: err1C, evictedAny };
+      }
+    }
+
+    return { ok: false, lastError: initialError, evictedAny };
+  }
+}
+
+function isInlineBase64Image(val: unknown): val is string {
+  return typeof val === 'string' && val.trim().startsWith('data:image/');
+}
+
+function compactInlineScreenshotsOnTrade(trade: Trade): { trade: Trade; changed: boolean } {
+  let changed = false;
+  let nextScreenshotUrl = trade.screenshotUrl;
+  if (isInlineBase64Image(nextScreenshotUrl)) {
+    nextScreenshotUrl = undefined;
+    changed = true;
+  }
+
+  let nextExecutionNotes = trade.executionNotes;
+  if (typeof trade.executionNotes === 'string' && trade.executionNotes.includes('[TV_META:')) {
+    const meta = decodeLifecycleMetaFromExecutionNotes(trade.executionNotes);
+    let metaChanged = false;
+    const nextMeta = { ...meta };
+    if (isInlineBase64Image(nextMeta.beforeScreenshotUrl)) {
+      delete nextMeta.beforeScreenshotUrl;
+      metaChanged = true;
+    }
+    if (isInlineBase64Image(nextMeta.afterScreenshotUrl)) {
+      delete nextMeta.afterScreenshotUrl;
+      metaChanged = true;
+    }
+    if (metaChanged) {
+      nextExecutionNotes = encodeLifecycleMetaIntoExecutionNotes(trade.executionNotes, nextMeta);
+      changed = true;
+    }
+  }
+
+  if (!changed) {
+    return { trade, changed: false };
+  }
+
+  return {
+    trade: {
+      ...trade,
+      screenshotUrl: nextScreenshotUrl,
+      executionNotes: nextExecutionNotes,
+    },
+    changed: true,
+  };
+}
 
 /**
  * Returns the exact localStorage key scoped to the user, or the guest key if unauthenticated.
@@ -47,6 +252,26 @@ export function removeTradeFromLatestList(
 }
 
 /**
+ * Atomically removes a set of trade IDs from the latest tradesRef.current array and updates the ref synchronously.
+ */
+export function removeTradesListFromLatestList(
+  tradesRef: { current: Trade[] },
+  deletedIds: Iterable<string>
+): Trade[] {
+  const idSet = new Set<string>();
+  for (const id of deletedIds) {
+    const clean = String(id || '').trim();
+    if (clean) idSet.add(clean);
+  }
+  const currentList = Array.isArray(tradesRef?.current) ? tradesRef.current : [];
+  const filtered = idSet.size > 0 ? currentList.filter((t) => !idSet.has(t.id)) : currentList;
+  if (tradesRef) {
+    tradesRef.current = filtered;
+  }
+  return filtered;
+}
+
+/**
  * Loads trades stored in localStorage.
  * - When userId is provided: strictly returns only trades from that user's scoped cache.
  *   Returns an empty array if no cache exists for that user (never falls back to guest/demo data).
@@ -81,24 +306,67 @@ export function loadStoredTrades(userId?: string | null): Trade[] {
 
 /**
  * Saves trades array to user-scoped or guest localStorage key.
+ * Automatically recovers from QuotaExceededError by evicting rebuildable caches first
+ * and only compacting oversized inline base64 screenshots in the localStorage mirror if needed.
  */
 export function saveStoredTrades(
   trades: Trade[],
   userId?: string | null
-): { success: boolean; error?: string } {
+): { success: boolean; error?: string; compactedScreenshots?: boolean } {
+  const key = getTradesStorageKey(userId);
+  let lastError: unknown;
+
   try {
-    const key = getTradesStorageKey(userId);
     const serialized = JSON.stringify(trades);
-    localStorage.setItem(key, serialized);
-    return { success: true };
-  } catch (error: any) {
-    console.error('Failed to save trades to storage:', error);
-    const msg =
-      error?.name === 'QuotaExceededError'
-        ? 'Penyimpanan lokal browser penuh. Jika Anda menyimpan banyak screenshot gambar, kurangi ukuran screenshot atau hapus trade lama.'
-        : 'Gagal menyimpan data ke penyimpanan lokal browser.';
-    return { success: false, error: msg };
+    const directOrEvicted = trySetItemWithCacheEviction(key, serialized, userId);
+    if (directOrEvicted.ok) {
+      if (directOrEvicted.evictedAny) {
+        console.warn('Recovered localStorage quota by clearing rebuildable chart/macro caches.');
+      }
+      return { success: true };
+    }
+    lastError = directOrEvicted.lastError;
+
+    // Tier 2: If trades JSON itself still exceeds quota (caused by large inline base64 screenshots),
+    // compact inline data:image/* strings from oldest trades first (keeping newest 5 if they fit),
+    // then from all trades in the localStorage mirror. Trade metrics, SL/TP, notes, and Cloud paths remain intact.
+    if (isQuotaExceededError(lastError) && Array.isArray(trades) && trades.length > 0) {
+      const keepRecentCount = 5;
+      const partialCompacted = trades.map((t, idx) =>
+        idx < keepRecentCount ? t : compactInlineScreenshotsOnTrade(t).trade
+      );
+      try {
+        localStorage.setItem(key, JSON.stringify(partialCompacted));
+        console.warn(
+          'Compacted older inline base64 screenshots in localStorage mirror to preserve all trade records.'
+        );
+        return { success: true, compactedScreenshots: true };
+      } catch (err2a) {
+        lastError = err2a;
+      }
+
+      if (isQuotaExceededError(lastError)) {
+        const fullCompacted = trades.map((t) => compactInlineScreenshotsOnTrade(t).trade);
+        try {
+          localStorage.setItem(key, JSON.stringify(fullCompacted));
+          console.warn(
+            'Compacted all inline base64 screenshots in localStorage mirror to preserve all trade records.'
+          );
+          return { success: true, compactedScreenshots: true };
+        } catch (err2b) {
+          lastError = err2b;
+        }
+      }
+    }
+  } catch (error) {
+    lastError = error;
   }
+
+  console.error('Failed to save trades to storage:', lastError);
+  const msg = isQuotaExceededError(lastError)
+    ? 'Penyimpanan lokal browser penuh. Jika Anda menyimpan banyak screenshot gambar, kurangi ukuran screenshot atau hapus trade lama.'
+    : 'Gagal menyimpan data ke penyimpanan lokal browser.';
+  return { success: false, error: msg };
 }
 
 /**
@@ -263,8 +531,13 @@ export function saveStoredSettings(
 ): { success: boolean; error?: string } {
   try {
     const key = getSettingsStorageKey(userId);
-    localStorage.setItem(key, JSON.stringify(settings));
-    return { success: true };
+    const serialized = JSON.stringify(settings);
+    const res = trySetItemWithCacheEviction(key, serialized, userId);
+    if (res.ok) {
+      return { success: true };
+    }
+    console.error('Failed to save settings:', res.lastError);
+    return { success: false, error: 'Gagal menyimpan pengaturan ke browser.' };
   } catch (error) {
     console.error('Failed to save settings:', error);
     return { success: false, error: 'Gagal menyimpan pengaturan ke browser.' };

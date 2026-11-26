@@ -15,13 +15,21 @@ import {
   computeCumulativeProfitInDisplayCurrency,
 } from '../../utils/currencyRate';
 import { useLanguage } from '../../utils/language';
-import { ChevronDown, X, ArrowUpRight, Check } from 'lucide-react';
+import { ChevronDown, X, ArrowUpRight, Check, Trash2 } from 'lucide-react';
 
 interface DashboardCalendarProps {
   trades: Trade[];
   settings: AppSettings;
   isPrivacyMode?: boolean;
   onViewTrade?: (trade: Trade) => void;
+  onDeleteTradesByDate?: (payload: {
+    dateKey: string;
+    headerLabel?: string;
+    trades: Trade[];
+    source: 'calendar';
+    isFilteredSubset?: boolean;
+    totalTradesOnDate?: number;
+  }) => void;
   preferredCurrency?: 'USD' | 'IDR';
   rateRecord?: UsdIdrRateRecord | null;
 }
@@ -34,6 +42,7 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
   settings,
   isPrivacyMode = false,
   onViewTrade,
+  onDeleteTradesByDate,
   preferredCurrency,
   rateRecord,
 }) => {
@@ -471,16 +480,46 @@ export const DashboardCalendar: React.FC<DashboardCalendarProps> = ({
                 {selectedDateFormatted}
               </h3>
             </div>
-            <button
-              type="button"
-              data-testid="daily-card-close-button"
-              onClick={() => setSelectedDate(null)}
-              className="p-1.5 rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
-              title={tr('Tutup Detail Harian', 'Close Daily Detail')}
-              aria-label={tr('Tutup Detail Harian', 'Close Daily Detail')}
-            >
-              <X className="h-4 w-4 stroke-[2]" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onDeleteTradesByDate && selectedTrades.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="dashboard-calendar-delete-day-btn"
+                  onClick={() => {
+                    const totalOnDate = (trades || []).filter(
+                      (t) => extractTradeLocalDateKey(t.dateTime) === selectedDate
+                    ).length;
+                    onDeleteTradesByDate({
+                      dateKey: selectedDate,
+                      headerLabel: selectedDateFormatted,
+                      trades: selectedTrades,
+                      source: 'calendar',
+                      isFilteredSubset: selectedTrades.length < totalOnDate,
+                      totalTradesOnDate: totalOnDate,
+                    });
+                  }}
+                  title={tr('Hapus semua transaksi tanggal ini', 'Delete all trades for this date')}
+                  aria-label={tr(
+                    `Hapus ${selectedTrades.length} transaksi pada ${selectedDateFormatted}`,
+                    `Delete ${selectedTrades.length} trades on ${selectedDateFormatted}`
+                  )}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-[#E11D48] dark:text-[#E05260] bg-[#E11D48]/10 hover:bg-[#E11D48]/15 dark:bg-[#E05260]/12 dark:hover:bg-[#E05260]/20 border border-[#E11D48]/20 dark:border-[#E05260]/25 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5 stroke-[1.75]" />
+                  <span>{tr('Hapus Semua', 'Delete All')}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="daily-card-close-button"
+                onClick={() => setSelectedDate(null)}
+                className="p-1.5 rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                title={tr('Tutup Detail Harian', 'Close Daily Detail')}
+                aria-label={tr('Tutup Detail Harian', 'Close Daily Detail')}
+              >
+                <X className="h-4 w-4 stroke-[2]" />
+              </button>
+            </div>
           </div>
 
           <div className="py-3.5 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2 font-mono-numbers tabular-nums">

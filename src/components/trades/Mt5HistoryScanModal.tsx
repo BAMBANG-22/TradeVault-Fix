@@ -7,11 +7,13 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Copy,
   Image as ImageIcon,
   Info,
   Loader2,
   Plus,
   RefreshCw,
+  Terminal,
   Trash2,
   Upload,
   X,
@@ -19,22 +21,28 @@ import {
 import { Trade, TradeCloseType, TradingSession } from '../../types/trade';
 import { AppSettings } from '../../types/settings';
 import { useLanguage } from '../../utils/language';
-import { formatCurrency } from '../../utils/calculations';
+import { formatCurrency, formatRMultiple } from '../../utils/calculations';
 import { useGlobalCurrency } from '../../utils/currencyRate';
 import {
   auditMt5HistoryCandidate,
   buildClosedTradeFromMt5Candidate,
-  deduplicateBatchMt5Candidates,
+  computeMt5CandidateRiskPreview,
   Mt5AuditIssue,
   Mt5CandidateAuditResult,
   Mt5HistoryTradeCandidate,
   Mt5ScanExecutionMode,
   parseSignedMt5Number,
   prepareCrispMt5Screenshot,
-  recheckDuplicateMt5Candidate,
+  reconcileMt5BatchCandidates,
   scanBatchMt5HistoryScreenshots,
   scanSingleMt5HistoryScreenshot,
 } from '../../utils/tradeScreenshotScanner';
+import {
+  getRecentMt5OcrScanDiagnostics,
+  Mt5OcrScanDiagnostic,
+  prewarmOfflineTesseractWorker,
+} from '../../utils/offlineMt5Ocr';
+import { getAppBuildIdentity } from '../../config/appVersion';
 
 const MT5_SCAN_MODE_STORAGE_KEY = 'tradevault_mt5_scan_mode';
 
@@ -200,6 +208,12 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
+  const [recentDiagnostics, setRecentDiagnostics] = useState<Mt5OcrScanDiagnostic[]>(() =>
+    getRecentMt5OcrScanDiagnostics()
+  );
+  const [copiedDiag, setCopiedDiag] = useState<boolean>(false);
+  const buildIdentity = useMemo(() => getAppBuildIdentity(), []);
 
   const handleSelectScanMode = (nextMode: Mt5ScanExecutionMode) => {
     setScanMode(nextMode);
@@ -238,6 +252,15 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
 
   const fmtMoney = (val: number) =>
     preferredCurrency === 'IDR' ? formatDynamic(val) : formatCurrency(val, settings);
+
+  // Pre-warm offline Tesseract WASM engine while user selects screenshots
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setTimeout(() => {
+      prewarmOfflineTesseractWorker();
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [isOpen]);
 
   // Reset modal state cleanly when closed
   useEffect(() => {
@@ -284,7 +307,7 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
       const prepared = await Promise.all(
         imageFiles.map(async (file, i) => {
           const seqIndex = nextImageSeqRef.current++;
-          const dataUrl = await prepareCrispMt5Screenshot(file, 1600, 3200, 0.92);
+          const dataUrl = await prepareCrispMt5Screenshot(file, 1280, 3600, 0.9);
           return {
             id: `ss_${Date.now()}_${seqIndex}_${i}_${Math.random().toString(36).slice(2, 6)}`,
             sourceImageIndex: seqIndex,
@@ -344,7 +367,12 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
       );
 
       if (batchResult.trades.length > 0) {
-        setCandidates((prev) => deduplicateBatchMt5Candidates([...prev, ...batchResult.trades]));
+        setCandidates((prev) => {
+          const preserveSelectionForTempIds = new Set(prev.map((c) => c.tempId));
+          return reconcileMt5BatchCandidates([...prev, ...batchResult.trades], existingTrades, {
+            preserveSelectionForTempIds,
+          });
+        });
       } else if (firstFailureMsg) {
         setErrorMsg(firstFailureMsg);
       } else {
@@ -361,6 +389,7 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
           tr('Terjadi kesalahan saat memproses screenshot.', 'Error processing screenshot.')
       );
     } finally {
+      setRecentDiagnostics(getRecentMt5OcrScanDiagnostics());
       setIsScanning(false);
     }
   };
@@ -449,7 +478,14 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
           const withoutOldForImage = prev.filter(
             (c) => c.sourceImageIndex !== item.sourceImageIndex
           );
-          return deduplicateBatchMt5Candidates([...withoutOldForImage, ...result.trades]);
+          const preserveSelectionForTempIds = new Set(
+            withoutOldForImage.map((c) => c.tempId)
+          );
+          return reconcileMt5BatchCandidates(
+            [...withoutOldForImage, ...result.trades],
+            existingTrades,
+            { preserveSelectionForTempIds }
+          );
         });
       }
     } catch (err: any) {
@@ -461,38 +497,53 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
         )
       );
     } finally {
+      setRecentDiagnostics(getRecentMt5OcrScanDiagnostics());
       setIsScanning(false);
     }
   };
 
   const handleRemoveScreenshot = (item: UploadedScreenshotItem) => {
     setScreenshots((prev) => prev.filter((s) => s.id !== item.id));
-    setCandidates((prev) => prev.filter((c) => c.sourceImageIndex !== item.sourceImageIndex));
+    setCandidates((prev) => {
+      const remaining = prev.filter((c) => c.sourceImageIndex !== item.sourceImageIndex);
+      const preserveSelectionForTempIds = new Set(remaining.map((c) => c.tempId));
+      return reconcileMt5BatchCandidates(remaining, existingTrades, {
+        preserveSelectionForTempIds,
+      });
+    });
   };
 
   const patchCandidate = (
     tempId: string,
     patch: Partial<Mt5HistoryTradeCandidate>
   ) => {
-    setCandidates((prev) =>
-      prev.map((c) => {
+    const affectsDuplicate =
+      'instrument' in patch ||
+      'position' in patch ||
+      'lotSize' in patch ||
+      'entryPrice' in patch ||
+      'exitPrice' in patch ||
+      'netProfit' in patch ||
+      'closeDateTime' in patch ||
+      'ticketId' in patch;
+
+    setCandidates((prev) => {
+      const nextList = prev.map((c) => {
         if (c.tempId !== tempId) return c;
-        const updated: Mt5HistoryTradeCandidate = { ...c, ...patch };
-        if (
-          'instrument' in patch ||
-          'position' in patch ||
-          'lotSize' in patch ||
-          'entryPrice' in patch ||
-          'exitPrice' in patch ||
-          'netProfit' in patch ||
-          'closeDateTime' in patch ||
-          'ticketId' in patch
-        ) {
-          return recheckDuplicateMt5Candidate(updated, existingTrades);
-        }
-        return updated;
-      })
-    );
+        const normalizedPatch =
+          'closeDateTime' in patch
+            ? { ...patch, exactCloseDateTime: patch.closeDateTime || null }
+            : patch;
+        return { ...c, ...normalizedPatch };
+      });
+      if (!affectsDuplicate) return nextList;
+      const preserveSelectionForTempIds = new Set(
+        prev.filter((c) => c.tempId !== tempId).map((c) => c.tempId)
+      );
+      return reconcileMt5BatchCandidates(nextList, existingTrades, {
+        preserveSelectionForTempIds,
+      });
+    });
   };
 
   const updateCandidate = <K extends keyof Mt5HistoryTradeCandidate>(
@@ -515,7 +566,13 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
   };
 
   const removeCandidate = (tempId: string) => {
-    setCandidates((prev) => prev.filter((c) => c.tempId !== tempId));
+    setCandidates((prev) => {
+      const remaining = prev.filter((c) => c.tempId !== tempId);
+      const preserveSelectionForTempIds = new Set(remaining.map((c) => c.tempId));
+      return reconcileMt5BatchCandidates(remaining, existingTrades, {
+        preserveSelectionForTempIds,
+      });
+    });
   };
 
   const applyStrategyToAll = (nextStrategy: string) => {
@@ -552,6 +609,11 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
 
   const duplicateCount = useMemo(
     () => candidates.filter((c) => c.isDuplicate).length,
+    [candidates]
+  );
+
+  const doubleEntryCount = useMemo(
+    () => candidates.filter((c) => c.isDoubleEntry && !c.isDuplicate).length,
     [candidates]
   );
 
@@ -674,16 +736,34 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isSaving}
-            aria-label={tr('Tutup', 'Close')}
-            title={tr('Tutup Formulir', 'Close Form')}
-            className="rounded-full p-1.5 text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] active:scale-95 transition-all disabled:opacity-50 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
-          >
-            <X className="h-4 w-4 stroke-[2]" />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setRecentDiagnostics(getRecentMt5OcrScanDiagnostics());
+                setShowDiagnostics((v) => !v);
+              }}
+              aria-label={tr('Diagnostik OCR', 'OCR Diagnostics')}
+              title={tr('Diagnostik Pipeline OCR Offline', 'Offline OCR Pipeline Diagnostics')}
+              className={`rounded-full p-1.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35 ${
+                showDiagnostics
+                  ? 'bg-[#0F172A] text-white dark:bg-white dark:text-[#050607]'
+                  : 'text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22]'
+              }`}
+            >
+              <Terminal className="h-3.5 w-3.5 stroke-[2]" />
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              aria-label={tr('Tutup', 'Close')}
+              title={tr('Tutup Formulir', 'Close Form')}
+              className="rounded-full p-1.5 text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] active:scale-95 transition-all disabled:opacity-50 cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+            >
+              <X className="h-4 w-4 stroke-[2]" />
+            </button>
+          </div>
         </div>
 
         {/* Seamless Hairline-Divided Body */}
@@ -706,6 +786,182 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* Collapsible Offline OCR Forensic Diagnostics Panel */}
+          {showDiagnostics && (() => {
+            const latest = recentDiagnostics[0] || null;
+            const handleCopyDiagnosticJson = async () => {
+              const payload = {
+                build: buildIdentity,
+                latestScan: latest,
+                totalRecordedScans: recentDiagnostics.length,
+              };
+              try {
+                await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+                setCopiedDiag(true);
+                window.setTimeout(() => setCopiedDiag(false), 1800);
+              } catch {
+                // ignore clipboard failure in restricted WebView
+              }
+            };
+            return (
+              <div className="px-5 py-3 bg-[#FAFAFA] dark:bg-[#0B0E13] space-y-2 text-[10px] font-mono select-text">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold uppercase tracking-wider text-[#0F172A] dark:text-[#F2F4F7]">
+                    OCR Forensic Diagnostics
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyDiagnosticJson}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-[#E4E4E7] dark:border-[#20252D] text-[#0F172A] dark:text-[#F2F4F7] hover:bg-white dark:hover:bg-[#161A22] cursor-pointer"
+                  >
+                    {copiedDiag ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+                    <span>{copiedDiag ? 'Copied' : 'Copy JSON'}</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[#526071] dark:text-[#929BA9] leading-tight">
+                  <div>
+                    <span className="text-[#94A3B8]">Build: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      v{buildIdentity.appVersion} · {buildIdentity.gitCommitSha}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#94A3B8]">Code: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      {buildIdentity.changeCode} (run #{buildIdentity.ciRunNumber})
+                    </span>
+                  </div>
+                  <div className="col-span-2 truncate">
+                    <span className="text-[#94A3B8]">Built: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">{buildIdentity.buildTimestamp}</span>
+                  </div>
+                  <div className="col-span-2 truncate">
+                    <span className="text-[#94A3B8]">Engine: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                      {buildIdentity.ocrEngine} {buildIdentity.ocrEngineVersion}
+                    </span>
+                  </div>
+                  <div className="col-span-2 truncate">
+                    <span className="text-[#94A3B8]">Pipeline: </span>
+                    <span className="text-[#0F172A] dark:text-[#F2F4F7]">{buildIdentity.ocrPipelineVersion}</span>
+                  </div>
+                </div>
+
+                {!latest ? (
+                  <div className="p-2 rounded-lg border border-dashed border-[#E4E4E7] dark:border-[#20252D] text-[#697586] dark:text-[#929BA9]">
+                    {tr(
+                      'Unggah screenshot pada mode Offline untuk merekam telemetri preprocessing, waktu OCR, bounding box, teks mentah, dan hasil parser.',
+                      'Upload a screenshot in Offline mode to capture preprocessing steps, OCR timing, bounding boxes, raw text, and parser output.'
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1.5 border-t border-[#E4E4E7] dark:border-[#20252D]">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[#526071] dark:text-[#929BA9]">
+                      <div>
+                        <span className="text-[#94A3B8]">Runtime: </span>
+                        <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                          {latest.platform.isNativeCapacitor
+                            ? `Capacitor/${latest.platform.capacitorPlatform}`
+                            : 'Web'}{' '}
+                          (SW:{latest.platform.hasServiceWorkerController ? 'yes' : 'no'})
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8]">Engine Used: </span>
+                        <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                          {latest.resolvedEngine} ({latest.totalDurationMs}ms)
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8]">Input Dim: </span>
+                        <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                          {latest.inputDimensions
+                            ? `${latest.inputDimensions.width}x${latest.inputDimensions.height}`
+                            : 'n/a'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[#94A3B8]">Conf / Boxes: </span>
+                        <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                          {latest.finalConfidence}% / {latest.finalWordBoxCount} words
+                        </span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#94A3B8]">Fallback: </span>
+                        <span className="text-[#0F172A] dark:text-[#F2F4F7]">
+                          {latest.invokedFallback ? `YES (${latest.fallbackReason || 'multi-pass'})` : 'NO'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {latest.passes.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="text-[#94A3B8] uppercase">Passes ({latest.passes.length})</div>
+                        {latest.passes.map((p) => (
+                          <div
+                            key={`${latest.id}-p-${p.passIndex}`}
+                            className="p-1.5 rounded bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] space-y-0.5"
+                          >
+                            <div className="flex items-center justify-between text-[#0F172A] dark:text-[#F2F4F7]">
+                              <span>
+                                P{p.passIndex} [{p.variantMode} · PSM {p.psm}]
+                              </span>
+                              <span>
+                                {p.parsedRowsCount} rows · {p.confidence}% · {p.recognizeMs}ms
+                              </span>
+                            </div>
+                            {p.preprocess && (
+                              <div className="text-[#697586] dark:text-[#929BA9] break-all">
+                                {p.preprocess.sourceWidth}x{p.preprocess.sourceHeight} →{' '}
+                                {p.preprocess.outputWidth}x{p.preprocess.outputHeight} ({p.preprocess.encoding},{' '}
+                                {p.preprocess.detectedBackground}, {p.preprocess.preprocessMs}ms) · init:{' '}
+                                {p.workerInitMs}ms({p.workerReused ? 'warm' : 'cold'})
+                              </div>
+                            )}
+                            {p.preprocess?.stepsExecuted?.length ? (
+                              <div className="text-[#697586] dark:text-[#929BA9] break-all">
+                                Steps: {p.preprocess.stepsExecuted.join(' → ')}
+                              </div>
+                            ) : null}
+                            {p.error && (
+                              <div className="text-[#E11D48] dark:text-[#E05260]">Err: {p.error}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {latest.validationFailures.length > 0 && (
+                      <div className="p-1.5 rounded bg-[#E11D48]/5 border border-[#E11D48]/30 text-[#E11D48] dark:text-[#E05260] space-y-0.5">
+                        <div className="font-bold">Validation Issues ({latest.validationFailures.length})</div>
+                        {latest.validationFailures.map((v, vi) => (
+                          <div key={vi} className="break-words">
+                            • {v}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <details className="rounded border border-[#E4E4E7] dark:border-[#20252D] bg-white dark:bg-[#101318] p-1.5">
+                      <summary className="cursor-pointer font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                        Raw OCR Text & Parser Output ({latest.parserOutputSummary.length} rows)
+                      </summary>
+                      <div className="mt-1.5 space-y-1.5">
+                        <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words text-[9px] text-[#334155] dark:text-[#CBD5E1] bg-[#FAFAFA] dark:bg-[#0B0E13] p-1.5 rounded">
+                          {latest.finalRawText || '(empty raw text)'}
+                        </pre>
+                        <pre className="max-h-28 overflow-auto whitespace-pre-wrap break-words text-[9px] text-[#334155] dark:text-[#CBD5E1] bg-[#FAFAFA] dark:bg-[#0B0E13] p-1.5 rounded">
+                          {JSON.stringify(latest.parserOutputSummary, null, 2)}
+                        </pre>
+                      </div>
+                    </details>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Section 1: Screenshot MT5 Upload & Queue */}
           <div
@@ -930,11 +1186,19 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
                   <span className="font-semibold text-[#151D2A] dark:text-[#F2F4F7]">
                     {selectedCandidates.length} {tr('Dipilih', 'Selected')}
                   </span>
+                  {doubleEntryCount > 0 && (
+                    <>
+                      <span aria-hidden="true"> · </span>
+                      <span className="text-[#059669] dark:text-[#00A878] font-semibold">
+                        {doubleEntryCount} {tr('double entry', 'double entry')}
+                      </span>
+                    </>
+                  )}
                   {duplicateCount > 0 && (
                     <>
                       <span aria-hidden="true"> · </span>
                       <span className="text-[#D97706] dark:text-[#F59E0B] font-semibold">
-                        {duplicateCount} {tr('duplikat', 'duplicates')}
+                        {duplicateCount} {tr('duplikat/overlap', 'duplicates/overlap')}
                       </span>
                     </>
                   )}
@@ -992,6 +1256,15 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
                   >
                     {tr('Pilih Baru', 'Select New')}
                   </button>
+                  {duplicateCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => toggleSelectAll(false)}
+                      className="text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] cursor-pointer whitespace-nowrap"
+                    >
+                      {tr('Pilih Semua', 'Select All')}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() =>
@@ -1012,6 +1285,7 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
             const isWin = cand.netProfit >= 0.01;
             const isLoss = cand.netProfit <= -0.01;
             const audit = auditMap.get(cand.tempId);
+            const riskPreview = computeMt5CandidateRiskPreview(cand, settings);
 
             return (
               <div
@@ -1196,14 +1470,24 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
 
                   <span aria-hidden="true">·</span>
 
-                  <input
-                    type="datetime-local"
-                    value={cand.closeDateTime}
-                    onChange={(e) =>
-                      updateCandidate(cand.tempId, 'closeDateTime', e.target.value)
-                    }
-                    className="bg-transparent text-[11px] text-[#697586] dark:text-[#929BA9] focus:outline-none dark:[color-scheme:dark]"
-                  />
+                  <div className="inline-flex items-center gap-0.5">
+                    <input
+                      type="datetime-local"
+                      value={cand.closeDateTime}
+                      onChange={(e) =>
+                        updateCandidate(cand.tempId, 'closeDateTime', e.target.value)
+                      }
+                      className="bg-transparent text-[11px] text-[#697586] dark:text-[#929BA9] focus:outline-none dark:[color-scheme:dark]"
+                    />
+                    {cand.exactCloseDateTime && cand.exactCloseDateTime.length >= 19 && (
+                      <span
+                        title={tr('Detik eksekusi MT5', 'MT5 execution seconds')}
+                        className="text-[10px] font-semibold text-[#697586] dark:text-[#929BA9] tabular-nums"
+                      >
+                        :{cand.exactCloseDateTime.slice(17, 19)}
+                      </span>
+                    )}
+                  </div>
 
                   <span aria-hidden="true">·</span>
 
@@ -1234,16 +1518,96 @@ export const Mt5HistoryScanModal: React.FC<Mt5HistoryScanModalProps> = ({
                     </>
                   )}
 
+                  {cand.isDoubleEntry && !cand.isDuplicate && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="text-[10px] font-semibold text-[#059669] dark:text-[#00A878]">
+                        {tr('Double Entry', 'Double Entry')}
+                      </span>
+                    </>
+                  )}
+
                   {cand.isDuplicate && (
                     <>
                       <span aria-hidden="true">·</span>
                       <span className="text-[10px] font-semibold text-[#D97706] dark:text-[#F59E0B]">
-                        {tr(
-                          `Sudah ada (${cand.duplicateMatchId || 'Jurnal'})`,
-                          `Already logged (${cand.duplicateMatchId || 'Journal'})`
-                        )}
+                        {cand.duplicateReason === 'BATCH_OVERLAP'
+                          ? tr(
+                              `Kemungkinan overlap (${cand.duplicateMatchId || 'Foto Sebelumnya'}) — cek jika baru`,
+                              `Possible overlap (${cand.duplicateMatchId || 'Previous photo'}) — check if new`
+                            )
+                          : cand.duplicateReason === 'SIMILAR_JOURNAL_MATCH'
+                          ? tr(
+                              `Mirip dgn Jurnal (${cand.duplicateMatchId || 'Jurnal'}) — cek entry baru`,
+                              `Similar to Journal (${cand.duplicateMatchId || 'Journal'}) — verify if new`
+                            )
+                          : tr(
+                              `Sudah ada di Jurnal (${cand.duplicateMatchId || 'Jurnal'})`,
+                              `Already in Journal (${cand.duplicateMatchId || 'Journal'})`
+                            )}
                       </span>
                     </>
+                  )}
+                </div>
+
+                {/* Honest Risk & Realized R Preview Line (Unboxed Metadata) */}
+                <div className="mt-1 pl-7 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-[#697586] dark:text-[#929BA9] tabular-nums">
+                  {riskPreview.hasValidSl && riskPreview.realizedR !== null ? (
+                    <>
+                      <span>SL {cand.stopLoss}</span>
+                      {cand.takeProfit && cand.takeProfit > 0 && (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <span>TP {cand.takeProfit}</span>
+                        </>
+                      )}
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {tr('Risiko', 'Risk')} {fmtMoney(riskPreview.riskAmount)}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        Realized R{' '}
+                        <strong
+                          className={
+                            riskPreview.realizedR > 0
+                              ? 'text-[#059669] dark:text-[#00A878]'
+                              : riskPreview.realizedR < 0
+                              ? 'text-[#E11D48] dark:text-[#E05260]'
+                              : 'text-[#151D2A] dark:text-[#F2F4F7]'
+                          }
+                        >
+                          {formatRMultiple(riskPreview.realizedR, true)}
+                        </strong>
+                      </span>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setExpandedRowIds((prev) => ({
+                          ...prev,
+                          [cand.tempId]: true,
+                        }))
+                      }
+                      className="text-left text-[#697586] dark:text-[#929BA9] hover:text-[#151D2A] dark:hover:text-[#F2F4F7] transition-colors cursor-pointer"
+                    >
+                      {cand.takeProfit && cand.takeProfit > 0 && (
+                        <>
+                          <span>TP {cand.takeProfit}</span>
+                          <span aria-hidden="true"> · </span>
+                        </>
+                      )}
+                      <span>{tr('SL kosong · Realized R: N/A', 'No SL · Realized R: N/A')}</span>
+                      {!isExpanded && (
+                        <>
+                          <span aria-hidden="true"> · </span>
+                          <span className="underline underline-offset-2 font-semibold">
+                            {tr('Isi SL', 'Add SL')}
+                          </span>
+                        </>
+                      )}
+                    </button>
                   )}
                 </div>
 

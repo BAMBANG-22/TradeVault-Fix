@@ -2,6 +2,8 @@ package com.tradevault.journal;
 
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -32,6 +34,8 @@ public class MainActivity extends BridgeActivity {
 
     private static final String PREFS_NAME = "TradeVaultSystemBarsPrefs";
     private static final String KEY_THEME = "active_theme";
+    private static final String KEY_LAST_APK_VERSION_CODE = "last_apk_version_code";
+    private static final String KEY_LAST_APK_UPDATE_TIME = "last_apk_update_time";
 
     // Dark Mode colors matching Navbar (#050607) and MobileNav (#0B0D11)
     private static final int DARK_TOP_BAR_COLOR = Color.parseColor("#050607");
@@ -43,6 +47,10 @@ public class MainActivity extends BridgeActivity {
 
     private String currentAppTheme = "dark";
     private SplitSystemBarsDrawable activeBarsDrawable;
+    private long nativeVersionCode = 0L;
+    private String nativeVersionName = "unknown";
+    private long nativeLastUpdateTime = 0L;
+    private boolean webViewCacheClearedOnBoot = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,9 +60,55 @@ public class MainActivity extends BridgeActivity {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         currentAppTheme = prefs.getString(KEY_THEME, "dark");
 
+        clearStaleWebViewHttpCacheOnUpgrade(prefs);
         configureBoundedSeamlessSystemBars();
         attachThemeJavascriptBridge();
         applySystemBarThemeColors(currentAppTheme);
+    }
+
+    /**
+     * Clears Chromium WebView's disk/memory HTTP cache once whenever the installed APK
+     * versionCode or lastUpdateTime changes. Strictly preserves localStorage, IndexedDB,
+     * and all offline TradeVault journal records.
+     */
+    @SuppressWarnings("deprecation")
+    private void clearStaleWebViewHttpCacheOnUpgrade(SharedPreferences prefs) {
+        try {
+            PackageManager pm = getPackageManager();
+            PackageInfo pkgInfo = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                ? pm.getPackageInfo(getPackageName(), PackageManager.PackageInfoFlags.of(0))
+                : pm.getPackageInfo(getPackageName(), 0);
+            if (pkgInfo != null) {
+                nativeVersionCode = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                    ? pkgInfo.getLongVersionCode()
+                    : (long) pkgInfo.versionCode;
+                nativeVersionName = pkgInfo.versionName != null ? pkgInfo.versionName : "unknown";
+                nativeLastUpdateTime = pkgInfo.lastUpdateTime;
+            }
+        } catch (Exception ignored) {
+            // Keep safe defaults
+        }
+
+        long prevVersionCode = prefs.getLong(KEY_LAST_APK_VERSION_CODE, -1L);
+        long prevUpdateTime = prefs.getLong(KEY_LAST_APK_UPDATE_TIME, -1L);
+        boolean isUpgradeOrReinstall =
+            (nativeVersionCode > 0L && prevVersionCode != nativeVersionCode) ||
+            (nativeLastUpdateTime > 0L && prevUpdateTime != nativeLastUpdateTime);
+
+        if (isUpgradeOrReinstall) {
+            if (getBridge() != null && getBridge().getWebView() != null) {
+                try {
+                    getBridge().getWebView().clearCache(true);
+                    webViewCacheClearedOnBoot = true;
+                } catch (Exception ignored) {
+                    // Ignore WebView cache clear failures
+                }
+            }
+            prefs.edit()
+                .putLong(KEY_LAST_APK_VERSION_CODE, nativeVersionCode)
+                .putLong(KEY_LAST_APK_UPDATE_TIME, nativeLastUpdateTime)
+                .apply();
+        }
     }
 
     @Override
@@ -251,6 +305,19 @@ public class MainActivity extends BridgeActivity {
                     setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
                 }
             });
+        }
+
+        @JavascriptInterface
+        public String getNativeAppInfo() {
+            String safeVerName = nativeVersionName != null
+                ? nativeVersionName.replace("\\", "\\\\").replace("\"", "\\\"")
+                : "unknown";
+            return "{"
+                + "\"versionCode\":" + nativeVersionCode + ","
+                + "\"versionName\":\"" + safeVerName + "\","
+                + "\"lastUpdateTime\":" + nativeLastUpdateTime + ","
+                + "\"webViewCacheClearedOnBoot\":" + (webViewCacheClearedOnBoot ? "true" : "false")
+                + "}";
         }
     }
 

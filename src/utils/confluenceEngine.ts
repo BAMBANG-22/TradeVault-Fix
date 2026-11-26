@@ -218,6 +218,10 @@ export interface RawMacroConfluenceContext {
   macroSourceSystem?: 'SYSTEM_1_PRE_NEWS' | 'SYSTEM_2_POST_NEWS' | 'SYSTEM_3_LIVE_PULSE';
   macroSourceLabelId?: string;
   macroSourceLabelEn?: string;
+  tacticalStatus?: 'NORMAL' | 'COUNTER_RALLY_RISK' | 'COUNTER_DROP_RISK' | 'HIGH_TWOWAY_VOL';
+  tacticalNoteId?: string;
+  tacticalNoteEn?: string;
+  dxyDistortionDetected?: boolean;
 }
 
 export interface TwoStageStructureValidation {
@@ -2726,7 +2730,14 @@ export function evaluateConfluenceMaster(params: {
   const dominantDirection: ConfluenceMasterResult['dominantDirection'] =
     uptrendPct >= 55 ? 'BULLISH' : uptrendPct <= 45 ? 'BEARISH' : 'NETRAL';
 
-  const guidanceId = `${twoStageValidation.summaryId} ${proDeskRead.entryTriggerChecklistId}`.trim();
+  const tacticalSuffix =
+    resolvedRawMacroContext.tacticalStatus &&
+    resolvedRawMacroContext.tacticalStatus !== 'NORMAL' &&
+    resolvedRawMacroContext.tacticalNoteId
+      ? ` [${resolvedRawMacroContext.tacticalNoteId}]`
+      : '';
+
+  const guidanceId = `${twoStageValidation.summaryId} ${proDeskRead.entryTriggerChecklistId}${tacticalSuffix}`.trim();
 
   return {
     viewMode,

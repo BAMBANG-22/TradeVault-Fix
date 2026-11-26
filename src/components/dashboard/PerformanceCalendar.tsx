@@ -28,6 +28,7 @@ import {
   Eye,
   Clock,
   Check,
+  Trash2,
 } from 'lucide-react';
 
 /**
@@ -56,6 +57,14 @@ interface PerformanceCalendarProps {
   isPrivacyMode?: boolean;
   trades?: Trade[];
   onViewTrade?: (trade: Trade) => void;
+  onDeleteTradesByDate?: (payload: {
+    dateKey: string;
+    headerLabel?: string;
+    trades: Trade[];
+    source: 'calendar';
+    isFilteredSubset?: boolean;
+    totalTradesOnDate?: number;
+  }) => void;
 }
 
 export const PerformanceCalendar: React.FC<PerformanceCalendarProps> = React.memo(({
@@ -65,6 +74,7 @@ export const PerformanceCalendar: React.FC<PerformanceCalendarProps> = React.mem
   isPrivacyMode = false,
   trades = [],
   onViewTrade,
+  onDeleteTradesByDate,
 }) => {
   const { preferredCurrency, formatDynamic, formatTradeFinancial } = useGlobalCurrency();
   const { tr } = useLanguage();
@@ -593,8 +603,8 @@ export const PerformanceCalendar: React.FC<PerformanceCalendarProps> = React.mem
           aria-label={tr(`Rincian tanggal ${selectedDate}`, `Details for ${selectedDate}`)}
         >
           {/* Detail Header */}
-          <div className="flex items-center justify-between pb-2.5 border-b border-[#E4E4E7] dark:border-[#20252D]">
-            <div>
+          <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-[#E4E4E7] dark:border-[#20252D]">
+            <div className="min-w-0">
               <h4 className="text-xs sm:text-sm font-bold text-[#0F172A] dark:text-[#F2F4F7] tabular-nums">
                 {tr('Detail Performa Harian', 'Daily Performance Detail')} — {selectedDate}
               </h4>
@@ -605,14 +615,39 @@ export const PerformanceCalendar: React.FC<PerformanceCalendarProps> = React.mem
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setSelectedDate(null)}
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
-              aria-label={tr('Tutup rincian tanggal', 'Close date details')}
-            >
-              <X className="h-4 w-4 stroke-[1.75]" />
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {onDeleteTradesByDate && selectedDateTrades.length > 0 && (
+                <button
+                  type="button"
+                  data-testid="analytics-calendar-delete-day-btn"
+                  onClick={() =>
+                    onDeleteTradesByDate({
+                      dateKey: selectedDate,
+                      headerLabel: selectedDate,
+                      trades: selectedDateTrades,
+                      source: 'calendar',
+                    })
+                  }
+                  title={tr('Hapus semua transaksi tanggal ini', 'Delete all trades for this date')}
+                  aria-label={tr(
+                    `Hapus ${selectedDateTrades.length} transaksi pada ${selectedDate}`,
+                    `Delete ${selectedDateTrades.length} trades on ${selectedDate}`
+                  )}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold text-[#E11D48] dark:text-[#E05260] bg-[#E11D48]/10 hover:bg-[#E11D48]/15 dark:bg-[#E05260]/12 dark:hover:bg-[#E05260]/20 border border-[#E11D48]/20 dark:border-[#E05260]/25 transition-colors cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5 stroke-[1.75]" />
+                  <span>{tr('Hapus Semua', 'Delete All')}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedDate(null)}
+                className="min-h-[36px] min-w-[36px] flex items-center justify-center rounded-full text-[#526071] dark:text-[#929BA9] hover:text-[#0F172A] dark:hover:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
+                aria-label={tr('Tutup rincian tanggal', 'Close date details')}
+              >
+                <X className="h-4 w-4 stroke-[1.75]" />
+              </button>
+            </div>
           </div>
 
           {/* 4 Required Daily Metrics: Tanggal, Net Profit/Loss, Jumlah Transaksi, Win Rate */}
@@ -676,7 +711,7 @@ export const PerformanceCalendar: React.FC<PerformanceCalendarProps> = React.mem
               {selectedDateTrades.map((trade) => {
                 const netPl = computeTradeNetProfit(trade);
                 const outcome = resolveTradeOutcome(trade);
-                const rMultiple = computeRealizedRMultiple(trade);
+                const rMultiple = computeRealizedRMultiple(trade, settings);
                 const timePart = (trade.dateTime || '').slice(11, 16) || '--:--';
                 const isBuy = trade.position === 'BUY';
 

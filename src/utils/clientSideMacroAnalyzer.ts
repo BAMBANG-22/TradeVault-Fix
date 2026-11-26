@@ -28,6 +28,8 @@ import {
   saveFundamentalGoldSnapshotToLocal,
   saveCmeFedWatchToLocal,
   computeFundamentalGoldCadenceSlot,
+  normalizeCanonicalMacroTitleKey,
+  isEventReleasedOrImminent,
 } from './macroNewsEngine';
 import {
   fetchClientForexFactoryCalendar,
@@ -38,6 +40,7 @@ import {
   fetchClientVixPulse,
   fetchClientGoldPositioning,
   fetchClientExtendedFundamentalFeeds,
+  fetchClientExtendedAsset,
 } from './macroFeedFetcher';
 import {
   getApiEndpointCandidates,
@@ -117,23 +120,53 @@ export async function analyzeMacroWithGeminiClient(params: {
     },
   };
 
-  // 1b. If News & Cycle Offline Mode is active, NEVER call Gemini API
-  if (isNewsCycleOfflineMode()) {
+  // 1b. If News & Cycle Offline Mode is active or device is offline, NEVER call Gemini API
+  const isDeviceOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (isNewsCycleOfflineMode() || isDeviceOffline) {
     return baselineSnapshot;
   }
 
   // 2. Call standalone server Gemini proxy (configured via VITE_API_BASE_URL or Supabase Edge for APK)
   const endpoints = getApiEndpointCandidates('/api/macro-news/analyze');
+  let bestFallbackSnapshot: MacroNewsSnapshot | null = null;
   for (const endpoint of endpoints) {
     const res = await nativeAwarePostJson(endpoint, requestPayload, 45000);
 
     if (res.ok && res.json?.success && res.json?.snapshot) {
-      return res.json.snapshot as MacroNewsSnapshot;
+      const candidate = res.json.snapshot as MacroNewsSnapshot;
+      const fallbackUsed =
+        typeof res.json.fallbackUsed === 'boolean'
+          ? res.json.fallbackUsed
+          : candidate.sourceMode !== 'GEMINI_AI';
+      const aiErrorCode =
+        typeof res.json.aiErrorCode === 'string' && res.json.aiErrorCode.trim()
+          ? res.json.aiErrorCode.trim()
+          : undefined;
+      const enriched: MacroNewsSnapshot = {
+        ...candidate,
+        fallbackUsed,
+        aiErrorCode,
+        isOfflineCached: false,
+      };
+      if (!fallbackUsed && enriched.sourceMode === 'GEMINI_AI') {
+        return enriched;
+      }
+      if (!bestFallbackSnapshot) {
+        bestFallbackSnapshot = enriched;
+      }
     }
   }
 
+  if (bestFallbackSnapshot) {
+    return bestFallbackSnapshot;
+  }
+
   // 3. Resilient fallback to deterministic Master Playbook rules if server is unreachable
-  return baselineSnapshot;
+  return {
+    ...baselineSnapshot,
+    fallbackUsed: true,
+    aiErrorCode: 'BACKEND_UNREACHABLE',
+  };
 }
 
 /**
@@ -142,19 +175,20 @@ export async function analyzeMacroWithGeminiClient(params: {
  * 2. Analyze via server-side Gemini proxy (/api/macro-news/analyze) including Google Search Grounding for CME FedWatch & live ZQ=F Futures backup.
  * 3. Persist verified actuals to Offline Archive & save snapshot to Supabase `macro_news_snapshots`.
  */
-const HIST_BACKFILL_LAST_SYNC_KEY = 'tradevault_macro_hist_backfill_last_v1';
+const HIST_BACKFILL_LAST_SYNC_KEY = 'tradevault_macro_hist_backfill_last_v3';
 const HIST_BACKFILL_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Ensures the offline archive has the verified Sep–Nov 2026 baseline and pulls up to 90 days
- * of released USD macro actuals (CPI, PPI, NFP, PCE, FOMC, GDP, Retail Sales, ISM) at 0 Gemini tokens.
+ * of released USD macro actuals (CPI, PPI, NFP, PCE, FOMC, GDP, Retail Sales, ISM, Flash PMI, etc.) at 0 Gemini tokens.
  */
 export async function syncHistoricalActualsArchive(force = false): Promise<{
   totalRecords: number;
   syncedLiveCount: number;
 }> {
   const seeded = ensureHistoricalActualsArchiveSeeded();
-  if (isNewsCycleOfflineMode()) {
+  const isDeviceOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+  if (isNewsCycleOfflineMode() || isDeviceOffline) {
     return { totalRecords: seeded.length, syncedLiveCount: 0 };
   }
 
@@ -202,22 +236,74 @@ export async function executeClientSideMacroAnalysis(
 }> {
   ensureHistoricalActualsArchiveSeeded();
 
-  if (isNewsCycleOfflineMode()) {
+  const isManualOffline = isNewsCycleOfflineMode();
+  const isDeviceOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+  if (isManualOffline || isDeviceOffline) {
     const cachedSnap = loadLocalCachedMacroSnapshotSync();
     if (cachedSnap) {
       return {
         snapshot: {
           ...cachedSnap,
           calendarEvents: hydrateEventsWithOfflineArchive(cachedSnap.calendarEvents),
+          isOfflineCached: true,
         },
         supabaseResult: { success: false, remoteSaved: false },
       };
     }
-    throw new Error('Mode Offline aktif dan belum ada cache lokal Trade News tersimpan.');
+    if (isManualOffline) {
+      throw new Error('Mode Offline aktif dan belum ada cache lokal Trade News tersimpan.');
+    }
+    const offlineUnavailable = (
+      symbol: 'DXY' | 'USOIL' | 'US10Y' | 'US02Y',
+      yahooTicker: string,
+      name: string
+    ) => ({
+      symbol,
+      yahooTicker,
+      name,
+      price: 0,
+      previousClose: 0,
+      change: 0,
+      changePercent: 0,
+      direction: 'FLAT' as const,
+      goldCorrelationEffect: 'NEUTRAL' as const,
+      summaryId: `${name} sementara tidak tersedia (Offline)`,
+      summaryEn: `${name} unavailable (Offline)`,
+      updatedAt: new Date().toISOString(),
+      isAvailable: false,
+    });
+    const offlineSnapshot: MacroNewsSnapshot = {
+      ...analyzeMacroEvent({
+        calendarEvents: hydrateEventsWithOfflineArchive([]),
+        intermarketPulse: {
+          dxy: offlineUnavailable('DXY', 'DX-Y.NYB', 'US Dollar Index (DXY)'),
+          us02y: offlineUnavailable('US02Y', '2YY=F', 'US 2Y Treasury Yield'),
+          usoil: offlineUnavailable('USOIL', 'CL=F', 'US Oil WTI Crude'),
+          us10y: offlineUnavailable('US10Y', '^TNX', 'US 10Y Treasury Yield'),
+        },
+        breakingNews: [],
+        cmeFedWatch: resolveSyncedCmeFedWatchState({
+          futuresBackup: createUnavailableFedWatchState(),
+          forceRefresh: false,
+        }),
+        selectedEventId,
+        sourceMode: 'RULE_BASED_FALLBACK',
+        modelUsed: 'rule-based-offline',
+        priorCalendarEvents,
+      }),
+      fallbackUsed: true,
+      aiErrorCode: 'DEVICE_OFFLINE',
+      isOfflineCached: true,
+    };
+    return {
+      snapshot: offlineSnapshot,
+      supabaseResult: { success: false, remoteSaved: false },
+    };
   }
 
   // Step 1: Pull all live public feeds + throttled 90-day 0-token historical backfill in parallel
-  const [rawCalendarEvents, _backfillRes, dxy, us02y, usoil, us10y, vix, goldPositioning, rssResult] =
+  const [rawCalendarEvents, backfillRes, dxy, us02y, usoil, us10y, vix, goldPositioning, rssResult, eurUsd] =
     await Promise.all([
       fetchClientForexFactoryCalendar(),
       syncHistoricalActualsArchive(forceRefresh),
@@ -228,13 +314,36 @@ export async function executeClientSideMacroAnalysis(
       fetchClientVixPulse(),
       fetchClientGoldPositioning(),
       fetchClientBreakingHeadlinesWithHealth(),
+      fetchClientExtendedAsset({
+        symbol: 'EURUSD',
+        yahooTicker: 'EURUSD=X',
+        name: 'EUR/USD',
+        category: 'FX_G10',
+        bullishWhenUp: true,
+      }).catch(() => undefined),
     ]);
 
   // Persist any fresh calendar actuals immediately and fill gaps/prior-week releases from Offline Archive
   if (rawCalendarEvents.length > 0) {
     recordReleasedActualsToOfflineArchive(rawCalendarEvents, 'LIVE_FEED');
   }
-  const calendarEvents = hydrateEventsWithOfflineArchive(rawCalendarEvents);
+  let calendarEvents = hydrateEventsWithOfflineArchive(rawCalendarEvents);
+
+  // If any recently released event (last 72h) still lacks an actual and archive sync was skipped by cooldown, force a live backfill once
+  const nowCheckMs = Date.now();
+  const hasRecentMissingActual = calendarEvents.some((ev) => {
+    const evMs = new Date(ev.date).getTime();
+    return (
+      Number.isFinite(evMs) &&
+      isEventReleasedOrImminent(ev.date, nowCheckMs) &&
+      nowCheckMs - evMs <= 72 * 60 * 60 * 1000 &&
+      isPlaceholderMacroValue(ev.actual)
+    );
+  });
+  if (hasRecentMissingActual && !forceRefresh && backfillRes.syncedLiveCount === 0) {
+    await syncHistoricalActualsArchive(true);
+    calendarEvents = hydrateEventsWithOfflineArchive(rawCalendarEvents, nowCheckMs);
+  }
 
   const breakingNews = rssResult.headlines;
   if (breakingNews.length > 0) {
@@ -242,7 +351,7 @@ export async function executeClientSideMacroAnalysis(
   }
   const rssFeedHealth = rssResult.rssFeedHealth;
 
-  const intermarketPulse = { dxy, us02y, usoil, us10y, vix, goldPositioning };
+  const intermarketPulse = { dxy, us02y, usoil, us10y, vix, goldPositioning, eurUsd };
   const cmeFedWatchBackup = await fetchClientFedFundsFuturesBackup(us10y);
 
   // Step 2: Analyze with server-side Gemini proxy
@@ -262,37 +371,44 @@ export async function executeClientSideMacroAnalysis(
 
   // Preserve live calendar events from client or server (including server TradingView / Grounding actual enrichment)
   if (calendarEvents.length > 0 && calendarEvents.every((e) => e.isLiveFeed)) {
+    const nowMs = Date.now();
     const serverActualBySlot = new Map<string, { actual: string; actualNum: number | null; unit?: string }>();
-    const serverActualByTitle = new Map<string, { actual: string; actualNum: number | null; unit?: string }>();
+    const serverActualByDay = new Map<string, { actual: string; actualNum: number | null; unit?: string }>();
     if (Array.isArray(analyzedSnapshot.calendarEvents)) {
-      const serverEnrichedWithNums = analyzedSnapshot.calendarEvents.filter(
-        (sEv) => !isPlaceholderMacroValue(sEv.actual)
-      );
+      const serverEnrichedWithNums = analyzedSnapshot.calendarEvents.filter((sEv) => {
+        const sMs = new Date(sEv.date).getTime();
+        return !isPlaceholderMacroValue(sEv.actual) && Number.isFinite(sMs) && sMs <= nowMs + 2 * 60 * 1000;
+      });
       if (serverEnrichedWithNums.length > 0) {
-        recordReleasedActualsToOfflineArchive(serverEnrichedWithNums, 'TV_ENRICH');
+        recordReleasedActualsToOfflineArchive(serverEnrichedWithNums, 'TV_ENRICH', undefined, nowMs);
       }
-      for (const sEv of analyzedSnapshot.calendarEvents) {
-        if (!isPlaceholderMacroValue(sEv.actual)) {
-          const titleKey = sEv.title.trim().toLowerCase();
-          const slotKey = `${titleKey}|${(sEv.date || '').slice(0, 13)}`;
-          const entry = {
-            actual: sEv.actual.trim(),
-            actualNum: sEv.actualNum ?? null,
-            unit: sEv.unit,
-          };
-          serverActualBySlot.set(slotKey, entry);
-          if (!serverActualByTitle.has(titleKey)) {
-            serverActualByTitle.set(titleKey, entry);
-          }
+      for (const sEv of serverEnrichedWithNums) {
+        const titleKey = normalizeCanonicalMacroTitleKey(sEv.title);
+        const slotKey = `${titleKey}|${(sEv.date || '').slice(0, 13)}`;
+        const dayKey = `${titleKey}|${(sEv.date || '').slice(0, 10)}`;
+        const entry = {
+          actual: sEv.actual.trim(),
+          actualNum: sEv.actualNum ?? null,
+          unit: sEv.unit,
+        };
+        serverActualBySlot.set(slotKey, entry);
+        if (!serverActualByDay.has(dayKey)) {
+          serverActualByDay.set(dayKey, entry);
         }
       }
     }
     let anyActualUpdated = false;
     const mergedCal = calendarEvents.map((cEv) => {
+      const cMs = new Date(cEv.date).getTime();
+      const isReleased = Number.isFinite(cMs) && cMs <= nowMs + 2 * 60 * 1000;
+      if (!isReleased) {
+        return cEv;
+      }
       if (isPlaceholderMacroValue(cEv.actual)) {
-        const titleKey = cEv.title.trim().toLowerCase();
+        const titleKey = normalizeCanonicalMacroTitleKey(cEv.title);
         const slotKey = `${titleKey}|${(cEv.date || '').slice(0, 13)}`;
-        const enriched = serverActualBySlot.get(slotKey) || serverActualByTitle.get(titleKey);
+        const dayKey = `${titleKey}|${(cEv.date || '').slice(0, 10)}`;
+        const enriched = serverActualBySlot.get(slotKey) || serverActualByDay.get(dayKey);
         if (enriched) {
           anyActualUpdated = true;
           const evalResult = evaluateSingleEventForGold(
@@ -315,7 +431,7 @@ export async function executeClientSideMacroAnalysis(
       }
       return cEv;
     });
-    analyzedSnapshot.calendarEvents = hydrateEventsWithOfflineArchive(mergedCal);
+    analyzedSnapshot.calendarEvents = hydrateEventsWithOfflineArchive(mergedCal, nowMs);
     if (anyActualUpdated) {
       const refreshed = analyzeMacroEvent({
         calendarEvents: analyzedSnapshot.calendarEvents,
@@ -355,13 +471,16 @@ export async function executeClientSideMacroAnalysis(
     }
   }
 
-  // Ensure VIX and GC=F positioning remain attached if server did not include them
+  // Ensure VIX, GC=F positioning, and EUR/USD remain attached if server did not include them
   if (analyzedSnapshot.intermarketPulse) {
     if (!analyzedSnapshot.intermarketPulse.vix?.isAvailable && vix.isAvailable) {
       analyzedSnapshot.intermarketPulse.vix = vix;
     }
     if (!analyzedSnapshot.intermarketPulse.goldPositioning?.isAvailable && goldPositioning.isAvailable) {
       analyzedSnapshot.intermarketPulse.goldPositioning = goldPositioning;
+    }
+    if (!analyzedSnapshot.intermarketPulse.eurUsd?.isAvailable && eurUsd?.isAvailable) {
+      analyzedSnapshot.intermarketPulse.eurUsd = eurUsd;
     }
   }
 
@@ -502,7 +621,8 @@ export async function executeClientSideFundamentalGoldAnalysis(options?: {
     if (previousSnapshot) {
       const updatedOffline: FundamentalGoldSnapshot = {
         ...previousSnapshot,
-        analyzedAt: new Date().toISOString(),
+        analyzedAt: previousSnapshot.analyzedAt,
+        isOfflineCached: true,
         cadenceSchedule: computeFundamentalGoldCadenceSlot(),
         changeDetection: {
           ...previousSnapshot.changeDetection,
@@ -574,9 +694,9 @@ export async function executeClientSideFundamentalGoldAnalysis(options?: {
       headlines: [],
       health: [],
     })),
-    fetchClientExtendedFundamentalFeeds().catch(() => ({
-      externalEvents: [],
-    })),
+    fetchClientExtendedFundamentalFeeds().catch(
+      () => ({ externalEvents: [] } as import('./macroNewsEngine').FundamentalExtendedFeeds)
+    ),
   ]);
 
   if (rawCalendarEvents.length > 0) {
@@ -587,7 +707,15 @@ export async function executeClientSideFundamentalGoldAnalysis(options?: {
   if (breakingNews.length > 0) {
     recordBreakingNewsToMonthlyArchive(breakingNews);
   }
-  const intermarketPulse = { dxy, us02y, usoil, us10y, vix, goldPositioning };
+  const intermarketPulse = {
+    dxy,
+    us02y,
+    usoil,
+    us10y,
+    vix,
+    goldPositioning,
+    eurUsd: extendedFeeds?.eurUsd,
+  };
   const futuresBackupFedWatch = await fetchClientFedFundsFuturesBackup(us10y).catch(() =>
     createUnavailableFedWatchState()
   );
@@ -660,6 +788,7 @@ export async function executeClientSideFundamentalGoldAnalysis(options?: {
     },
   };
 
+  let bestFallbackFundamental: FundamentalGoldSnapshot | null = null;
   for (const endpoint of endpoints) {
     try {
       const res = await nativeAwarePostJson(endpoint, payload, 40000);
@@ -676,17 +805,47 @@ export async function executeClientSideFundamentalGoldAnalysis(options?: {
         candidate.narrative?.id &&
         candidate.narrative?.en
       ) {
-        saveFundamentalGoldSnapshotToLocal(candidate);
-        return candidate;
+        const fallbackUsed =
+          typeof res.json.fallbackUsed === 'boolean'
+            ? res.json.fallbackUsed
+            : candidate.sourceMode !== 'GEMINI_AI';
+        const aiErrorCode =
+          typeof res.json.aiErrorCode === 'string' && res.json.aiErrorCode.trim()
+            ? res.json.aiErrorCode.trim()
+            : undefined;
+        const enriched: FundamentalGoldSnapshot = {
+          ...candidate,
+          fallbackUsed,
+          aiErrorCode,
+          isOfflineCached: false,
+        };
+        if (!fallbackUsed && enriched.sourceMode === 'GEMINI_AI') {
+          saveFundamentalGoldSnapshotToLocal(enriched);
+          return enriched;
+        }
+        if (!bestFallbackFundamental) {
+          bestFallbackFundamental = enriched;
+        }
       }
     } catch {
       // Fallback cleanly to next candidate or local deterministic engine
     }
   }
 
+  if (bestFallbackFundamental) {
+    saveFundamentalGoldSnapshotToLocal(bestFallbackFundamental);
+    return bestFallbackFundamental;
+  }
+
   // Resilient deterministic fallback if backend or quota is unavailable
-  saveFundamentalGoldSnapshotToLocal(deterministicSnapshot);
-  return deterministicSnapshot;
+  const localFallback: FundamentalGoldSnapshot = {
+    ...deterministicSnapshot,
+    fallbackUsed: true,
+    aiErrorCode: 'BACKEND_UNREACHABLE',
+    isOfflineCached: false,
+  };
+  saveFundamentalGoldSnapshotToLocal(localFallback);
+  return localFallback;
 }
 
 

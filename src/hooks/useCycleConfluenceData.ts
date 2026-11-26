@@ -24,6 +24,7 @@ import {
 } from '../utils/macroFeedFetcher';
 import { isMarketDay } from '../utils/date';
 import {
+  buildBackendAuthHeaders,
   getApiEndpointCandidates,
   isNativeAndroidOrIos,
   isNewsCycleOfflineMode,
@@ -32,8 +33,11 @@ import {
   NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY,
 } from '../utils/apiConfig';
 import {
+  computeIntradayMacroTacticalOverlay,
   computeMacroThreeSystemState,
   ensureHistoricalActualsArchiveSeeded,
+  FUNDAMENTAL_GOLD_SNAPSHOT_STORAGE_KEY,
+  loadLocalCachedFundamentalGoldSnapshotSync,
   loadLocalCachedMacroSnapshotSync,
   loadMonthlyNewsSpeechArchive,
   MACRO_ACTUALS_ARCHIVE_STORAGE_KEY,
@@ -43,6 +47,7 @@ import {
   MACRO_PRE_NEWS_LOCK_ARCHIVE_KEY,
   MACRO_SNAPSHOT_LOCAL_STORAGE_KEY,
   mergeBreakingHeadlinesForPulse,
+  type IntradayMacroTacticalOverlay,
   type MacroThreeSystemState,
 } from '../utils/macroNewsEngine';
 import type {
@@ -61,6 +66,7 @@ export type TwelveDataStatus =
   | 'preview_sample';
 export type ConfluenceCandleSource =
   | 'twelvedata'
+  | 'yahoo_futures'
   | 'binance'
   | 'cached'
   | 'sample'
@@ -319,7 +325,8 @@ export function parseTwelveDataCandles(values: any[], decimals: number = XAU_PAI
 async function fetchWithTimeout(
   url: string,
   timeoutMs: number,
-  parentSignal?: AbortSignal
+  parentSignal?: AbortSignal,
+  headers?: Record<string, string>
 ): Promise<Response> {
   const localController = new AbortController();
   const onParentAbort = () => localController.abort();
@@ -332,7 +339,10 @@ async function fetchWithTimeout(
   }
   const timer = setTimeout(() => localController.abort(), timeoutMs);
   try {
-    return await fetch(url, { signal: localController.signal });
+    return await fetch(url, {
+      ...(headers ? { headers } : {}),
+      signal: localController.signal,
+    });
   } finally {
     clearTimeout(timer);
     if (parentSignal) {
@@ -368,7 +378,22 @@ async function fetchWithProxyFallback(
   const encoded = encodeURIComponent(targetUrl);
   for (const proxyBase of proxyCandidates) {
     try {
-      const res = await fetchWithTimeout(`${proxyBase}?url=${encoded}`, 7000, signal);
+      const proxyUrl = `${proxyBase}?url=${encoded}`;
+      if (isNativeAndroidOrIos() && /^https?:\/\//i.test(proxyUrl)) {
+        const nativeProxyText = await nativeHttpGetText(proxyUrl, 7000, 'application/json');
+        if (nativeProxyText) {
+          return new Response(nativeProxyText, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+      const res = await fetchWithTimeout(
+        proxyUrl,
+        7000,
+        signal,
+        buildBackendAuthHeaders(proxyUrl)
+      );
       if (res.ok) return res;
     } catch (err: any) {
       if (signal?.aborted) throw err;
@@ -668,6 +693,8 @@ function buildRawMacroConfluenceContext(
     sourceSystem?: MacroThreeSystemState['effectiveSourceSystem'];
     speechHeadline?: string | null;
     localMacro?: ReturnType<typeof loadLocalCachedMacroSnapshotSync>;
+    tacticalOverlay?: IntradayMacroTacticalOverlay | null;
+    nowMs?: number;
   }
 ): RawMacroConfluenceContext {
   const localMacro = options?.localMacro ?? loadLocalCachedMacroSnapshotSync();
@@ -687,6 +714,23 @@ function buildRawMacroConfluenceContext(
       : 'Fundamental & Speech Netral / Menunggu Rilis');
 
   const sourceInter = intermarketBundle || localMacro?.intermarketPulse;
+  const mergedInterForOverlay = sourceInter
+    ? {
+        ...sourceInter,
+        eurUsd: intermarketBundle?.eurUsd ?? localMacro?.intermarketPulse?.eurUsd,
+      }
+    : null;
+  const tacticalOverlay =
+    options?.tacticalOverlay ??
+    (mergedInterForOverlay
+      ? computeIntradayMacroTacticalOverlay({
+          calendarEvents: localMacro?.calendarEvents || [],
+          intermarketPulse: mergedInterForOverlay,
+          breakingNews: localMacro?.breakingNews || [],
+          nowMs: options?.nowMs ?? Date.now(),
+        })
+      : null);
+
   const dxyRow = sourceInter?.dxy
     ? {
         key: 'DXY',
@@ -727,8 +771,18 @@ function buildRawMacroConfluenceContext(
   let bullishVotes = 0;
   let bearishVotes = 0;
   for (const t of effectiveTickers) {
-    if (t.goldCorrelationEffect === 'BULLISH_GOLD') bullishVotes += t.key === 'DXY' ? 2 : 1;
-    else if (t.goldCorrelationEffect === 'BEARISH_GOLD') bearishVotes += t.key === 'DXY' ? 2 : 1;
+    if (t.goldCorrelationEffect === 'BULLISH_GOLD') {
+      bullishVotes += t.key === 'DXY' ? 2 : 1;
+    } else if (t.goldCorrelationEffect === 'BEARISH_GOLD') {
+      if (t.key === 'DXY') {
+        bearishVotes += tacticalOverlay?.dxyDistortionDetected ? 1 : 2;
+      } else if (t.key === 'USOIL' && tacticalOverlay?.oilSafeHavenOffsetActive) {
+        // Safe-haven panic neutralizes Oil's bearish inflation vote intraday
+        bullishVotes += 0.5;
+      } else {
+        bearishVotes += 1;
+      }
+    }
   }
 
   const intermarketEffectOnGold: 'BULLISH_GOLD' | 'BEARISH_GOLD' | 'NEUTRAL' =
@@ -754,7 +808,9 @@ function buildRawMacroConfluenceContext(
 
   const dxyLabel =
     dxyRow && dxyRow.changePct !== null
-      ? `DXY ${dxyRow.changePct >= 0 ? '+' : ''}${dxyRow.changePct.toFixed(2)}%`
+      ? `DXY ${dxyRow.changePct >= 0 ? '+' : ''}${dxyRow.changePct.toFixed(2)}%${
+          tacticalOverlay?.dxyDistortionDetected ? ' (Distorsi EUR)' : ''
+        }`
       : 'DXY —';
   const oilLabel =
     oilRow && oilRow.changePct !== null
@@ -770,6 +826,7 @@ function buildRawMacroConfluenceContext(
       : 'US02Y —';
 
   const srcLabels = getMacroSourceLabels(options?.sourceSystem);
+  const isTacticalActive = Boolean(tacticalOverlay && tacticalOverlay.status !== 'NORMAL');
 
   return {
     fundamentalBias,
@@ -791,6 +848,10 @@ function buildRawMacroConfluenceContext(
     macroSourceSystem: options?.sourceSystem,
     macroSourceLabelId: srcLabels.id,
     macroSourceLabelEn: srcLabels.en,
+    tacticalStatus: tacticalOverlay?.status || 'NORMAL',
+    tacticalNoteId: isTacticalActive ? `${tacticalOverlay!.badgeId}: ${tacticalOverlay!.detailId}` : undefined,
+    tacticalNoteEn: isTacticalActive ? `${tacticalOverlay!.badgeEn}: ${tacticalOverlay!.detailEn}` : undefined,
+    dxyDistortionDetected: tacticalOverlay?.dxyDistortionDetected || false,
   };
 }
 
@@ -821,13 +882,26 @@ export function resolveSyncedMacroContext(
     monthlyArchive.items || []
   );
 
+  const localForThreeSystem = localMacro
+    ? {
+        ...localMacro,
+        intermarketPulse: intermarketBundle
+          ? {
+              ...localMacro.intermarketPulse,
+              ...intermarketBundle,
+              eurUsd: intermarketBundle.eurUsd ?? localMacro.intermarketPulse?.eurUsd,
+            }
+          : localMacro.intermarketPulse,
+      }
+    : null;
+
   let threeSystem: MacroThreeSystemState | null = null;
-  if (localMacro) {
+  if (localForThreeSystem) {
     threeSystem = computeMacroThreeSystemState({
       snapshot: {
-        ...localMacro,
+        ...localForThreeSystem,
         breakingNews: mergedBreaking,
-        topBreakingAlert: mergedBreaking[0] || localMacro.topBreakingAlert,
+        topBreakingAlert: mergedBreaking[0] || localForThreeSystem.topBreakingAlert,
       },
       nowMs,
     });
@@ -848,23 +922,51 @@ export function resolveSyncedMacroContext(
   );
   const remoteFreshMs = remoteMacro?.analyzedAt ? Date.parse(remoteMacro.analyzedAt) : 0;
 
+  const hasActiveLocalThreeSystem = Boolean(
+    threeSystem &&
+      (threeSystem.effectiveFundamentalBias !== 'MIXED' ||
+        threeSystem.effectiveSourceSystem === 'SYSTEM_2_POST_NEWS' ||
+        threeSystem.effectiveSourceSystem === 'SYSTEM_3_LIVE_PULSE' ||
+        (threeSystem.system3LivePulse?.tacticalOverlay &&
+          threeSystem.system3LivePulse.tacticalOverlay.status !== 'NORMAL'))
+  );
+
   const preferRemote = Boolean(
     remoteMacro &&
       remoteMacro.source === 'supabase' &&
       remoteMacro.bias !== 'MIXED' &&
-      (!threeSystem ||
-        (threeSystem.effectiveSourceSystem !== 'SYSTEM_2_POST_NEWS' &&
-          Number.isFinite(remoteFreshMs) &&
-          remoteFreshMs > localFreshMs + 60_000))
+      !hasActiveLocalThreeSystem &&
+      Number.isFinite(remoteFreshMs) &&
+      remoteFreshMs > localFreshMs + 60_000
+  );
+
+  const localFundamental = loadLocalCachedFundamentalGoldSnapshotSync();
+  const fundamentalBiasMapped: MacroBiasDirection =
+    localFundamental?.overallBias === 'BULLISH'
+      ? 'BUY'
+      : localFundamental?.overallBias === 'BEARISH'
+      ? 'SELL'
+      : 'MIXED';
+  const fundamentalFreshMs = localFundamental?.analyzedAt
+    ? Date.parse(localFundamental.analyzedAt)
+    : 0;
+  const preferFundamentalFallback = Boolean(
+    fundamentalBiasMapped !== 'MIXED' &&
+      (!localMacro ||
+        (Number.isFinite(fundamentalFreshMs) && fundamentalFreshMs > localFreshMs + 60_000))
   );
 
   const effectiveFundamentalBias: MacroBiasDirection = preferRemote
     ? remoteMacro!.bias
-    : threeSystem
+    : threeSystem && threeSystem.effectiveFundamentalBias !== 'MIXED'
     ? threeSystem.effectiveFundamentalBias
+    : preferFundamentalFallback
+    ? fundamentalBiasMapped
     : localMacro && (localMacro.dominantBias === 'BUY' || localMacro.dominantBias === 'SELL')
     ? localMacro.dominantBias
-    : remoteMacro?.bias || 'MIXED';
+    : remoteMacro?.bias && remoteMacro.bias !== 'MIXED'
+    ? remoteMacro.bias
+    : fundamentalBiasMapped;
 
   const topSpeech =
     mergedBreaking.find((b) => b.channelType === 'FED_SPEECH') ||
@@ -879,6 +981,8 @@ export function resolveSyncedMacroContext(
         ? threeSystem.system3LivePulse.topCatalystTitle
         : topSpeech?.title || null,
     localMacro,
+    tacticalOverlay: threeSystem?.system3LivePulse?.tacticalOverlay || null,
+    nowMs,
   });
 
   const resolvedBias: MacroBiasDirection =
@@ -932,7 +1036,7 @@ export function useCycleConfluenceData(
     return initial;
   });
 
-  const initialMacro = resolveSyncedMacroContext(null, null);
+  const [initialMacro] = useState(() => resolveSyncedMacroContext(null, null));
   const [macroBias, setMacroBias] = useState<MacroBiasDirection>(() => initialMacro.macroBias);
   const [macroBiasSource, setMacroBiasSource] = useState<'supabase' | 'fallback'>(
     () => initialMacro.source
@@ -978,9 +1082,13 @@ export function useCycleConfluenceData(
 
   const syncMacroFromLocalArchive = useCallback(() => {
     const synced = resolveSyncedMacroContext(null, null);
-    setMacroBias(synced.macroBias);
-    setMacroAnalyzedAt(synced.analyzedAt);
-    setRawMacroContext(synced.rawMacroContext);
+    setMacroBias((prev) => (prev === synced.macroBias ? prev : synced.macroBias));
+    setMacroAnalyzedAt((prev) => (prev === synced.analyzedAt ? prev : synced.analyzedAt));
+    setRawMacroContext((prev) =>
+      JSON.stringify(prev) === JSON.stringify(synced.rawMacroContext)
+        ? prev
+        : synced.rawMacroContext
+    );
   }, []);
 
   useEffect(() => {
@@ -991,6 +1099,7 @@ export function useCycleConfluenceData(
         syncOffline();
       } else if (
         e.key === MACRO_SNAPSHOT_LOCAL_STORAGE_KEY ||
+        e.key === FUNDAMENTAL_GOLD_SNAPSHOT_STORAGE_KEY ||
         e.key === MACRO_ACTUALS_ARCHIVE_STORAGE_KEY ||
         e.key === MACRO_MONTHLY_NEWS_SPEECH_ARCHIVE_KEY ||
         e.key === MACRO_POST_NEWS_ARCHIVE_KEY ||
@@ -1311,8 +1420,10 @@ export function useCycleConfluenceData(
         }
 
         // Determine active candle source & Twelve Data banner state clearly
-        if (twelveDataSuccessCount > 0 || usedYahooWeekdayFallback) {
+        if (twelveDataSuccessCount > 0) {
           setCandleSource('twelvedata');
+        } else if (usedYahooWeekdayFallback) {
+          setCandleSource('yahoo_futures');
         } else if (usedCacheFallback || Object.keys(nextMap).length > 0) {
           setCandleSource('cached');
         } else {

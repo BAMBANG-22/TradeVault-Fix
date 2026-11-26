@@ -57,10 +57,18 @@ import {
   recordBreakingNewsToMonthlyArchive,
   getWibMonthKey,
   MACRO_SNAPSHOT_LOCAL_STORAGE_KEY,
+  MACRO_LOCAL_SYNC_EVENT,
+  CME_FEDWATCH_LOCAL_STORAGE_KEY,
+  loadLocalCachedCmeFedWatchSync,
   dispatchMacroLocalSyncEvent,
   mergeBreakingHeadlinesForPulse,
   ensureHistoricalActualsArchiveSeeded,
   hydrateEventsWithOfflineArchive,
+  getPreReleaseFreezeEventKey,
+  loadFrozenPreReleaseRecord,
+  saveFrozenPreReleaseRecord,
+  loadFrozenPreReleaseFromSupabase,
+  type FrozenPreReleaseRecord,
   type MacroThreeSystemState,
   type MonthlyNewsSpeechArchive,
   type PostNewsSystemState,
@@ -172,15 +180,42 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
 
   useEffect(() => {
     const syncOffline = () => setIsOfflineMode(isNewsCycleOfflineMode());
+    const syncCrossModuleArchive = () => {
+      const latestFedWatch = loadLocalCachedCmeFedWatchSync();
+      setSnapshot((prev) => {
+        if (!prev) return prev;
+        const hydratedEvents = hydrateEventsWithOfflineArchive(prev.calendarEvents);
+        const eventsChanged = hydratedEvents.some(
+          (ev, idx) => ev.actual !== prev.calendarEvents[idx]?.actual
+        );
+        const prevFedMs = prev.cmeFedWatch?.updatedAt ? Date.parse(prev.cmeFedWatch.updatedAt) : 0;
+        const nextFedMs = latestFedWatch?.updatedAt ? Date.parse(latestFedWatch.updatedAt) : 0;
+        const fedWatchNewer = Boolean(
+          latestFedWatch?.isAvailable &&
+            (!prev.cmeFedWatch?.isAvailable ||
+              (Number.isFinite(nextFedMs) && nextFedMs > (Number.isFinite(prevFedMs) ? prevFedMs : 0)))
+        );
+        if (!eventsChanged && !fedWatchNewer) return prev;
+        return {
+          ...prev,
+          calendarEvents: eventsChanged ? hydratedEvents : prev.calendarEvents,
+          cmeFedWatch: fedWatchNewer && latestFedWatch ? latestFedWatch : prev.cmeFedWatch,
+        };
+      });
+    };
     const handleStorage = (e: StorageEvent) => {
       if (e.key === NEWS_CYCLE_OFFLINE_MODE_STORAGE_KEY) {
         syncOffline();
+      } else if (e.key === CME_FEDWATCH_LOCAL_STORAGE_KEY) {
+        syncCrossModuleArchive();
       }
     };
     window.addEventListener(NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT, syncOffline);
+    window.addEventListener(MACRO_LOCAL_SYNC_EVENT, syncCrossModuleArchive);
     window.addEventListener('storage', handleStorage);
     return () => {
       window.removeEventListener(NEWS_CYCLE_OFFLINE_MODE_CHANGE_EVENT, syncOffline);
+      window.removeEventListener(MACRO_LOCAL_SYNC_EVENT, syncCrossModuleArchive);
       window.removeEventListener('storage', handleStorage);
     };
   }, []);
@@ -502,9 +537,10 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
       });
 
       if (cached) {
+        const hydratedCachedCalendar = hydrateEventsWithOfflineArchive(cached.calendarEvents);
         setSnapshot({
           ...cached,
-          calendarEvents: hydrateEventsWithOfflineArchive(cached.calendarEvents),
+          calendarEvents: hydratedCachedCalendar,
         });
         if (cached.breakingNews && cached.breakingNews.length > 0) {
           setMonthlyNewsArchive(recordBreakingNewsToMonthlyArchive(cached.breakingNews));
@@ -514,9 +550,18 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
         // Immediately sync live Yahoo Finance Intermarket Pulse quotes even when macro snapshot is cached (< 15m)
         void syncLiveIntermarketPulse();
 
+        const checkNowMs = Date.now();
+        const hasRecentMissingActualInCache = hydratedCachedCalendar.some((ev) => {
+          if (!ev || (ev.impact !== 'High' && ev.impact !== 'Medium')) return false;
+          if (!isPlaceholderMacroValue(ev.actual)) return false;
+          if (ev.forecastNum === null && ev.previousNum === null) return false;
+          const evMs = new Date(ev.date).getTime();
+          return Number.isFinite(evMs) && evMs <= checkNowMs - 60 * 1000 && checkNowMs - evMs <= 72 * 60 * 60 * 1000;
+        });
+
         const initialLock = computePreNewsLockState(
-          cached.calendarEvents,
-          Date.now(),
+          hydratedCachedCalendar,
+          checkNowMs,
           selectedEventId
         );
         if (initialLock.isLockedT5M && initialLock.targetEvent) {
@@ -526,8 +571,8 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
           } else {
             t5FinalFetchedEventIdRef.current = initialLock.targetEvent.id;
           }
-        } else if (!isSnapshotFresh(cached, AUTO_REFRESH_TTL_MINUTES)) {
-          await runLiveAnalysis(false, cached);
+        } else if (!isSnapshotFresh(cached, AUTO_REFRESH_TTL_MINUTES) || hasRecentMissingActualInCache) {
+          await runLiveAnalysis(hasRecentMissingActualInCache, cached);
         }
       } else {
         await runLiveAnalysis(false, null);
@@ -678,7 +723,7 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
     return () => clearInterval(timer);
   }, [isActive, isOfflineMode, confluenceData.isMarketOpen, snapshot, selectedEventId, runLiveAnalysis]);
 
-  // Automatic T-5M Pre-News Lock Fetch, T-0..+10M Actual Sync & 45-Min Fallback Refresh (paused Offline/Weekend)
+  // Automatic T-5M Pre-News Lock Fetch, T-0..+15M Actual Sync (High + Medium Impact) & 45-Min Fallback Refresh (paused Offline/Weekend)
   useEffect(() => {
     if (isOfflineMode || !snapshot || !confluenceData.isMarketOpen) return;
 
@@ -710,11 +755,11 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
         return;
       }
 
-      // Sync Actual up to 3 times inside 0..+10m after release if still blank
+      // Sync Actual up to 3 times inside 0..+15m after release if still blank
       if (
         !hasAct &&
         elapsedAfterRelease >= 60 * 1000 &&
-        elapsedAfterRelease <= 10 * 60 * 1000 &&
+        elapsedAfterRelease <= 15 * 60 * 1000 &&
         !isRefreshingRef.current
       ) {
         const tracker = postReleaseSyncAttemptsRef.current[clusterKey] || { count: 0, lastAttemptMs: 0 };
@@ -724,6 +769,31 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
             lastAttemptMs: nowMs,
           };
           void runLiveAnalysis(false, snapshot, targetEv.id);
+          return;
+        }
+      }
+    }
+
+    // Also auto-sync any recently released Medium-Impact (or non-primary High-Impact) USD event inside 1..15m after release if actual is still blank
+    if (!isRefreshingRef.current && Array.isArray(snapshot.calendarEvents)) {
+      const recentMissingEv = snapshot.calendarEvents.find((ev) => {
+        if (!ev || (ev.impact !== 'High' && ev.impact !== 'Medium')) return false;
+        if (!isPlaceholderMacroValue(ev.actual)) return false;
+        if (ev.forecastNum === null && ev.previousNum === null) return false;
+        const evMs = new Date(ev.date).getTime();
+        if (!Number.isFinite(evMs)) return false;
+        const elapsed = nowMs - evMs;
+        return elapsed >= 60 * 1000 && elapsed <= 15 * 60 * 1000;
+      });
+      if (recentMissingEv) {
+        const mKey = `${recentMissingEv.title.trim().toLowerCase()}|${String(recentMissingEv.date || '').slice(0, 13)}`;
+        const tracker = postReleaseSyncAttemptsRef.current[mKey] || { count: 0, lastAttemptMs: 0 };
+        if (tracker.count < 3 && nowMs - tracker.lastAttemptMs >= 2 * 60 * 1000) {
+          postReleaseSyncAttemptsRef.current[mKey] = {
+            count: tracker.count + 1,
+            lastAttemptMs: nowMs,
+          };
+          void runLiveAnalysis(false, snapshot, selectedEventId);
           return;
         }
       }
@@ -795,8 +865,18 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
         return;
       }
       setSelectedEventId(groupId);
+      const nowCheck = Date.now();
+      const targetMs = targetEv ? new Date(targetEv.date).getTime() : NaN;
+      const targetAlreadyReleased = Number.isFinite(targetMs) && targetMs <= nowCheck;
+
+      // For already-released events, skip unnecessary live re-analysis if Actual is already available
+      // (Pre-Release panel stays strictly frozen either way; Post-News Actual only fetches if missing)
+      if (targetAlreadyReleased && targetEv && !isPlaceholderMacroValue(targetEv.actual)) {
+        return;
+      }
+
       const currentLock = snapshot
-        ? computePreNewsLockState(snapshot.calendarEvents, Date.now(), groupId)
+        ? computePreNewsLockState(snapshot.calendarEvents, nowCheck, groupId)
         : null;
       if (currentLock?.isLockedT5M && t5FinalFetchedEventIdRef.current === groupId) {
         return;
@@ -997,8 +1077,8 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
 
   const preNewsTimelineClusters = useMemo(() => {
     if (preNewsUpcomingEvents.length === 0) return [];
-    return groupCalendarEventsBySlot(preNewsUpcomingEvents, nowMs, true);
-  }, [preNewsUpcomingEvents, nowMs]);
+    return groupCalendarEventsBySlot(preNewsUpcomingEvents, nowMs, !showFullCalendar);
+  }, [preNewsUpcomingEvents, nowMs, showFullCalendar]);
 
   // Tab 2 (Post-News): ALL cross-month released actuals + saved 2H Post-News archive (never reset monthly)
   const postNewsActualEvents = useMemo(() => {
@@ -1159,6 +1239,238 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
         return tr('Kebijakan FOMC', 'FOMC Policy');
     }
   };
+
+  const [frozenArchiveTick, setFrozenArchiveTick] = useState<number>(0);
+  const [remoteFrozenState, setRemoteFrozenState] = useState<{
+    eventKey: string;
+    record: FrozenPreReleaseRecord | null;
+    loading: boolean;
+  }>({ eventKey: '', record: null, loading: false });
+
+  // Compute live Dual-Horizon + Spike Map cleanly above early returns (hook-safe)
+  const livePreReleaseBundle = useMemo(() => {
+    if (!snapshot || !activeMatrix) return null;
+
+    const primaryEv = activeMatrix.primaryEvent;
+    const primaryTimeMs = new Date(primaryEv.date).getTime();
+    const isReleased = Number.isFinite(primaryTimeMs) && primaryTimeMs <= nowMs;
+    const eventKey = getPreReleaseFreezeEventKey(primaryEv);
+    const goldPosData =
+      activeMatrix.preNewsFlow?.goldPositioning || snapshot.intermarketPulse?.goldPositioning;
+    const sessionLabelForAmd = amdState
+      ? `${getSessionLabelId(amdState.currentSession)} (${formatSessionWindowWib(
+          amdState.currentSession,
+          sessionConfig
+        )})`
+      : undefined;
+
+    const candles1h = confluenceData.candlesByTf['1h'] || [];
+    let candleMove6hUsd: number | undefined = goldPosData?.change6hUsd;
+    if (candles1h.length >= 7) {
+      const latestClose = candles1h[candles1h.length - 1]?.close;
+      const close6hAgo = candles1h[candles1h.length - 7]?.close;
+      if (Number.isFinite(latestClose) && Number.isFinite(close6hAgo) && close6hAgo > 0) {
+        candleMove6hUsd = Number((latestClose - close6hAgo).toFixed(2));
+      }
+    }
+
+    const prelimDualHorizon = computeDualHorizonAnalysis({
+      breakingNews: contextualBreakingNews,
+      goldPositioning: goldPosData,
+      dominantBias: activeMatrix.dominantBias,
+      buyProbability: activeMatrix.buyProbability,
+      sellProbability: activeMatrix.sellProbability,
+      mixedProbability: activeMatrix.mixedProbability,
+      cmeFedWatch: activeFedWatch,
+      dxy: snapshot.intermarketPulse.dxy,
+      us02y: snapshot.intermarketPulse.us02y,
+      us10y: snapshot.intermarketPulse.us10y,
+      primaryEvent: primaryEv,
+      isSimultaneousRelease: activeMatrix.isSimultaneousRelease,
+      simultaneousAlignment: activeMatrix.simultaneousAlignment,
+      amdContext: {
+        phase: hasConfluenceCandles ? amdState?.phase : undefined,
+        gatekeeperStatus: hasConfluenceCandles ? amdState?.gatekeeperStatus : undefined,
+        manualOverrideMode: manualAmdOverride,
+        isManualOverride: manualAmdOverride !== 'AUTO',
+        currentSessionLabel: sessionLabelForAmd,
+      },
+      calendarEvents: snapshot.calendarEvents,
+      intradayContext: {
+        change6hUsd: candleMove6hUsd,
+        atr14_1h: goldPosData?.atr14_1h,
+      },
+    });
+
+    const spikeTargetMap = computeIntradaySpikeTargetMap({
+      candlesByTf: confluenceData.candlesByTf,
+      livePrice: confluenceData.livePrice,
+      sessionConfig,
+      initialCatalystBias: prelimDualHorizon.initialCatalystBias,
+      sessionPrimaryBias: prelimDualHorizon.sessionPrimaryBias,
+      amdState,
+    });
+
+    const liveDualHorizon = computeDualHorizonAnalysis({
+      breakingNews: contextualBreakingNews,
+      goldPositioning: goldPosData,
+      dominantBias: activeMatrix.dominantBias,
+      buyProbability: activeMatrix.buyProbability,
+      sellProbability: activeMatrix.sellProbability,
+      mixedProbability: activeMatrix.mixedProbability,
+      cmeFedWatch: activeFedWatch,
+      dxy: snapshot.intermarketPulse.dxy,
+      us02y: snapshot.intermarketPulse.us02y,
+      us10y: snapshot.intermarketPulse.us10y,
+      primaryEvent: primaryEv,
+      isSimultaneousRelease: activeMatrix.isSimultaneousRelease,
+      simultaneousAlignment: activeMatrix.simultaneousAlignment,
+      amdContext: {
+        phase: hasConfluenceCandles ? amdState?.phase : undefined,
+        gatekeeperStatus: hasConfluenceCandles ? amdState?.gatekeeperStatus : undefined,
+        manualOverrideMode: manualAmdOverride,
+        isManualOverride: manualAmdOverride !== 'AUTO',
+        currentSessionLabel: sessionLabelForAmd,
+      },
+      calendarEvents: snapshot.calendarEvents,
+      intradayContext: {
+        change6hUsd: candleMove6hUsd,
+        atr14_1h: spikeTargetMap.hasValidData ? spikeTargetMap.atr14_1h : goldPosData?.atr14_1h,
+        bslPrice: spikeTargetMap.hasValidData ? spikeTargetMap.bslPrice : undefined,
+        sslPrice: spikeTargetMap.hasValidData ? spikeTargetMap.sslPrice : undefined,
+        poiLow: spikeTargetMap.hasValidData ? spikeTargetMap.layer1FvgOte.low : undefined,
+        poiHigh: spikeTargetMap.hasValidData ? spikeTargetMap.layer1FvgOte.high : undefined,
+        macro4hPdZone: spikeTargetMap.macro4hPdZone,
+      },
+    });
+
+    return {
+      primaryEv,
+      primaryTimeMs,
+      isReleased,
+      eventKey,
+      spikeTargetMap,
+      liveDualHorizon,
+    };
+  }, [
+    snapshot,
+    activeMatrix,
+    nowMs,
+    amdState,
+    sessionConfig,
+    confluenceData.candlesByTf,
+    confluenceData.livePrice,
+    contextualBreakingNews,
+    activeFedWatch,
+    hasConfluenceCandles,
+    manualAmdOverride,
+  ]);
+
+  // Synchronous frozen archive lookup: ONLY used when the selected event has ALREADY released.
+  // Upcoming events ALWAYS return null here so they stay 100% live / real-time!
+  const localFrozenPreRelease = useMemo<FrozenPreReleaseRecord | null>(() => {
+    if (!livePreReleaseBundle || !livePreReleaseBundle.isReleased) return null;
+    return loadFrozenPreReleaseRecord(livePreReleaseBundle.primaryEv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [livePreReleaseBundle?.isReleased, livePreReleaseBundle?.eventKey, frozenArchiveTick]);
+
+  // Auto-record live Pre-Release snapshot ONLY while the event is still UPCOMING (strictly before release time).
+  // The instant release time passes, saveFrozenPreReleaseRecord blocks all writes so the note stays frozen forever.
+  useEffect(() => {
+    if (!livePreReleaseBundle || livePreReleaseBundle.isReleased || !activeMatrix) return;
+    const nowCheck = Date.now();
+    if (!Number.isFinite(livePreReleaseBundle.primaryTimeMs) || nowCheck >= livePreReleaseBundle.primaryTimeMs) {
+      return;
+    }
+    const { primaryEv, eventKey, liveDualHorizon, spikeTargetMap } = livePreReleaseBundle;
+    if (!eventKey) return;
+
+    const record: FrozenPreReleaseRecord = {
+      eventKey,
+      eventId: primaryEv.id,
+      eventTitle: primaryEv.title,
+      releaseDateIso: primaryEv.date,
+      capturedAtIso: new Date(nowCheck).toISOString(),
+      isFinalT5Lock: lockState.isLockedT5M,
+      source: 'LOCAL_PRE_RELEASE',
+      dominantBias: activeMatrix.dominantBias,
+      buyProbability: activeMatrix.buyProbability,
+      sellProbability: activeMatrix.sellProbability,
+      mixedProbability: activeMatrix.mixedProbability,
+      dualHorizon: liveDualHorizon,
+      preNewsFlow: activeMatrix.preNewsFlow,
+      spikeLevels:
+        hasConfluenceLevels && spikeTargetMap.hasValidData
+          ? {
+              hasValidData: true,
+              bslPrice: spikeTargetMap.bslPrice,
+              sslPrice: spikeTargetMap.sslPrice,
+              poiLow: spikeTargetMap.layer1FvgOte.low,
+              poiHigh: spikeTargetMap.layer1FvgOte.high,
+              macro4hPdZone: spikeTargetMap.macro4hPdZone,
+            }
+          : undefined,
+    };
+
+    saveFrozenPreReleaseRecord(record, nowCheck);
+  }, [
+    livePreReleaseBundle,
+    activeMatrix,
+    lockState.isLockedT5M,
+    hasConfluenceLevels,
+  ]);
+
+  // If the user selects an ALREADY-RELEASED event with no local frozen note, check Supabase once
+  // for any authentic snapshot recorded strictly BEFORE release time. Never fabricate post-release data.
+  useEffect(() => {
+    if (!livePreReleaseBundle || !livePreReleaseBundle.isReleased) {
+      if (remoteFrozenState.eventKey !== '' || remoteFrozenState.loading) {
+        setRemoteFrozenState({ eventKey: '', record: null, loading: false });
+      }
+      return;
+    }
+
+    const { primaryEv, eventKey } = livePreReleaseBundle;
+    if (!eventKey) return;
+
+    if (localFrozenPreRelease) {
+      if (remoteFrozenState.loading || remoteFrozenState.eventKey !== eventKey) {
+        setRemoteFrozenState({ eventKey, record: localFrozenPreRelease, loading: false });
+      }
+      return;
+    }
+
+    if (remoteFrozenState.eventKey === eventKey && !remoteFrozenState.loading) {
+      return;
+    }
+
+    let cancelled = false;
+    setRemoteFrozenState({ eventKey, record: null, loading: true });
+
+    loadFrozenPreReleaseFromSupabase(primaryEv)
+      .then((recovered) => {
+        if (cancelled) return;
+        setRemoteFrozenState({ eventKey, record: recovered, loading: false });
+        if (recovered) {
+          setFrozenArchiveTick((t) => t + 1);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRemoteFrozenState({ eventKey, record: null, loading: false });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    livePreReleaseBundle?.isReleased,
+    livePreReleaseBundle?.eventKey,
+    livePreReleaseBundle?.primaryEv,
+    localFrozenPreRelease,
+    remoteFrozenState.eventKey,
+    remoteFrozenState.loading,
+  ]);
 
   if (isLoading && !snapshot) {
     return (
@@ -1454,86 +1766,41 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
         sessionConfig
       )})`
     : undefined;
+  const selectedPrimaryEventKey = livePreReleaseBundle?.eventKey || getPreReleaseFreezeEventKey(primaryEv);
+  const spikeTargetMap = livePreReleaseBundle!.spikeTargetMap;
+  const activeFrozenPreRelease: FrozenPreReleaseRecord | null = isSelectedPrimaryReleased
+    ? localFrozenPreRelease ||
+      (remoteFrozenState.eventKey === selectedPrimaryEventKey ? remoteFrozenState.record : null)
+    : null;
+  const isCheckingRemotePreRelease = Boolean(
+    isSelectedPrimaryReleased &&
+      !activeFrozenPreRelease &&
+      remoteFrozenState.loading &&
+      remoteFrozenState.eventKey === selectedPrimaryEventKey
+  );
+  const isPreReleaseUnrecorded = Boolean(
+    isSelectedPrimaryReleased && !activeFrozenPreRelease && !isCheckingRemotePreRelease
+  );
 
-  const candles1h = confluenceData.candlesByTf['1h'] || [];
-  let candleMove6hUsd: number | undefined = goldPosData?.change6hUsd;
-  if (candles1h.length >= 7) {
-    const latestClose = candles1h[candles1h.length - 1]?.close;
-    const close6hAgo = candles1h[candles1h.length - 7]?.close;
-    if (Number.isFinite(latestClose) && Number.isFinite(close6hAgo) && close6hAgo > 0) {
-      candleMove6hUsd = Number((latestClose - close6hAgo).toFixed(2));
-    }
-  }
-
-  const prelimDualHorizon = computeDualHorizonAnalysis({
-    breakingNews: contextualBreakingNews,
-    goldPositioning: goldPosData,
-    dominantBias: activeMatrix.dominantBias,
-    buyProbability: activeMatrix.buyProbability,
-    sellProbability: activeMatrix.sellProbability,
-    mixedProbability: activeMatrix.mixedProbability,
-    cmeFedWatch: activeFedWatch,
-    dxy: snapshot.intermarketPulse.dxy,
-    us02y: snapshot.intermarketPulse.us02y,
-    us10y: snapshot.intermarketPulse.us10y,
-    primaryEvent: primaryEv,
-    isSimultaneousRelease: activeMatrix.isSimultaneousRelease,
-    simultaneousAlignment: activeMatrix.simultaneousAlignment,
-    amdContext: {
-      phase: hasConfluenceCandles ? amdState?.phase : undefined,
-      gatekeeperStatus: hasConfluenceCandles ? amdState?.gatekeeperStatus : undefined,
-      manualOverrideMode: manualAmdOverride,
-      isManualOverride: manualAmdOverride !== 'AUTO',
-      currentSessionLabel: sessionLabelForAmd,
-    },
-    calendarEvents: snapshot.calendarEvents,
-    intradayContext: {
-      change6hUsd: candleMove6hUsd,
-      atr14_1h: goldPosData?.atr14_1h,
-    },
-  });
-
-  const spikeTargetMap = computeIntradaySpikeTargetMap({
-    candlesByTf: confluenceData.candlesByTf,
-    livePrice: confluenceData.livePrice,
-    sessionConfig,
-    initialCatalystBias: prelimDualHorizon.initialCatalystBias,
-    sessionPrimaryBias: prelimDualHorizon.sessionPrimaryBias,
-    amdState,
-  });
-
-  const dualHorizon = computeDualHorizonAnalysis({
-    breakingNews: contextualBreakingNews,
-    goldPositioning: goldPosData,
-    dominantBias: activeMatrix.dominantBias,
-    buyProbability: activeMatrix.buyProbability,
-    sellProbability: activeMatrix.sellProbability,
-    mixedProbability: activeMatrix.mixedProbability,
-    cmeFedWatch: activeFedWatch,
-    dxy: snapshot.intermarketPulse.dxy,
-    us02y: snapshot.intermarketPulse.us02y,
-    us10y: snapshot.intermarketPulse.us10y,
-    primaryEvent: primaryEv,
-    isSimultaneousRelease: activeMatrix.isSimultaneousRelease,
-    simultaneousAlignment: activeMatrix.simultaneousAlignment,
-    amdContext: {
-      phase: hasConfluenceCandles ? amdState?.phase : undefined,
-      gatekeeperStatus: hasConfluenceCandles ? amdState?.gatekeeperStatus : undefined,
-      manualOverrideMode: manualAmdOverride,
-      isManualOverride: manualAmdOverride !== 'AUTO',
-      currentSessionLabel: sessionLabelForAmd,
-    },
-    calendarEvents: snapshot.calendarEvents,
-    intradayContext: {
-      change6hUsd: candleMove6hUsd,
-      atr14_1h: spikeTargetMap.hasValidData ? spikeTargetMap.atr14_1h : goldPosData?.atr14_1h,
-      bslPrice: spikeTargetMap.hasValidData ? spikeTargetMap.bslPrice : undefined,
-      sslPrice: spikeTargetMap.hasValidData ? spikeTargetMap.sslPrice : undefined,
-      poiLow: spikeTargetMap.hasValidData ? spikeTargetMap.layer1FvgOte.low : undefined,
-      poiHigh: spikeTargetMap.hasValidData ? spikeTargetMap.layer1FvgOte.high : undefined,
-      macro4hPdZone: spikeTargetMap.macro4hPdZone,
-    },
-  });
+  // Upcoming events ALWAYS use live real-time Dual-Horizon & Pre-News Flow.
+  // Released events ALWAYS lock to their frozen Pre-Release record (immutable) when recorded.
+  const dualHorizon = activeFrozenPreRelease
+    ? activeFrozenPreRelease.dualHorizon
+    : livePreReleaseBundle!.liveDualHorizon;
+  const displayedPreNewsFlow = activeFrozenPreRelease?.preNewsFlow || activeMatrix.preNewsFlow;
+  const effectiveSpikeSummaryLevels =
+    activeFrozenPreRelease?.spikeLevels?.hasValidData
+      ? activeFrozenPreRelease.spikeLevels
+      : hasConfluenceLevels && spikeTargetMap.hasValidData
+      ? {
+          hasValidData: true,
+          bslPrice: spikeTargetMap.bslPrice,
+          sslPrice: spikeTargetMap.sslPrice,
+          poiLow: spikeTargetMap.layer1FvgOte.low,
+          poiHigh: spikeTargetMap.layer1FvgOte.high,
+          macro4hPdZone: spikeTargetMap.macro4hPdZone,
+        }
+      : null;
 
   if (dualHorizon.hasSpeechEvent && (isEn ? dualHorizon.speechAlertNoteEn : dualHorizon.speechAlertNoteId)) {
     const note = (isEn ? dualHorizon.speechAlertNoteEn : dualHorizon.speechAlertNoteId)!;
@@ -2262,9 +2529,60 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
           className="pt-4 border-t border-[#E4E4E7] dark:border-[#20252D] space-y-3.5"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#526071] dark:text-[#929BA9]">
-              {tr('PEMISAHAN 2 HORIZON ANALISIS', 'DUAL-HORIZON ANALYSIS')}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#526071] dark:text-[#929BA9]">
+                {tr('PEMISAHAN 2 HORIZON ANALISIS', 'DUAL-HORIZON ANALYSIS')}
+              </span>
+
+              {!isSelectedPrimaryReleased ? (
+                <span
+                  data-testid="macro-prerelease-live-badge"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#059669]/10 dark:bg-[#00A878]/15 border border-[#059669]/25 dark:border-[#00A878]/30 text-[10px] font-semibold uppercase tracking-wider text-[#059669] dark:text-[#00A878]"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#059669] dark:bg-[#00A878]" />
+                  <span>
+                    {lockInfo.isLockedT5M
+                      ? tr('FINAL T-5M LOCK', 'FINAL T-5M LOCK')
+                      : tr('PRA-RILIS REAL-TIME', 'PRE-RELEASE REAL-TIME')}
+                  </span>
+                </span>
+              ) : activeFrozenPreRelease ? (
+                <span
+                  data-testid="macro-prerelease-frozen-badge"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#F4F4F5] dark:bg-[#161A22] border border-[#E4E4E7] dark:border-[#2B313C] text-[10px] font-semibold uppercase tracking-wider font-mono-numbers tabular-nums text-[#0F172A] dark:text-[#F2F4F7]"
+                  title={
+                    activeFrozenPreRelease.source === 'SUPABASE_PRE_RELEASE'
+                      ? tr(
+                          'Catatan Pra-Rilis dipulihkan dari arsip server sebelum jam rilis (dibekukan / offline).',
+                          'Pre-Release snapshot restored from pre-release server archive (frozen / offline).'
+                        )
+                      : tr(
+                          'Catatan Pra-Rilis dikunci otomatis sebelum jam rilis agar tidak berubah setelah news terjadi.',
+                          'Pre-Release snapshot automatically frozen prior to release time so it never drifts post-news.'
+                        )
+                  }
+                >
+                  <Lock className="w-2.5 h-2.5 stroke-[2.2]" />
+                  <span>
+                    {tr('PRA-RILIS DIKUNCI (OFFLINE)', 'PRE-RELEASE FROZEN (OFFLINE)')} ·{' '}
+                    {formatLiveUpdateClockWib(activeFrozenPreRelease.capturedAtIso)}
+                  </span>
+                </span>
+              ) : isCheckingRemotePreRelease ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  <span>{tr('MEMERIKSA ARSIP PRA-RILIS...', 'CHECKING PRE-RELEASE ARCHIVE...')}</span>
+                </span>
+              ) : (
+                <span
+                  data-testid="macro-prerelease-unrecorded-badge"
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#D97706]/10 border border-[#D97706]/30 text-[10px] font-semibold uppercase tracking-wider text-[#B45309] dark:text-[#F59E0B]"
+                >
+                  <Lock className="w-2.5 h-2.5 stroke-[2]" />
+                  <span>{tr('PRA-RILIS TIDAK TEREKAM', 'PRE-RELEASE NOT RECORDED')}</span>
+                </span>
+              )}
+            </div>
 
             {manualAmdOverride !== 'AUTO' && manualAmdOptionMeta ? (
               <span
@@ -2287,65 +2605,88 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D] border-y border-[#E4E4E7] dark:border-[#20252D]">
-            {/* a) KATALIS AWAL / POTENSI SPIKE */}
+          {isPreReleaseUnrecorded ? (
             <div
-              data-testid="macro-initial-catalyst-card"
-              className="py-3 sm:pr-5 space-y-1.5"
+              data-testid="macro-prerelease-unrecorded-notice"
+              className="rounded-lg border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#0B0E13] px-4 py-3.5 space-y-1.5"
             >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9]">
-                  {tr('KATALIS AWAL / POTENSI SPIKE', 'INITIAL CATALYST / SPIKE POTENTIAL')}
-                </span>
-                <span
-                  className={`text-xs font-bold font-mono-numbers tabular-nums ${
-                    dualHorizon.initialCatalystBias === 'BUY'
-                      ? 'text-[#059669] dark:text-[#00A878]'
-                      : dualHorizon.initialCatalystBias === 'SELL'
-                      ? 'text-[#E11D48] dark:text-[#E05260]'
-                      : 'text-[#0F172A] dark:text-[#F2F4F7]'
-                  }`}
-                >
-                  {isEn ? dualHorizon.initialCatalystLabelEn : dualHorizon.initialCatalystLabelId}
-                </span>
-              </div>
-              <p className="text-xs text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed text-editorial-justify">
-                {isEn ? dualHorizon.initialCatalystReasonEn : dualHorizon.initialCatalystReasonId}
+              <p className="text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                {tr(
+                  'Catatan Pra-Rilis untuk jadwal news ini tidak terekam sebelum waktu rilis.',
+                  'Pre-Release notes for this release were not captured before release time.'
+                )}
+              </p>
+              <p className="text-xs text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+                {tr(
+                  'Aplikasi baru dibuka setelah jadwal rilis lewat, sehingga kondisi RSS, DXY/Yield, dan Katalis Awal sebelum rilis tidak ditampilkan agar tidak tercampur dengan data pasca-rilis. Gunakan data Post-News (Actual vs Forecast) di atas untuk evaluasi, atau pilih news mendatang untuk pemantauan Pra-Rilis secara real-time.',
+                  'The app was opened after the release timestamp passed, so pre-release RSS, DXY/Yield, and Initial Catalyst readings are intentionally withheld to avoid mixing post-release live data. Use the Post-News (Actual vs Forecast) card above, or select an upcoming release for real-time Pre-Release tracking.'
+                )}
               </p>
             </div>
-
-            {/* b) BIAS UTAMA SESI (HASIL AKHIR) */}
-            <div
-              data-testid="macro-session-bias-card"
-              className="py-3 sm:pl-5 space-y-1.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9]">
-                  {tr('BIAS UTAMA SESI (HASIL AKHIR)', 'MAIN SESSION BIAS (FINAL OUTCOME)')}
-                </span>
-                <span
-                  className={`text-xs font-bold font-mono-numbers tabular-nums ${
-                    dualHorizon.sessionPrimaryBias === 'BUY'
-                      ? 'text-[#059669] dark:text-[#00A878]'
-                      : dualHorizon.sessionPrimaryBias === 'SELL'
-                      ? 'text-[#E11D48] dark:text-[#E05260]'
-                      : 'text-[#0F172A] dark:text-[#F2F4F7]'
-                  }`}
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[#E4E4E7] dark:divide-[#20252D] border-y border-[#E4E4E7] dark:border-[#20252D]">
+                {/* a) KATALIS AWAL / ARAH DORONGAN AWAL */}
+                <div
+                  data-testid="macro-initial-catalyst-card"
+                  className="py-3 sm:pr-5 space-y-1.5"
                 >
-                  {dualHorizon.sessionPrimaryBias} {dualHorizon.sessionPrimaryProbability}%
-                </span>
-              </div>
-              <p className="text-xs text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed text-editorial-justify">
-                {isEn ? dualHorizon.sessionPrimaryReasonEn : dualHorizon.sessionPrimaryReasonId}
-              </p>
-            </div>
-          </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9]">
+                      {tr('KATALIS AWAL (ARAH DORONGAN AWAL)', 'INITIAL CATALYST (OPENING PUSH)')}
+                    </span>
+                    <span
+                      className={`text-xs font-bold font-mono-numbers tabular-nums ${
+                        dualHorizon.initialCatalystBias === 'BUY'
+                          ? 'text-[#059669] dark:text-[#00A878]'
+                          : dualHorizon.initialCatalystBias === 'SELL'
+                          ? 'text-[#E11D48] dark:text-[#E05260]'
+                          : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                      }`}
+                    >
+                      {isEn ? dualHorizon.initialCatalystLabelEn : dualHorizon.initialCatalystLabelId}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed text-editorial-justify">
+                    {isEn ? dualHorizon.initialCatalystReasonEn : dualHorizon.initialCatalystReasonId}
+                  </p>
+                </div>
 
-          <p className="text-xs text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
-            {isEn ? dualHorizon.movementSummaryEn : dualHorizon.movementSummaryId}
-          </p>
+                {/* b) BIAS UTAMA SESI (HASIL AKHIR) */}
+                <div
+                  data-testid="macro-session-bias-card"
+                  className="py-3 sm:pl-5 space-y-1.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#526071] dark:text-[#929BA9]">
+                      {tr('BIAS UTAMA SESI (HASIL AKHIR)', 'MAIN SESSION BIAS (FINAL OUTCOME)')}
+                    </span>
+                    <span
+                      className={`text-xs font-bold font-mono-numbers tabular-nums ${
+                        dualHorizon.sessionPrimaryBias === 'BUY'
+                          ? 'text-[#059669] dark:text-[#00A878]'
+                          : dualHorizon.sessionPrimaryBias === 'SELL'
+                          ? 'text-[#E11D48] dark:text-[#E05260]'
+                          : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                      }`}
+                    >
+                      {dualHorizon.sessionPrimaryBias} {dualHorizon.sessionPrimaryProbability}%
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#0F172A] dark:text-[#F2F4F7] leading-relaxed text-editorial-justify">
+                    {isEn ? dualHorizon.sessionPrimaryReasonEn : dualHorizon.sessionPrimaryReasonId}
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-xs text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+                {isEn ? dualHorizon.movementSummaryEn : dualHorizon.movementSummaryId}
+              </p>
+            </>
+          )}
 
           {/* 3. Peta Manipulasi & Target Spike (Collapsible Bridge to Cycle & Confluence) */}
+          {!isPreReleaseUnrecorded && (
           <div
             data-testid="macro-manipulation-map-box"
             className="rounded-lg bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none overflow-hidden"
@@ -2386,32 +2727,32 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                   )}
                 </div>
                 <p className="text-xs font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9] leading-snug break-words">
-                  {hasConfluenceLevels && spikeTargetMap.hasValidData
+                  {effectiveSpikeSummaryLevels
                     ? dualHorizon.initialCatalystBias === 'BUY' &&
                       dualHorizon.sessionPrimaryBias === 'SELL'
                       ? tr(
-                          `Target Sapuan: BSL $${spikeTargetMap.bslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`,
-                          `Sweep Target: BSL $${spikeTargetMap.bslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`
+                          `Zona Risiko Sweep Atas (Tunggu SELL): BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`,
+                          `Upside Sweep Risk Zone (Wait for SELL): BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`
                         )
                       : dualHorizon.initialCatalystBias === 'SELL' &&
                         dualHorizon.sessionPrimaryBias === 'BUY'
                       ? tr(
-                          `Target Sapuan: SSL $${spikeTargetMap.sslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`,
-                          `Sweep Target: SSL $${spikeTargetMap.sslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`
+                          `Zona Risiko Sweep Bawah (Tunggu BUY): SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`,
+                          `Downside Sweep Risk Zone (Wait for BUY): SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`
                         )
                       : dualHorizon.sessionPrimaryBias === 'SELL'
                       ? tr(
-                          `Target Sapuan: BSL $${spikeTargetMap.bslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`,
-                          `Sweep Target: BSL $${spikeTargetMap.bslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`
+                          `Zona Risiko Sweep Atas (Fokus SELL): BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`,
+                          `Upside Sweep Risk Zone (Focus SELL): BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`
                         )
                       : dualHorizon.sessionPrimaryBias === 'BUY'
                       ? tr(
-                          `Target Sapuan: SSL $${spikeTargetMap.sslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`,
-                          `Sweep Target: SSL $${spikeTargetMap.sslPrice.toFixed(2)} → POI $${spikeTargetMap.layer1FvgOte.low.toFixed(2)}–$${spikeTargetMap.layer1FvgOte.high.toFixed(2)}`
+                          `Zona Risiko Sweep Bawah (Fokus BUY): SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`,
+                          `Downside Sweep Risk Zone (Focus BUY): SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)} → POI $${effectiveSpikeSummaryLevels.poiLow.toFixed(2)}–$${effectiveSpikeSummaryLevels.poiHigh.toFixed(2)}`
                         )
                       : tr(
-                          `Target Sapuan: BSL $${spikeTargetMap.bslPrice.toFixed(2)} / SSL $${spikeTargetMap.sslPrice.toFixed(2)}`,
-                          `Sweep Target: BSL $${spikeTargetMap.bslPrice.toFixed(2)} / SSL $${spikeTargetMap.sslPrice.toFixed(2)}`
+                          `Batas Likuiditas Sesi: BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} / SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)}`,
+                          `Session Liquidity Bounds: BSL $${effectiveSpikeSummaryLevels.bslPrice.toFixed(2)} / SSL $${effectiveSpikeSummaryLevels.sslPrice.toFixed(2)}`
                         )
                     : confluenceData.isLoading || confluenceData.isRefreshing
                     ? tr(
@@ -2523,6 +2864,15 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                           </span>
                           {isEn ? dualHorizon.phase2Minute15PlusEn : dualHorizon.phase2Minute15PlusId}
                         </p>
+                        {dualHorizon.movementType === 'TWO_WAY_SWEEP_FIRST' &&
+                          dualHorizon.sessionPrimaryBias !== 'MIXED' && (
+                            <p className="font-sans text-[11px] font-medium text-[#B45309] dark:text-[#F59E0B] pt-1.5 border-t border-[#E4E4E7] dark:border-[#20252D]">
+                              {tr(
+                                `Aturan Eksekusi: Potensi sapuan (sweep) BUKAN sinyal entry lawan arah di detik ke-0 — tetap fokus hanya cari ${dualHorizon.sessionPrimaryBias} searah Bias Utama.`,
+                                `Execution Rule: A potential liquidity sweep is NOT a 0-second counter-trend entry signal — stay focused strictly on ${dualHorizon.sessionPrimaryBias} with Main Bias.`
+                              )}
+                            </p>
+                          )}
                       </div>
                     </div>
 
@@ -2829,6 +3179,7 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
               </div>
             </div>
           </div>
+          )}
         </div>
 
         {/* Bias History Overlay (Multi-Snapshot Probability Shift) */}
@@ -3298,7 +3649,7 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
               ))}
             </div>
 
-            {activeMatrix.preNewsFlow && (
+            {displayedPreNewsFlow && (
               <div className="pt-2.5 border-t border-[#E4E4E7] dark:border-[#20252D]">
                 <button
                   type="button"
@@ -3311,6 +3662,9 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                       ? tr('Sembunyikan Detail Alur Pra-Rilis', 'Hide Pre-News Flow Details')
                       : tr('Lihat Detail Alur Pra-Rilis', 'View Pre-News Flow Details')}
                   </span>
+                  {activeFrozenPreRelease && (
+                    <Lock className="w-3 h-3 text-[#526071] dark:text-[#929BA9]" />
+                  )}
                   {showPreNewsFlow ? (
                     <ChevronUp className="w-3.5 h-3.5" />
                   ) : (
@@ -3323,63 +3677,74 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                     data-testid="macro-prenews-flow-panel"
                     className="mt-2 divide-y divide-[#E4E4E7] dark:divide-[#20252D] border-t border-[#E4E4E7] dark:border-[#20252D] text-xs"
                   >
-                    <div className="py-2.5 space-y-0.5">
-                      <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
-                        {tr('Margin Konsensus', 'Consensus Margin')} · {activeMatrix.preNewsFlow.consensusTightness}
-                      </span>
-                      <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
-                        {isEn ? activeMatrix.preNewsFlow.consensusNoteEn : activeMatrix.preNewsFlow.consensusNoteId}
-                      </p>
-                    </div>
-                    <div className="py-2.5 space-y-0.5">
-                      <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
-                        {tr('Rantai Indikator Pendahulu', 'Leading Indicator Chain')} ·{' '}
-                        {activeMatrix.preNewsFlow.leadingChain.direction}
-                      </span>
-                      <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
-                        {isEn
-                          ? activeMatrix.preNewsFlow.leadingChain.summaryEn
-                          : activeMatrix.preNewsFlow.leadingChain.summaryId}
-                      </p>
-                    </div>
-                    {activeMatrix.preNewsFlow.marketSentiment && (
-                      <div className="py-2.5 space-y-0.5">
-                        <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
-                          {tr('Iklim Sentimen Pasar', 'Market Sentiment Regime')} ·{' '}
-                          {isEn
-                            ? activeMatrix.preNewsFlow.marketSentiment.labelEn
-                            : activeMatrix.preNewsFlow.marketSentiment.labelId}
-                        </span>
-                        <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
-                          {activeMatrix.preNewsFlow.riskRegime
-                            ? isEn
-                              ? activeMatrix.preNewsFlow.riskRegime.regimeLabelEn
-                              : activeMatrix.preNewsFlow.riskRegime.regimeLabelId
-                            : activeMatrix.preNewsFlow.marketSentiment.regime}
-                          {activeMatrix.preNewsFlow.marketSentiment.stagflationDetected
-                            ? tr(
-                                ' · Sinyal Stagflasi terdeteksi (Inflasi tinggi + Ekonomi melambat → Dukungan struktural Emas).',
-                                ' · Stagflation regime detected (Hot inflation + Cooling growth → Structural Gold support).'
-                              )
-                            : ''}
-                        </p>
+                    {isPreReleaseUnrecorded ? (
+                      <div className="py-2.5 text-[#526071] dark:text-[#929BA9] leading-relaxed">
+                        {tr(
+                          'Detail Alur Pra-Rilis tidak terekam karena aplikasi dibuka setelah waktu rilis lewat. Pilih news mendatang untuk pemantauan Alur Pra-Rilis secara real-time.',
+                          'Pre-News Flow details were not captured because the app was opened after release time. Select an upcoming release for real-time Pre-News Flow tracking.'
+                        )}
                       </div>
-                    )}
-                    {Array.isArray(activeMatrix.preNewsFlow.previousRevisions) &&
-                      activeMatrix.preNewsFlow.previousRevisions.length > 0 && (
-                        <div className="py-2.5 space-y-1">
+                    ) : (
+                      <>
+                        <div className="py-2.5 space-y-0.5">
                           <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
-                            {tr('Revisi Data Sebelumnya', 'Prior Data Revisions')}
+                            {tr('Margin Konsensus', 'Consensus Margin')} · {displayedPreNewsFlow.consensusTightness}
                           </span>
-                          <ul className="space-y-0.5 text-[#526071] dark:text-[#929BA9]">
-                            {activeMatrix.preNewsFlow.previousRevisions.slice(0, 3).map((rev, idx) => (
-                              <li key={`${rev.title}-${idx}`}>
-                                • {rev.title}: {rev.oldPrev} → {rev.newPrev}
-                              </li>
-                            ))}
-                          </ul>
+                          <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+                            {isEn ? displayedPreNewsFlow.consensusNoteEn : displayedPreNewsFlow.consensusNoteId}
+                          </p>
                         </div>
-                      )}
+                        <div className="py-2.5 space-y-0.5">
+                          <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                            {tr('Rantai Indikator Pendahulu', 'Leading Indicator Chain')} ·{' '}
+                            {displayedPreNewsFlow.leadingChain.direction}
+                          </span>
+                          <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+                            {isEn
+                              ? displayedPreNewsFlow.leadingChain.summaryEn
+                              : displayedPreNewsFlow.leadingChain.summaryId}
+                          </p>
+                        </div>
+                        {displayedPreNewsFlow.marketSentiment && (
+                          <div className="py-2.5 space-y-0.5">
+                            <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                              {tr('Iklim Sentimen Pasar', 'Market Sentiment Regime')} ·{' '}
+                              {isEn
+                                ? displayedPreNewsFlow.marketSentiment.labelEn
+                                : displayedPreNewsFlow.marketSentiment.labelId}
+                            </span>
+                            <p className="text-[#526071] dark:text-[#929BA9] leading-relaxed text-editorial-justify">
+                              {displayedPreNewsFlow.riskRegime
+                                ? isEn
+                                  ? displayedPreNewsFlow.riskRegime.regimeLabelEn
+                                  : displayedPreNewsFlow.riskRegime.regimeLabelId
+                                : displayedPreNewsFlow.marketSentiment.regime}
+                              {displayedPreNewsFlow.marketSentiment.stagflationDetected
+                                ? tr(
+                                    ' · Sinyal Stagflasi terdeteksi (Inflasi tinggi + Ekonomi melambat → Dukungan struktural Emas).',
+                                    ' · Stagflation regime detected (Hot inflation + Cooling growth → Structural Gold support).'
+                                  )
+                                : ''}
+                            </p>
+                          </div>
+                        )}
+                        {Array.isArray(displayedPreNewsFlow.previousRevisions) &&
+                          displayedPreNewsFlow.previousRevisions.length > 0 && (
+                            <div className="py-2.5 space-y-1">
+                              <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7]">
+                                {tr('Revisi Data Sebelumnya', 'Prior Data Revisions')}
+                              </span>
+                              <ul className="space-y-0.5 text-[#526071] dark:text-[#929BA9]">
+                                {displayedPreNewsFlow.previousRevisions.slice(0, 3).map((rev, idx) => (
+                                  <li key={`${rev.title}-${idx}`}>
+                                    • {rev.title}: {rev.oldPrev} → {rev.newPrev}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -3532,7 +3897,9 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
               const grpTimeMs = new Date(grp.releaseDateIso).getTime();
               const isPastGrp = Number.isFinite(grpTimeMs) && grpTimeMs <= nowMs;
               const isTargetGrp = grp.events.some((e) => clusterEvents.some((c) => c.id === e.id));
-              const hasActualInGrp = grp.events.some((e) => Boolean(e.actual && e.actual.trim() && e.actual.trim() !== '-'));
+              const hasActualInGrp =
+                isPastGrp &&
+                grp.events.some((e) => Boolean(e.actual && e.actual.trim() && e.actual.trim() !== '-'));
               const hasPrimaryInGrp = grp.events.some((e) => isPrimaryHighImpactEvent(e));
 
               const nodeColorClass = isTargetGrp
@@ -3600,13 +3967,16 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
 
                     <div className="space-y-1">
                       {grp.events.map((ev) => {
-                        const hasAct = Boolean(ev.actual && ev.actual.trim() && ev.actual.trim() !== '-');
-                        const isRelWithAct = hasAct && (isPastGrp || ev.actualNum !== null);
+                        const evMs = new Date(ev.date).getTime();
+                        const isPastEv = isPastGrp || (Number.isFinite(evMs) && evMs <= nowMs);
+                        const hasAct =
+                          isPastEv && Boolean(ev.actual && ev.actual.trim() && ev.actual.trim() !== '-');
+                        const isRelWithAct = hasAct;
                         const actColor = !isRelWithAct
                           ? 'text-[#0F172A] dark:text-[#F2F4F7]'
-                          : ev.eventBiasForGold === 'SELL'
-                          ? 'text-[#059669] dark:text-[#00A878]'
                           : ev.eventBiasForGold === 'BUY'
+                          ? 'text-[#059669] dark:text-[#00A878]'
+                          : ev.eventBiasForGold === 'SELL'
                           ? 'text-[#E11D48] dark:text-[#E05260]'
                           : 'text-[#0F172A] dark:text-[#F2F4F7]';
                         const preEval =
@@ -3664,35 +4034,41 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
               const isActiveTarget = clusterEvents.some((c) => c.id === ev.id);
               const evTimeMs = new Date(ev.date).getTime();
               const isPastItem = Number.isFinite(evTimeMs) && evTimeMs <= nowMs;
-              const hasActualItem = Boolean(
-                ev.actual && ev.actual.trim() && ev.actual.trim() !== '-'
-              );
-              const isReleasedWithActual = hasActualItem && (isPastItem || ev.actualNum !== null);
+              const hasActualItem =
+                isPastItem && Boolean(ev.actual && ev.actual.trim() && ev.actual.trim() !== '-');
+              const isReleasedWithActual = hasActualItem;
 
-              // MANDATORY COLOR RULES FOR ACTUAL:
-              // - Before release: White (#F2F4F7 dark / #0F172A light)
-              // - After release Good for USD (engine eventBiasForGold === 'SELL'): Green
-              // - After release Bad for USD (engine eventBiasForGold === 'BUY'): Red
-              // - After release Neutral / no conclusion (engine eventBiasForGold === 'MIXED'): White
+              // UNIFIED GOLD-CENTRIC COLOR RULES FOR ACTUAL & INTERPRETATION:
+              // - Before release: Neutral dark/light text
+              // - After release Bullish Gold / Bad for USD (eventBiasForGold === 'BUY'): Emerald Green
+              // - After release Bearish Gold / Good for USD (eventBiasForGold === 'SELL'): Rose Red
+              // - After release Neutral / no conclusion (eventBiasForGold === 'MIXED'): Neutral text
               const actualTextColorClass = !isReleasedWithActual
                 ? 'text-[#0F172A] dark:text-[#F2F4F7]'
-                : ev.eventBiasForGold === 'SELL'
-                ? 'text-[#059669] dark:text-[#00A878]'
                 : ev.eventBiasForGold === 'BUY'
+                ? 'text-[#059669] dark:text-[#00A878]'
+                : ev.eventBiasForGold === 'SELL'
                 ? 'text-[#E11D48] dark:text-[#E05260]'
                 : 'text-[#0F172A] dark:text-[#F2F4F7]';
 
+              const interpretationColorClass =
+                ev.eventBiasForGold === 'BUY'
+                  ? 'text-[#059669] dark:text-[#00A878]'
+                  : ev.eventBiasForGold === 'SELL'
+                  ? 'text-[#E11D48] dark:text-[#E05260]'
+                  : 'text-[#526071] dark:text-[#929BA9]';
+
               const usdInterpretationLabel = !isReleasedWithActual
                 ? ev.eventBiasForGold === 'SELL'
-                  ? tr('Pre-News: Pro USD (SELL XAU)', 'Pre-News: Pro USD (SELL XAU)')
+                  ? tr('Pre-News: SELL XAU/USD (Pro USD)', 'Pre-News: SELL XAU/USD (Pro USD)')
                   : ev.eventBiasForGold === 'BUY'
-                  ? tr('Pre-News: Lemah USD (BUY XAU)', 'Pre-News: Weak USD (BUY XAU)')
+                  ? tr('Pre-News: BUY XAU/USD (Lemah USD)', 'Pre-News: BUY XAU/USD (Weak USD)')
                   : tr('Pre-News: Netral', 'Pre-News: Neutral')
                 : ev.eventBiasForGold === 'SELL'
-                ? tr('Good for USD · SELL XAU/USD', 'Good for USD · SELL XAU/USD')
+                ? tr('SELL XAU/USD · Good for USD', 'SELL XAU/USD · Good for USD')
                 : ev.eventBiasForGold === 'BUY'
-                ? tr('Bad for USD · BUY XAU/USD', 'Bad for USD · BUY XAU/USD')
-                : tr('Netral · MIXED XAU/USD', 'Neutral · MIXED XAU/USD');
+                ? tr('BUY XAU/USD · Bad for USD', 'BUY XAU/USD · Bad for USD')
+                : tr('MIXED XAU/USD · Netral', 'MIXED XAU/USD · Neutral');
 
               const preNewsEval =
                 isReleasedWithActual && ev.forecastNum !== null && ev.previousNum !== null
@@ -3805,7 +4181,7 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                   <div className="space-y-1 lg:col-span-7 lg:col-start-1 min-w-0">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-2 text-xs">
-                        <span className="font-medium text-[#526071] dark:text-[#929BA9]">
+                        <span className={`font-semibold ${interpretationColorClass}`}>
                           {usdInterpretationLabel}
                         </span>
                         {preNewsEval && (
@@ -4178,17 +4554,17 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                     isPrimaryHighImpactEvent(ev) && snapshot.calendarEvents.some((c) => c.id === ev.id);
                   const isActiveTarget = clusterEvents.some((c) => c.id === ev.id);
                   const actualTextColorClass =
-                    ev.eventBiasForGold === 'SELL'
+                    ev.eventBiasForGold === 'BUY'
                       ? 'text-[#059669] dark:text-[#00A878]'
-                      : ev.eventBiasForGold === 'BUY'
+                      : ev.eventBiasForGold === 'SELL'
                       ? 'text-[#E11D48] dark:text-[#E05260]'
                       : 'text-[#0F172A] dark:text-[#F2F4F7]';
                   const usdInterpretationLabel =
                     ev.eventBiasForGold === 'SELL'
-                      ? tr('Good for USD · SELL XAU/USD', 'Good for USD · SELL XAU/USD')
+                      ? tr('SELL XAU/USD · Good for USD', 'SELL XAU/USD · Good for USD')
                       : ev.eventBiasForGold === 'BUY'
-                      ? tr('Bad for USD · BUY XAU/USD', 'Bad for USD · BUY XAU/USD')
-                      : tr('Netral · MIXED XAU/USD', 'Neutral · MIXED XAU/USD');
+                      ? tr('BUY XAU/USD · Bad for USD', 'BUY XAU/USD · Bad for USD')
+                      : tr('MIXED XAU/USD · Netral', 'MIXED XAU/USD · Neutral');
                   const preNewsEval =
                     ev.forecastNum !== null && ev.previousNum !== null
                       ? evaluateSingleEventForGold(ev.title, null, ev.forecastNum, ev.previousNum)
@@ -4253,7 +4629,7 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                       <div className="space-y-1 lg:col-span-7 lg:col-start-1 min-w-0">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-2 text-xs">
-                            <span className="font-medium text-[#526071] dark:text-[#929BA9]">{usdInterpretationLabel}</span>
+                            <span className={`font-semibold ${actualTextColorClass}`}>{usdInterpretationLabel}</span>
                             {preNewsEval && (
                               <span className="font-mono-numbers tabular-nums text-[#526071] dark:text-[#929BA9]">
                                 · {`Pre ${preNewsEval.bias} → Post ${ev.eventBiasForGold}`}
@@ -4370,6 +4746,30 @@ export const MacroNewsView: React.FC<MacroNewsViewProps> = ({ isActive = true })
                     ? threeSystemState.system3LivePulse.offlinePillarSummaryEn
                     : threeSystemState.system3LivePulse.offlinePillarSummaryId}
                 </p>
+                {threeSystemState.system3LivePulse.tacticalOverlay &&
+                  threeSystemState.system3LivePulse.tacticalOverlay.status !== 'NORMAL' && (
+                    <div
+                      data-testid="system3-tactical-overlay-note"
+                      className={`mt-2 pl-3 border-l-2 space-y-0.5 ${
+                        threeSystemState.system3LivePulse.tacticalOverlay.status === 'COUNTER_RALLY_RISK'
+                          ? 'border-[#059669] dark:border-[#00A878]'
+                          : threeSystemState.system3LivePulse.tacticalOverlay.status === 'COUNTER_DROP_RISK'
+                          ? 'border-[#E11D48] dark:border-[#E05260]'
+                          : 'border-[#D97706] dark:border-[#F59E0B]'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold uppercase tracking-[0.06em] text-[#0F172A] dark:text-[#F2F4F7]">
+                        {isEn
+                          ? threeSystemState.system3LivePulse.tacticalOverlay.badgeEn
+                          : threeSystemState.system3LivePulse.tacticalOverlay.badgeId}
+                      </div>
+                      <p className="text-[11px] text-[#526071] dark:text-[#929BA9] leading-relaxed">
+                        {isEn
+                          ? threeSystemState.system3LivePulse.tacticalOverlay.detailEn
+                          : threeSystemState.system3LivePulse.tacticalOverlay.detailId}
+                      </p>
+                    </div>
+                  )}
               </div>
 
               {/* Compact Clickable Intermarket Strip inside Tab 3 */}

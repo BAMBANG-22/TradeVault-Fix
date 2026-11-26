@@ -51,6 +51,14 @@ interface AnalyticsViewProps {
   trades: Trade[];
   settings: AppSettings;
   onViewTrade?: (trade: Trade) => void;
+  onDeleteTradesByDate?: (payload: {
+    dateKey: string;
+    headerLabel?: string;
+    trades: Trade[];
+    source: 'calendar';
+    isFilteredSubset?: boolean;
+    totalTradesOnDate?: number;
+  }) => void;
   userId?: string | null;
 }
 
@@ -109,7 +117,13 @@ const filterEquityCurveByRange = (
   return curve.slice(baselineIdx);
 };
 
-export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, onViewTrade, userId }) => {
+export const AnalyticsView: React.FC<AnalyticsViewProps> = ({
+  trades,
+  settings,
+  onViewTrade,
+  onDeleteTradesByDate,
+  userId,
+}) => {
   const { preferredCurrency, rateRecord, formatDynamic } = useGlobalCurrency();
   const { tr, isEn } = useLanguage();
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -1464,6 +1478,20 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, 
               isPrivacyMode={isPrivacyMode}
               trades={filteredTrades}
               onViewTrade={onViewTrade}
+              onDeleteTradesByDate={
+                onDeleteTradesByDate
+                  ? (payload) => {
+                      const totalOnDate = (trades || []).filter(
+                        (t) => (t.dateTime || '').slice(0, 10) === payload.dateKey
+                      ).length;
+                      onDeleteTradesByDate({
+                        ...payload,
+                        isFilteredSubset: payload.trades.length < totalOnDate,
+                        totalTradesOnDate: totalOnDate,
+                      });
+                    }
+                  : undefined
+              }
             />
           </section>
 
@@ -1746,7 +1774,7 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, 
           {/* =========================================================================
               SECTION 06 — TRADING BEHAVIOR (STREAKS, AVERAGES & DISTRIBUTION)
              ========================================================================= */}
-          <section className="space-y-5">
+          <section className="space-y-5 pb-8 border-b border-[#E4E4E7] dark:border-[#20252D]">
             <div>
               <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[#526071] dark:text-[#929BA9]">
                 {tr('06 / PERILAKU TRADING', '06 / TRADING BEHAVIOR')}
@@ -1881,109 +1909,141 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, 
             </div>
           </section>
 
-          {/* SECTION 07: BEHAVIORAL & COST OF MISTAKES ANALYTICS */}
-          <section className="space-y-5 pt-8 border-t border-[#E4E4E7] dark:border-[#20252D]">
-            <div className="flex flex-wrap items-end justify-between gap-2">
+          {/* =========================================================================
+              SECTION 07 — BEHAVIORAL & COST OF MISTAKES ANALYTICS
+             ========================================================================= */}
+          <section className="space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2.5 sm:gap-3">
               <div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-[#526071] dark:text-[#929BA9]">
-                  {tr('07 · ANALITIK PSIKOLOGI & DISIPLIN', '07 · BEHAVIORAL & DISCIPLINE ANALYTICS')}
+                <span className="block text-[10px] font-bold uppercase tracking-[0.14em] text-[#526071] dark:text-[#929BA9]">
+                  {tr('07 / ANALITIK PSIKOLOGI & DISIPLIN', '07 / BEHAVIORAL & DISCIPLINE ANALYTICS')}
                 </span>
                 <h2 className="text-base sm:text-lg font-bold text-[#0F172A] dark:text-[#F2F4F7] mt-0.5">
-                  {tr('Biaya Kesalahan (Cost of Mistakes)', 'Cost of Mistakes & Discipline Impact')}
+                  {tr('Biaya Kesalahan & Dampak Disiplin', 'Cost of Mistakes & Discipline Impact')}
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setIsReviewModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[#E4E4E7] dark:border-[#20252D] bg-[#FAFAFA] dark:bg-[#101318] text-xs font-semibold text-[#0F172A] dark:text-[#F2F4F7] hover:bg-[#F4F4F5] dark:hover:bg-[#161A22] cursor-pointer"
+                className="inline-flex items-center gap-1.5 self-start sm:self-auto px-3.5 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] text-[#0F172A] dark:text-[#F2F4F7] shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:shadow-none hover:border-[#0F172A]/40 dark:hover:border-white/40 transition-colors cursor-pointer select-none whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0F172A]/35 dark:focus-visible:ring-white/35"
               >
-                <CalendarCheck2 className="h-3.5 w-3.5" />
+                <CalendarCheck2 className="h-3.5 w-3.5 stroke-[1.75] text-[#526071] dark:text-[#929BA9]" />
                 <span>{tr('Tulis Review Periode', 'Write Period Review')}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 font-mono-numbers tabular-nums">
-              <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D]">
-                <span className="block text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
+            {/* 4 Behavioral Metrics in Cardless Open-Canvas Strip (Matches Section 06) */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-y-5 gap-x-6 py-4 border-y border-[#E4E4E7] dark:border-[#20252D] font-mono-numbers tabular-nums">
+              <div className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] font-sans leading-snug break-words">
                   {tr('Biaya Pelanggaran', 'Cost of Mistakes')}
                 </span>
-                <span className="mt-1 block text-lg sm:text-xl font-bold text-[#E11D48] dark:text-[#E05260]">
+                <span
+                  className={`mt-1 block text-base sm:text-lg font-bold break-words ${
+                    behavioral.costOfMistakes > 0
+                      ? 'text-[#E11D48] dark:text-[#E05260]'
+                      : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                  }`}
+                >
                   {isPrivacyMode
                     ? '••••'
                     : behavioral.costOfMistakes > 0
-                    ? `-${formatCurrency(behavioral.costOfMistakes, periodSettings)}`
-                    : formatCurrency(0, periodSettings)}
+                    ? `-${fmtMoney(behavioral.costOfMistakes, isPrivacyMode)}`
+                    : fmtMoney(0, isPrivacyMode)}
                 </span>
-                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
-                  {tr(`${behavioral.mistakeTradesCount} trade melanggar`, `${behavioral.mistakeTradesCount} mistake trades`)}
+                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9] leading-snug break-words">
+                  {tr(
+                    `${behavioral.mistakeTradesCount} trade melanggar`,
+                    `${behavioral.mistakeTradesCount} mistake trades`
+                  )}
                 </span>
               </div>
 
-              <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D]">
-                <span className="block text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
+              <div className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] font-sans leading-snug break-words">
                   {tr('Winrate Tanpa Mistake', 'Clean Discipline Winrate')}
                 </span>
-                <span className="mt-1 block text-lg sm:text-xl font-bold text-[#059669] dark:text-[#00A878]">
+                <span
+                  className={`mt-1 block text-base sm:text-lg font-bold break-words ${
+                    behavioral.cleanWinRate >= 50
+                      ? 'text-[#059669] dark:text-[#00A878]'
+                      : 'text-[#0F172A] dark:text-[#F2F4F7]'
+                  }`}
+                >
                   {behavioral.cleanWinRate}%
                 </span>
-                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
-                  {tr(`vs ${behavioral.overallWinRate}% keseluruhan`, `vs ${behavioral.overallWinRate}% overall`)}
+                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9] leading-snug break-words">
+                  {tr(
+                    `vs ${behavioral.overallWinRate}% keseluruhan`,
+                    `vs ${behavioral.overallWinRate}% overall`
+                  )}
                 </span>
               </div>
 
-              <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D]">
-                <span className="block text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
+              <div className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] font-sans leading-snug break-words">
                   {tr('Winrate Saat Mistake', 'Mistake-Trade Winrate')}
                 </span>
-                <span className="mt-1 block text-lg sm:text-xl font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                <span className="mt-1 block text-base sm:text-lg font-bold text-[#0F172A] dark:text-[#F2F4F7] break-words">
                   {behavioral.mistakeWinRate}%
                 </span>
-                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
-                  {tr(`${behavioral.ruleBrokenCount} langgar guardrail`, `${behavioral.ruleBrokenCount} guardrail breaches`)}
+                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9] leading-snug break-words">
+                  {tr(
+                    `${behavioral.ruleBrokenCount} langgar guardrail`,
+                    `${behavioral.ruleBrokenCount} guardrail breaches`
+                  )}
                 </span>
               </div>
 
-              <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D]">
-                <span className="block text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
+              <div className="min-w-0">
+                <span className="block text-[10px] font-semibold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] font-sans leading-snug break-words">
                   {tr('Trade Berlabel Psikologi', 'Tagged Behavior Trades')}
                 </span>
-                <span className="mt-1 block text-lg sm:text-xl font-bold text-[#0F172A] dark:text-[#F2F4F7]">
+                <span className="mt-1 block text-base sm:text-lg font-bold text-[#0F172A] dark:text-[#F2F4F7] break-words">
                   {behavioral.taggedTradesCount}
                 </span>
-                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9]">
-                  {tr(`${behavioral.checklistPassedCount} lulus checklist SOP`, `${behavioral.checklistPassedCount} passed SOP checklist`)}
+                <span className="text-[11px] font-sans text-[#526071] dark:text-[#929BA9] leading-snug break-words">
+                  {tr(
+                    `${behavioral.checklistPassedCount} lulus checklist SOP`,
+                    `${behavioral.checklistPassedCount} passed SOP checklist`
+                  )}
                 </span>
               </div>
             </div>
 
             {behavioral.mistakeBreakdown.length > 0 || behavioral.emotionBreakdown.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {behavioral.mistakeBreakdown.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  <div className="space-y-2">
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] block">
                       {tr('Rincian Kesalahan & Dampak P/L', 'Mistake Breakdown & P/L Impact')}
                     </h3>
-                    <div className="divide-y divide-[#E4E4E7] dark:divide-[#20252D]">
+                    <div className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] border-y border-[#E4E4E7] dark:border-[#20252D]">
                       {behavioral.mistakeBreakdown.map((row) => (
-                        <div key={row.tagId} className="py-2 flex items-center justify-between gap-2 text-xs">
+                        <div
+                          key={row.tagId}
+                          className="py-3 px-1 flex items-center justify-between gap-3 text-xs font-mono-numbers tabular-nums"
+                        >
                           <div className="min-w-0">
-                            <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block truncate">
+                            <span className="font-bold font-sans text-[#0F172A] dark:text-[#F2F4F7] block break-words">
                               {getMistakeLabel(row.tagId, isEn)}
                             </span>
-                            <span className="text-[11px] text-[#526071] dark:text-[#929BA9] font-mono-numbers">
+                            <span className="text-[11px] text-[#526071] dark:text-[#929BA9]">
                               {row.count}x · WR {row.winRate}%
                             </span>
                           </div>
                           <span
-                            className={`font-bold font-mono-numbers tabular-nums shrink-0 ${
-                              row.netProfit >= 0
+                            className={`font-bold text-xs sm:text-sm shrink-0 ${
+                              row.netProfit > 0.01
                                 ? 'text-[#059669] dark:text-[#00A878]'
-                                : 'text-[#E11D48] dark:text-[#E05260]'
+                                : row.netProfit < -0.01
+                                ? 'text-[#E11D48] dark:text-[#E05260]'
+                                : 'text-[#526071] dark:text-[#929BA9]'
                             }`}
                           >
                             {isPrivacyMode
                               ? '••••'
-                              : `${row.netProfit >= 0 ? '+' : ''}${formatCurrency(row.netProfit, periodSettings)}`}
+                              : `${row.netProfit > 0.01 ? '+' : ''}${fmtMoney(row.netProfit, isPrivacyMode)}`}
                           </span>
                         </div>
                       ))}
@@ -1992,31 +2052,36 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, 
                 )}
 
                 {behavioral.emotionBreakdown.length > 0 && (
-                  <div className="p-4 rounded-2xl bg-white dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] space-y-2.5">
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#526071] dark:text-[#929BA9]">
+                  <div className="space-y-2">
+                    <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#526071] dark:text-[#929BA9] block">
                       {tr('Performa Berdasarkan Kondisi Emosi', 'Performance by Emotional State')}
                     </h3>
-                    <div className="divide-y divide-[#E4E4E7] dark:divide-[#20252D]">
+                    <div className="divide-y divide-[#E4E4E7] dark:divide-[#20252D] border-y border-[#E4E4E7] dark:border-[#20252D]">
                       {behavioral.emotionBreakdown.map((row) => (
-                        <div key={row.emotionId} className="py-2 flex items-center justify-between gap-2 text-xs">
+                        <div
+                          key={row.emotionId}
+                          className="py-3 px-1 flex items-center justify-between gap-3 text-xs font-mono-numbers tabular-nums"
+                        >
                           <div className="min-w-0">
-                            <span className="font-semibold text-[#0F172A] dark:text-[#F2F4F7] block truncate">
+                            <span className="font-bold font-sans text-[#0F172A] dark:text-[#F2F4F7] block break-words">
                               {getEmotionLabel(row.emotionId, isEn)}
                             </span>
-                            <span className="text-[11px] text-[#526071] dark:text-[#929BA9] font-mono-numbers">
+                            <span className="text-[11px] text-[#526071] dark:text-[#929BA9]">
                               {row.count}x · WR {row.winRate}%
                             </span>
                           </div>
                           <span
-                            className={`font-bold font-mono-numbers tabular-nums shrink-0 ${
-                              row.netProfit >= 0
+                            className={`font-bold text-xs sm:text-sm shrink-0 ${
+                              row.netProfit > 0.01
                                 ? 'text-[#059669] dark:text-[#00A878]'
-                                : 'text-[#E11D48] dark:text-[#E05260]'
+                                : row.netProfit < -0.01
+                                ? 'text-[#E11D48] dark:text-[#E05260]'
+                                : 'text-[#526071] dark:text-[#929BA9]'
                             }`}
                           >
                             {isPrivacyMode
                               ? '••••'
-                              : `${row.netProfit >= 0 ? '+' : ''}${formatCurrency(row.netProfit, periodSettings)}`}
+                              : `${row.netProfit > 0.01 ? '+' : ''}${fmtMoney(row.netProfit, isPrivacyMode)}`}
                           </span>
                         </div>
                       ))}
@@ -2025,12 +2090,12 @@ export const AnalyticsView: React.FC<AnalyticsViewProps> = ({ trades, settings, 
                 )}
               </div>
             ) : (
-              <div className="p-4 rounded-xl bg-[#FAFAFA] dark:bg-[#101318] border border-[#E4E4E7] dark:border-[#20252D] text-xs text-[#526071] dark:text-[#929BA9]">
+              <p className="py-6 border-y border-[#E4E4E7] dark:border-[#20252D] text-xs text-[#526071] dark:text-[#929BA9] leading-relaxed">
                 {tr(
-                  'Tip: Tambahkan tag Mistake (FOMO, Revenge, Overlot, A+ Setup) dan kondisi Emosi pada Detail Transaksi untuk memetakan biaya kesalahan trading Anda secara otomatis.',
-                  'Tip: Tag Mistakes (FOMO, Revenge, Overlot, A+ Setup) and Emotion inside Trade Details to automatically measure your Cost of Mistakes.'
+                  'Tambahkan tag Mistake (FOMO, Revenge, Overlot, A+ Setup) dan kondisi Emosi pada Detail Transaksi untuk memetakan biaya kesalahan trading Anda secara otomatis.',
+                  'Tag Mistakes (FOMO, Revenge, Overlot, A+ Setup) and Emotion inside Trade Details to automatically measure your Cost of Mistakes.'
                 )}
-              </div>
+              </p>
             )}
           </section>
         </>

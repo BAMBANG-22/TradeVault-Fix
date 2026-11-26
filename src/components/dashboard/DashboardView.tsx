@@ -42,6 +42,14 @@ interface DashboardViewProps {
   onAddTrade: () => void;
   onViewTrade: (trade: Trade) => void;
   onClearDemoTrades?: () => void;
+  onDeleteTradesByDate?: (payload: {
+    dateKey: string;
+    headerLabel?: string;
+    trades: Trade[];
+    source: 'calendar';
+    isFilteredSubset?: boolean;
+    totalTradesOnDate?: number;
+  }) => void;
 }
 
 const PERIOD_SHORT_LABELS: Record<DashboardPeriodPreset, string> = {
@@ -107,6 +115,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
   onAddTrade,
   onViewTrade,
+  onDeleteTradesByDate,
 }) => {
   const { isEn, locale, tr } = useLanguage();
 
@@ -668,6 +677,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             settings={settings}
             isPrivacyMode={isPrivacyMode}
             onViewTrade={onViewTrade}
+            onDeleteTradesByDate={onDeleteTradesByDate}
             preferredCurrency={preferredCurrency}
             rateRecord={rateRecord}
           />

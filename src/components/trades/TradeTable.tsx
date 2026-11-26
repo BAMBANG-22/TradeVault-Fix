@@ -8,6 +8,7 @@ import {
 import { AppSettings } from '../../types/settings';
 import {
   computeRealizedRMultiple,
+  extractTradeLocalDateKey,
   formatCurrency,
   formatRMultiple,
   normalizeTradeDateTimeLocal,
@@ -68,6 +69,8 @@ interface DateGroupCardProps {
   onViewScreenshot: (url: string, title: string) => void;
   onEditTrade: (trade: Trade) => void;
   onDeleteTrade: (trade: Trade) => void;
+  onDeleteDateGroup?: () => void;
+  dateGroupTotalCount?: number;
 }
 
 const DateGroupCard: React.FC<DateGroupCardProps> = ({
@@ -80,6 +83,8 @@ const DateGroupCard: React.FC<DateGroupCardProps> = ({
   onViewScreenshot,
   onEditTrade,
   onDeleteTrade,
+  onDeleteDateGroup,
+  dateGroupTotalCount,
 }) => {
   const { preferredCurrency, formatTradeFinancial } = useGlobalCurrency();
   const { tr } = useLanguage();
@@ -120,13 +125,34 @@ const DateGroupCard: React.FC<DateGroupCardProps> = ({
       className="tv-smoked-glass-card rounded-[16px] border border-[#E4E4E7] dark:border-white/[0.09] overflow-hidden transition-all duration-200"
     >
       {/* Date Group Header */}
-      <div className="px-4 py-2.5 bg-[#FAFAFA] dark:bg-white/[0.03] border-b border-[#E4E4E7] dark:border-white/[0.08] flex items-center justify-between select-none">
+      <div className="px-4 py-2.5 bg-[#FAFAFA] dark:bg-white/[0.03] border-b border-[#E4E4E7] dark:border-white/[0.08] flex items-center justify-between gap-2 select-none">
         <span className="text-[11px] font-bold uppercase tracking-wider text-[#697586] dark:text-[#929BA9] font-mono-numbers tabular-nums">
           {localizedHeaderLabel}
         </span>
-        <span className="text-[10px] font-mono-numbers tabular-nums text-[#697586] dark:text-[#929BA9]">
-          {count} {tr('Transaksi', 'Trades')}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono-numbers tabular-nums text-[#697586] dark:text-[#929BA9]">
+            {count} {tr('Transaksi', 'Trades')}
+          </span>
+          {onDeleteDateGroup && (dateGroupTotalCount ?? count) > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDeleteDateGroup();
+              }}
+              data-testid={`delete-date-group-${section.dateKey}`}
+              title={tr('Hapus semua transaksi tanggal ini', 'Delete all trades for this date')}
+              aria-label={tr(
+                `Hapus ${dateGroupTotalCount ?? count} transaksi pada ${localizedHeaderLabel}`,
+                `Delete ${dateGroupTotalCount ?? count} trades on ${localizedHeaderLabel}`
+              )}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-semibold text-[#697586] dark:text-[#929BA9] hover:text-[#E11D48] dark:hover:text-[#E05260] hover:bg-[#E11D48]/10 dark:hover:bg-[#E05260]/15 transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-3.5 w-3.5 stroke-[1.75]" />
+              <span className="hidden sm:inline">{tr('Hapus', 'Delete')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Trades Rows */}
@@ -415,6 +441,14 @@ interface TradeTableProps {
     newTrades: Trade[]
   ) => Promise<{ success: boolean; error?: string; importedCount?: number }>;
   onOpenPlaybook?: () => void;
+  onDeleteTradesByDate?: (payload: {
+    dateKey: string;
+    headerLabel?: string;
+    trades: Trade[];
+    source: 'journal';
+    isFilteredSubset?: boolean;
+    totalTradesOnDate?: number;
+  }) => void;
 }
 
 export const TradeTable: React.FC<TradeTableProps> = ({
@@ -434,6 +468,7 @@ export const TradeTable: React.FC<TradeTableProps> = ({
   onReloadFromCloud,
   onImportBatchTrades,
   onOpenPlaybook,
+  onDeleteTradesByDate,
 }) => {
   const { tr } = useLanguage();
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -637,6 +672,27 @@ export const TradeTable: React.FC<TradeTableProps> = ({
     () => groupTradesByDate(paginatedTrades),
     [paginatedTrades]
   );
+
+  // Full date maps (unpaginated) so deleting a date deletes all matching trades on that date, not just current page rows
+  const filteredTradesByDateKey = useMemo(() => {
+    const map = new Map<string, Trade[]>();
+    for (const t of filteredTrades) {
+      const k = extractTradeLocalDateKey(t.dateTime || '') || 'UNKNOWN';
+      const arr = map.get(k);
+      if (arr) arr.push(t);
+      else map.set(k, [t]);
+    }
+    return map;
+  }, [filteredTrades]);
+
+  const allTradesCountByDateKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const t of trades) {
+      const k = extractTradeLocalDateKey(t.dateTime || '') || 'UNKNOWN';
+      map.set(k, (map.get(k) || 0) + 1);
+    }
+    return map;
+  }, [trades]);
 
   const applyQuickDate = (type: 'ALL' | 'TODAY' | '7D' | 'MONTH') => {
     const now = new Date();
@@ -1359,20 +1415,47 @@ export const TradeTable: React.FC<TradeTableProps> = ({
         </div>
       ) : (
         <div className="space-y-4" data-testid="trade-log-date-groups">
-          {dateGroupedSections.map((section) => (
-            <DateGroupCard
-              key={section.dateKey}
-              section={section}
-              settings={settings}
-              onViewDetail={onViewDetail}
-              onUpdateTradeLifecycle={onUpdateTradeLifecycle}
-              openPlannedTransitionModal={openPlannedTransitionModal}
-              openClosePositionModal={openClosePositionModal}
-              onViewScreenshot={onViewScreenshot}
-              onEditTrade={onEditTrade}
-              onDeleteTrade={onDeleteTrade}
-            />
-          ))}
+          {dateGroupedSections.map((section) => {
+            const matchingForDate =
+              filteredTradesByDateKey.get(section.dateKey) || section.trades;
+            const totalForDate =
+              allTradesCountByDateKey.get(section.dateKey) || matchingForDate.length;
+            const localizedLabel =
+              section.headerLabel === 'TODAY'
+                ? tr('HARI INI', 'TODAY')
+                : section.headerLabel === 'YESTERDAY'
+                ? tr('KEMARIN', 'YESTERDAY')
+                : section.headerLabel;
+
+            return (
+              <DateGroupCard
+                key={section.dateKey}
+                section={section}
+                settings={settings}
+                onViewDetail={onViewDetail}
+                onUpdateTradeLifecycle={onUpdateTradeLifecycle}
+                openPlannedTransitionModal={openPlannedTransitionModal}
+                openClosePositionModal={openClosePositionModal}
+                onViewScreenshot={onViewScreenshot}
+                onEditTrade={onEditTrade}
+                onDeleteTrade={onDeleteTrade}
+                dateGroupTotalCount={matchingForDate.length}
+                onDeleteDateGroup={
+                  onDeleteTradesByDate
+                    ? () =>
+                        onDeleteTradesByDate({
+                          dateKey: section.dateKey,
+                          headerLabel: localizedLabel,
+                          trades: matchingForDate,
+                          source: 'journal',
+                          isFilteredSubset: matchingForDate.length < totalForDate,
+                          totalTradesOnDate: totalForDate,
+                        })
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       )}
 
