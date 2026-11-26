@@ -12,7 +12,7 @@
 
 import { Trade } from '../types/trade';
 import { AppSettings } from '../types/settings';
-import { calculatePerformance } from './calculations';
+import { calculatePerformance, computeTradeNetProfit } from './calculations';
 import { getTradeLifecycleStatus } from './tradeLifecycle';
 import {
   getApiEndpointCandidates,
@@ -827,7 +827,7 @@ export function buildAgentDeskContext(
     }));
 
   const closedTrades = sortedTrades.filter((t) => getTradeLifecycleStatus(t) === 'CLOSED');
-  const recentClosed = closedTrades.slice(0, 12).map((t) => ({
+  const recentClosed = closedTrades.slice(0, 14).map((t) => ({
     dateTime: t.dateTime,
     instrument: t.instrument,
     position: t.position,
@@ -835,31 +835,178 @@ export function buildAgentDeskContext(
     strategy: t.strategy,
     lotSize: t.lotSize,
     outcome: t.outcome,
-    netProfit: Number((t.netProfit || 0).toFixed(2)),
+    netProfit: Number(computeTradeNetProfit(t).toFixed(2)),
     rMultiple: typeof t.rMultiple === 'number' ? Number(t.rMultiple.toFixed(2)) : null,
     emotionTag: t.emotionTag || null,
     mistakeTags: Array.isArray(t.mistakeTags) ? t.mistakeTags.slice(0, 3) : [],
     ruleCompliant: typeof t.ruleCompliant === 'boolean' ? t.ruleCompliant : null,
   }));
 
-  // Aggregate mistakes, emotions, and sessions compactly
+  // Deterministic Local Calendar Date Keys & Daily/Period Growth Comparison
+  // Ensures AI NEVER guesses "selisih total grow kemarin vs hari ini"!
+  const toLocalDateKeyFromIso = (isoStr: string | undefined): string => {
+    if (!isoStr) return '';
+    const d = new Date(isoStr);
+    if (Number.isNaN(d.getTime())) {
+      const m = isoStr.match(/^(\d{4}-\d{2}-\d{2})/);
+      return m ? m[1] : '';
+    }
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${mo}-${da}`;
+  };
+
+  const nowDate = new Date();
+  const todayDateKey = getTodayLocalDateKey();
+  const yesterdayObj = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 1);
+  const yesterdayDateKey = `${yesterdayObj.getFullYear()}-${String(yesterdayObj.getMonth() + 1).padStart(2, '0')}-${String(
+    yesterdayObj.getDate()
+  ).padStart(2, '0')}`;
+
+  const startingBal = settings.startingBalance > 0 ? settings.startingBalance : metrics.startingBalance;
+  const closedChrono = [...closedTrades].sort(
+    (a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime()
+  );
+
+  // Aggregate mistakes, emotions, sessions, strategies, and chronological daily growth
   const mistakeCounts: Record<string, { count: number; netImpact: number }> = {};
   const sessionStats: Record<string, { count: number; wins: number; netProfit: number }> = {};
-  for (const t of closedTrades) {
+  const strategyStats: Record<
+    string,
+    { count: number; wins: number; netProfit: number; rSum: number; rCount: number }
+  > = {};
+  const dailyBucketMap = new Map<
+    string,
+    { date: string; trades: number; wins: number; losses: number; netProfit: number }
+  >();
+
+  let profitBeforeToday = 0;
+  let todayNetProfit = 0;
+  let todayClosedCount = 0;
+  let todayWins = 0;
+  let todayLosses = 0;
+  let yesterdayNetProfit = 0;
+  let yesterdayClosedCount = 0;
+
+  for (const t of closedChrono) {
+    const net = computeTradeNetProfit(t);
+    const dKey = toLocalDateKeyFromIso(t.dateTime);
+
+    if (dKey === todayDateKey) {
+      todayNetProfit += net;
+      todayClosedCount += 1;
+      if (t.outcome === 'WIN') todayWins += 1;
+      else if (t.outcome === 'LOSS') todayLosses += 1;
+    } else if (dKey && dKey < todayDateKey) {
+      profitBeforeToday += net;
+    }
+
+    if (dKey === yesterdayDateKey) {
+      yesterdayNetProfit += net;
+      yesterdayClosedCount += 1;
+    }
+
+    if (dKey) {
+      const existing = dailyBucketMap.get(dKey) || {
+        date: dKey,
+        trades: 0,
+        wins: 0,
+        losses: 0,
+        netProfit: 0,
+      };
+      existing.trades += 1;
+      if (t.outcome === 'WIN') existing.wins += 1;
+      else if (t.outcome === 'LOSS') existing.losses += 1;
+      existing.netProfit += net;
+      dailyBucketMap.set(dKey, existing);
+    }
+
     const sess = t.session || 'Other';
     if (!sessionStats[sess]) sessionStats[sess] = { count: 0, wins: 0, netProfit: 0 };
     sessionStats[sess].count += 1;
     if (t.outcome === 'WIN') sessionStats[sess].wins += 1;
-    sessionStats[sess].netProfit += t.netProfit || 0;
+    sessionStats[sess].netProfit += net;
+
+    const strat = (t.strategy || 'Unspecified').trim() || 'Unspecified';
+    if (!strategyStats[strat]) {
+      strategyStats[strat] = { count: 0, wins: 0, netProfit: 0, rSum: 0, rCount: 0 };
+    }
+    strategyStats[strat].count += 1;
+    if (t.outcome === 'WIN') strategyStats[strat].wins += 1;
+    strategyStats[strat].netProfit += net;
+    if (typeof t.rMultiple === 'number' && Number.isFinite(t.rMultiple)) {
+      strategyStats[strat].rSum += t.rMultiple;
+      strategyStats[strat].rCount += 1;
+    }
 
     if (Array.isArray(t.mistakeTags)) {
       for (const m of t.mistakeTags) {
         if (!mistakeCounts[m]) mistakeCounts[m] = { count: 0, netImpact: 0 };
         mistakeCounts[m].count += 1;
-        mistakeCounts[m].netImpact += t.netProfit || 0;
+        mistakeCounts[m].netImpact += net;
       }
     }
   }
+
+  // Build chronological cumulative daily growth timeline (last 14 active trading days)
+  const sortedDayKeys = Array.from(dailyBucketMap.keys()).sort();
+  let runningEq = startingBal;
+  const allDailyGrowth = sortedDayKeys.map((date) => {
+    const b = dailyBucketMap.get(date)!;
+    const prevEq = runningEq;
+    runningEq = prevEq + b.netProfit;
+    const dayCumulativeDeltaPct = startingBal > 0 ? (b.netProfit / startingBal) * 100 : 0;
+    const dayCompoundedPct = prevEq > 0 ? (b.netProfit / prevEq) * 100 : 0;
+    const cumulativeGainPct = startingBal > 0 ? ((runningEq - startingBal) / startingBal) * 100 : 0;
+    return {
+      date,
+      trades: b.trades,
+      wins: b.wins,
+      losses: b.losses,
+      netProfit: Number(b.netProfit.toFixed(2)),
+      dayGainDeltaPct: Number(dayCumulativeDeltaPct.toFixed(2)),
+      dayCompoundedReturnPct: Number(dayCompoundedPct.toFixed(2)),
+      endEquity: Number(runningEq.toFixed(2)),
+      cumulativeGainPct: Number(cumulativeGainPct.toFixed(2)),
+    };
+  });
+
+  const last14TradingDays = allDailyGrowth.slice(-14);
+  const lastActiveDayBeforeToday =
+    [...allDailyGrowth].reverse().find((d) => d.date < todayDateKey) || null;
+
+  const beforeTodayEquity = Number((startingBal + profitBeforeToday).toFixed(2));
+  const beforeTodayCumulativeGainPct =
+    startingBal > 0 ? Number(((profitBeforeToday / startingBal) * 100).toFixed(2)) : 0;
+  const currentTotalGainPct = Number(metrics.totalGainPercent.toFixed(2));
+  const todayCumulativeGainDeltaPct = Number(
+    (currentTotalGainPct - beforeTodayCumulativeGainPct).toFixed(2)
+  );
+  const todayCompoundedReturnPct =
+    beforeTodayEquity > 0 ? Number(((todayNetProfit / beforeTodayEquity) * 100).toFixed(2)) : 0;
+  const yesterdayCumulativeGainDeltaPct =
+    startingBal > 0 ? Number(((yesterdayNetProfit / startingBal) * 100).toFixed(2)) : 0;
+
+  const growthComparison = {
+    todayDate: todayDateKey,
+    yesterdayDate: yesterdayDateKey,
+    startingBalance: Number(startingBal.toFixed(2)),
+    beforeTodayEquity,
+    beforeTodayCumulativeGainPct,
+    currentEquity: Number(metrics.currentEquity.toFixed(2)),
+    currentTotalGainPct,
+    todayClosedTradesCount: todayClosedCount,
+    todayWins,
+    todayLosses,
+    todayNetProfit: Number(todayNetProfit.toFixed(2)),
+    todayCumulativeGainDeltaPct,
+    todayCompoundedReturnPct,
+    yesterdayClosedTradesCount: yesterdayClosedCount,
+    yesterdayNetProfit: Number(yesterdayNetProfit.toFixed(2)),
+    yesterdayCumulativeGainDeltaPct,
+    lastActiveDayBeforeToday,
+  };
 
   const topMistakes = Object.entries(mistakeCounts)
     .sort((a, b) => b[1].count - a[1].count)
@@ -876,6 +1023,17 @@ export function buildAgentDeskContext(
     winRatePct: st.count > 0 ? Number(((st.wins / st.count) * 100).toFixed(1)) : 0,
     netProfit: Number(st.netProfit.toFixed(2)),
   }));
+
+  const strategyBreakdown = Object.entries(strategyStats)
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 8)
+    .map(([strategy, st]) => ({
+      strategy,
+      trades: st.count,
+      winRatePct: st.count > 0 ? Number(((st.wins / st.count) * 100).toFixed(1)) : 0,
+      netProfit: Number(st.netProfit.toFixed(2)),
+      avgR: st.rCount > 0 ? Number((st.rSum / st.rCount).toFixed(2)) : null,
+    }));
 
   // 2. Online / Cached Market Intelligence (Macro News, Fundamental Gold, FedWatch, Polymarket, SMC)
   const macro = loadLocalCachedMacroSnapshotSync();
@@ -1114,20 +1272,32 @@ export function buildAgentDeskContext(
         closedTradesCount: metrics.totalTrades,
         openOrPlannedCount: openOrPlannedTrades.length,
         winRatePct: Number(metrics.winRate.toFixed(1)),
+        winRateExcludingBEPct: Number(metrics.winRateExcludingBE.toFixed(1)),
         profitFactor: metrics.isProfitFactorInfinite
           ? 'INF'
           : Number(metrics.profitFactor.toFixed(2)),
+        expectancy: Number(metrics.expectancy.toFixed(2)),
+        averageWin: Number(metrics.averageWin.toFixed(2)),
+        averageLoss: Number(metrics.averageLoss.toFixed(2)),
         totalNetProfit: Number(metrics.totalNetProfit.toFixed(2)),
+        totalGrossProfit: Number(metrics.totalGrossProfit.toFixed(2)),
+        totalGrossLoss: Number(metrics.totalGrossLoss.toFixed(2)),
+        totalCommission: Number(metrics.totalCommission.toFixed(2)),
+        totalSwap: Number(metrics.totalSwap.toFixed(2)),
         currentEquity: Number(metrics.currentEquity.toFixed(2)),
         startingBalance: Number(metrics.startingBalance.toFixed(2)),
         totalGainPercent: Number(metrics.totalGainPercent.toFixed(2)),
         averageRiskReward: Number(metrics.averageRiskReward.toFixed(2)),
         maxDrawdownPercent: Number(metrics.maxDrawdownPercent.toFixed(2)),
         currentStreak: metrics.currentStreak,
+        maxConsecutiveWins: metrics.consecutiveWinsMax,
+        maxConsecutiveLosses: metrics.consecutiveLossesMax,
         dailyLossToday: Number(metrics.dailyLossToday.toFixed(2)),
         isDailyLossExceeded: metrics.isDailyLossExceeded,
         isAccountInCriticalDrawdown: metrics.isAccountInCriticalDrawdown,
       },
+      growthComparison,
+      last14TradingDays,
       riskGuardrails: {
         defaultRiskPercent: settings.defaultRiskPercent,
         maxTradeRiskPercent: settings.maxTradeRiskPercent ?? 2,
@@ -1138,6 +1308,7 @@ export function buildAgentDeskContext(
       },
       openOrPlannedTrades,
       recentClosedTrades: recentClosed,
+      strategyBreakdown,
       sessionBreakdown,
       topMistakes,
     },
@@ -1225,7 +1396,7 @@ function classifyClientSyncNeed(message: string): {
 } {
   const q = message.trim().toLowerCase();
   const tradingKeywords =
-    /\b(xau|xauusd|gold|emas|dxy|yield|us10y|us02y|usoil|oil|forex|pair|market|pasar|chart|candle|harga|price|spot|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|powell|polymarket|cycle|confluence|smc|heatmap|spike|sweep|whipsaw|buy|sell|long|short|entry|exit|sl|tp|stoploss|takeprofit|jurnal|journal|trade|trading|posisi|open|planned|lot|risiko|risk|drawdown|dd|win\s?rate|profit|loss|rugi|equity|saldo|balance|akun|playbook|guardrail|psikologi|emosi|fomo|sesi|session|london|new york|asia|evaluasi|audit|rekap)\b/i;
+    /\b(xau|xauusd|gold|emas|dxy|yield|us10y|us02y|usoil|oil|forex|pair|market|pasar|chart|candle|harga|price|spot|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|powell|polymarket|cycle|confluence|smc|heatmap|spike|sweep|whipsaw|buy|sell|long|short|entry|exit|sl|tp|stoploss|takeprofit|jurnal|journal|trade|trading|posisi|open|planned|lot|risiko|risk|drawdown|dd|win\s?rate|profit|loss|rugi|equity|saldo|balance|akun|playbook|guardrail|psikologi|emosi|fomo|sesi|session|london|new york|asia|evaluasi|audit|rekap|grow|growth|pertumbuhan|selisih|persen|persentase|modal|compound|compounding|monte\s?carlo|simulasi|simulation|expectancy|profit\s?factor|r[\s-]?multiple|kalkulator|calculator|radar|ocr|scan|vela|backtest|replay|strategi|strategy|streak|komisi|commission|swap|pip|pips|kurang\s+paham|belum\s+paham|gak\s+paham|ga\s+paham|bingung|jelasin|jelaskan|maksud|maksudnya|simpel|sederhana|contoh)\b/i;
   const hasTradingTopic = tradingKeywords.test(q);
 
   const hasPriceCue =
@@ -1234,7 +1405,7 @@ function classifyClientSyncNeed(message: string): {
     );
   const hasAssetCue = /\b(xau|xauusd|gold|emas|dxy|us10y|us02y|usoil|oil|btc|eurusd)\b/i.test(q);
   const asksDeepAnalysis =
-    /\b(kenapa|mengapa|analisis|analisa|fundamental|berita|news|jurnal|journal|spike|sweep|prediksi|arah|kemana|ke mana|buy|sell|entry|posisi|risiko|risk|drawdown|win\s?rate|fomc|cpi|nfp|evaluasi|audit|bagusnya|ambil)\b/i.test(
+    /\b(kenapa|mengapa|analisis|analisa|fundamental|berita|news|jurnal|journal|spike|sweep|prediksi|arah|kemana|ke mana|buy|sell|entry|posisi|risiko|risk|drawdown|win\s?rate|fomc|cpi|nfp|evaluasi|audit|bagusnya|ambil|grow|growth|selisih|compound|monte\s?carlo|simulasi)\b/i.test(
       q
     );
 
@@ -1266,8 +1437,10 @@ function classifyClientSyncNeed(message: string): {
     return { intentKind: 'SMALL_TALK', needsPrice: false, needsMarket: false };
   }
 
+  // Only run background market/news sync when the question genuinely asks about market/news/XAU —
+  // NOT on pure journal growth, compounding, Monte Carlo, or concept explanation questions!
   const asksMacroOrMarket =
-    /\b(xau|xauusd|gold|emas|market|pasar|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|dxy|yield|oil|polymarket|cycle|confluence|spike|sweep|arah|buy|sell|hari ini|sekarang)\b/i.test(
+    /\b(xau|xauusd|gold|emas|market|pasar|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|dxy|yield|us10y|us02y|oil|usoil|polymarket|cycle|confluence|smc|heatmap|spike|sweep|whipsaw|arah|buy|sell|bullish|bearish|harga|price|spot)\b/i.test(
       q
     );
 
@@ -1420,14 +1593,57 @@ export function buildOfflineAgentDeskReply(params: {
   const sym = params.settings.currencySymbol || '$';
 
   const q = params.message.toLowerCase();
+  const asksMonteCarlo = /\b(monte\s?carlo|simulasi\s+trade)\b/i.test(q);
+  const asksCompounding = /\b(compound|compounding|gulung\s+modal|growth\s+plan)\b/i.test(q);
+  const asksGrowthDelta =
+    /\b(grow|growth|pertumbuhan|selisih|beda|perbandingan|kemarin|kemaren|hari ini)\b/i.test(q) &&
+    !/\b(news|berita|fomc|cpi|nfp|dxy|harga|price|spot)\b/i.test(q);
   const asksMacro =
     /\b(news|berita|makro|macro|fundamental|gold|emas|xau|spike|sweep|arah|buy|sell|ambil|fomc|cpi|nfp|dxy|bearish|bullish|market|pasar|kemana|ke mana)\b/i.test(
       q
     );
   const asksJournal =
-    /\b(jurnal|journal|trade|win|profit|loss|rugi|drawdown|lot|risiko|risk|posisi|open|planned|evaluasi|kesalahan|sesi|equity|saldo)\b/i.test(
+    asksGrowthDelta ||
+    /\b(jurnal|journal|trade|win|profit|loss|rugi|drawdown|lot|risiko|risk|posisi|open|planned|evaluasi|kesalahan|sesi|equity|saldo|grow|growth|selisih|persen|strategi)\b/i.test(
       q
     );
+
+  // Instant accurate local answers for App Concepts (Monte Carlo / Compounding) when truly offline
+  if (asksMonteCarlo && !asksMacro) {
+    const simpleMode = /\b(kurang\s+paham|bingung|simpel|sederhana|contoh)\b/i.test(q);
+    const mcReply = isEn
+      ? simpleMode
+        ? `Think of **Monte Carlo** like tossing a weighted coin 1,000 times in different orders. Even with a 60% win rate, sometimes you hit 4 losses in a row. Monte Carlo shuffles your trade outcomes thousands of times in TradeVault so you can see the realistic best case (P95), middle outcome (P50), and worst streak (P5) before risking real money.`
+        : `**Monte Carlo Simulation** in TradeVault's Risk & Simulation tab runs 1,000–10,000 randomized trade sequences using your Win Rate, Risk-Reward, and Risk %. It reveals your Median outcome (P50), Best Case (P95), Worst Case (P5), Profit Probability, and Average Max Drawdown so you know if your account can survive unlucky losing streaks.`
+      : simpleMode
+      ? `Bayangin **Monte Carlo** kayak uji coba lempar koin ribuan kali dengan urutan acak. Misalnya strategimu punya Win Rate 60%, kan tetap mungkin tuh apes kena kalah 4x beruntun dulu baru menang. Nah, Monte Carlo mengacak urutan menang-kalahmu sampai 1.000–10.000 skenario supaya kamu tahu: kalau lagi hoki (P95) jadi berapa, kalau standar (P50) berapa, dan kalau lagi apes banget (P5) akunmu masih kuat nahan drawdown atau nggak.`
+      : `**Simulasi Monte Carlo** di menu Risiko & Simulasi TradeVault itu alat "uji stres" strategi kamu dengan mengacak urutan menang-kalah sebanyak 1.000 sampai 10.000 kali berdasarkan Win Rate, RR, dan Risiko %. Hasilnya nunjukin saldo tengah yang paling realistis (**Median P50**), skenario terbaik (**P95**), skenario terburuk saat kena losing streak (**P5**), peluang profit, dan rata-rata Max Drawdown. Kalau masih terasa ribet, bilang aja ya — nanti aku jelasin pakai analogi yang lebih simpel lagi!`;
+
+    return {
+      content: mcReply,
+      mode: 'OFFLINE_LOCAL',
+      routeType: 'FULL_OFFICE',
+      workflowTrace: [],
+      revisionTriggered: false,
+      activeProviders: ['Offline Local'],
+      totalLatencyMs: Math.max(1, Date.now() - startedAt),
+    };
+  }
+
+  if (asksCompounding && !asksMacro) {
+    const compReply = isEn
+      ? `In TradeVault's **Compounding Calculator**, there are two modes: **Compounding** (profits stay in your balance so each period's % grows on a larger equity: \`Final = Capital × (1 + r)^n\`) and **Fixed / Withdrawn** (you withdraw profits each period, so profit stays flat based on initial capital). Tell me your starting capital, % target per period, and number of days/periods if you want me to calculate a scenario!`
+      : `Di fitur **Kalkulator Compounding** TradeVault ada 2 mode: **Compounding (Gulung Modal)** di mana profit dibiarkan di akun sehingga target % berikutnya dihitung dari saldo yang makin besar (\`Modal × (1 + r)^n\`), dan **Profit Tetap / Ditarik** di mana profit tiap periode ditarik keluar sehingga pertumbuhan selalu dihitung dari modal awal. Kalau mau aku hitungkan skenario modal + % per hari + jumlah harinya, sebutin aja angkanya ya!`;
+    return {
+      content: compReply,
+      mode: 'OFFLINE_LOCAL',
+      routeType: 'FULL_OFFICE',
+      workflowTrace: [],
+      revisionTriggered: false,
+      activeProviders: ['Offline Local'],
+      totalLatencyMs: Math.max(1, Date.now() - startedAt),
+    };
+  }
 
   const paragraphs: string[] = [];
 
@@ -1538,30 +1754,42 @@ export function buildOfflineAgentDeskReply(params: {
   }
 
   if (asksJournal || !asksMacro) {
-    const openList = Array.isArray(journal.openOrPlannedTrades) ? journal.openOrPlannedTrades : [];
-    const topM = Array.isArray(journal.topMistakes) && journal.topMistakes.length > 0 ? journal.topMistakes[0] : null;
-    const openNote =
-      openList.length > 0
+    const gc = journal.growthComparison || null;
+    if (asksGrowthDelta && gc) {
+      const signDelta = gc.todayCumulativeGainDeltaPct >= 0 ? '+' : '';
+      const signComp = gc.todayCompoundedReturnPct >= 0 ? '+' : '';
+      const signPnl = gc.todayNetProfit >= 0 ? '+' : '';
+      paragraphs.push(
+        isEn
+          ? `Comparing your cumulative growth up to yesterday (**${gc.beforeTodayCumulativeGainPct}%**, equity ${sym}${gc.beforeTodayEquity}) vs today (**${gc.currentTotalGainPct}%**, equity ${sym}${gc.currentEquity}): today's **${gc.todayClosedTradesCount}** closed trade(s) (${signPnl}${sym}${gc.todayNetProfit}) changed your total cumulative growth by **${signDelta}${gc.todayCumulativeGainDeltaPct}%** (or **${signComp}${gc.todayCompoundedReturnPct}%** daily return relative to yesterday's closing equity).`
+          : `Perbandingan total growth jurnalmu sampai kemarin (**${gc.beforeTodayCumulativeGainPct}%**, ekuitas ${sym}${gc.beforeTodayEquity}) dengan hari ini (**${gc.currentTotalGainPct}%**, ekuitas ${sym}${gc.currentEquity}): dari **${gc.todayClosedTradesCount}** trade selesai hari ini (${signPnl}${sym}${gc.todayNetProfit}), **selisih total persen growth-nya adalah ${signDelta}${gc.todayCumulativeGainDeltaPct}%** (atau **${signComp}${gc.todayCompoundedReturnPct}%** jika dihitung sebagai return harian terhadap ekuitas penutupan kemarin).`
+      );
+    } else {
+      const openList = Array.isArray(journal.openOrPlannedTrades) ? journal.openOrPlannedTrades : [];
+      const topM = Array.isArray(journal.topMistakes) && journal.topMistakes.length > 0 ? journal.topMistakes[0] : null;
+      const openNote =
+        openList.length > 0
+          ? isEn
+            ? ` You currently have **${openList.length}** open/planned position(s).`
+            : ` Saat ini ada **${openList.length}** posisi aktif/rencana yang masih jalan.`
+          : '';
+      const mistakeNote = topM
         ? isEn
-          ? ` You currently have **${openList.length}** open/planned position(s).`
-          : ` Saat ini ada **${openList.length}** posisi aktif/rencana yang masih jalan.`
+          ? ` Most common slip to watch: **${topM.tag}** (${topM.count}x).`
+          : ` Catatan yang paling sering kejadian: **${topM.tag}** (${topM.count}x).`
         : '';
-    const mistakeNote = topM
-      ? isEn
-        ? ` Most common slip to watch: **${topM.tag}** (${topM.count}x).`
-        : ` Catatan yang paling sering kejadian: **${topM.tag}** (${topM.count}x).`
-      : '';
-    const riskNote = jSum.isDailyLossExceeded
-      ? isEn
-        ? ` Note: your daily loss limit is already hit today, better sit out.`
-        : ` Ingat ya, batas rugi harian sudah kena — lebih bijak stop entry dulu hari ini.`
-      : '';
+      const riskNote = jSum.isDailyLossExceeded
+        ? isEn
+          ? ` Note: your daily loss limit is already hit today, better sit out.`
+          : ` Ingat ya, batas rugi harian sudah kena — lebih bijak stop entry dulu hari ini.`
+        : '';
 
-    paragraphs.push(
-      isEn
-        ? `On your journal: **${jSum.closedTradesCount ?? 0}** closed trades, Win Rate **${jSum.winRatePct ?? 0}%**, Profit Factor **${jSum.profitFactor ?? 0}**, Net PnL **${sym}${jSum.totalNetProfit ?? 0}** (Max DD ${jSum.maxDrawdownPercent ?? 0}%).${openNote}${mistakeNote}${riskNote}`
-        : `Untuk jurnalmu, dari **${jSum.closedTradesCount ?? 0}** trade selesai, Win Rate ada di **${jSum.winRatePct ?? 0}%** dengan Profit Factor **${jSum.profitFactor ?? 0}** dan Net PnL **${sym}${jSum.totalNetProfit ?? 0}** (Max DD ${jSum.maxDrawdownPercent ?? 0}%).${openNote}${mistakeNote}${riskNote}`
-    );
+      paragraphs.push(
+        isEn
+          ? `On your journal: **${jSum.closedTradesCount ?? 0}** closed trades, Win Rate **${jSum.winRatePct ?? 0}%**, Profit Factor **${jSum.profitFactor ?? 0}**, Net PnL **${sym}${jSum.totalNetProfit ?? 0}** (Total Growth ${jSum.totalGainPercent ?? 0}%, Max DD ${jSum.maxDrawdownPercent ?? 0}%).${openNote}${mistakeNote}${riskNote}`
+          : `Untuk jurnalmu, dari **${jSum.closedTradesCount ?? 0}** trade selesai, Win Rate ada di **${jSum.winRatePct ?? 0}%** dengan Profit Factor **${jSum.profitFactor ?? 0}** dan Net PnL **${sym}${jSum.totalNetProfit ?? 0}** (Total Growth ${jSum.totalGainPercent ?? 0}%, Max DD ${jSum.maxDrawdownPercent ?? 0}%).${openNote}${mistakeNote}${riskNote}`
+      );
+    }
   }
 
   return {

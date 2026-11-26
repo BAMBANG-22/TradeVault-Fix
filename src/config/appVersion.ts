@@ -19,8 +19,8 @@ declare const __BUILD_RUN_NUMBER__: string | undefined;
 declare const __TESSERACT_VERSION__: string | undefined;
 declare const __TESSERACT_CORE_VERSION__: string | undefined;
 
-export const APP_VERSION = '1.3.9';
-export const APP_CHANGE_CODE = 'VLO-2611-SPC12';
+export const APP_VERSION = '1.4.0';
+export const APP_CHANGE_CODE = 'VLO-2611-JRN13';
 export const APP_RELEASE_DATE = '2026-11-26';
 export const OCR_PIPELINE_VERSION = 'offline-mt5-ocr-v3.2-lossless-png';
 
@@ -71,6 +71,17 @@ export function getAppBuildIdentity(): AppBuildIdentity {
 }
 
 export const APP_VERSION_HISTORY: AppVersionEntry[] = [
+  {
+    version: '1.4.0',
+    changeCode: 'VLO-2611-JRN13',
+    date: '2026-11-26',
+    titleId: 'Kecerdasan Jurnal Mendalam (Selisih Growth Kemarin vs Hari Ini), Penguasaan Fitur App & Anti-Padat APK',
+    titleEn: 'Deep Journal Growth Delta Intelligence, Full App Mastery & Zero-Stall APK AI',
+    summaryId:
+      'Menambahkan perhitungan deterministik selisih growth harian/kemarin vs hari ini (akumulasi & return harian), riwayat 14 hari trading aktif, breakdown strategi, dan pengetahuan lengkap seluruh fitur TradeVault (Compounding, Monte Carlo, Kalkulator Risiko/Lot, Playbook, Dual-Horizon News, Fundamental Gold) lengkap dengan penjelasan adaptif super simpel. Mengalihkan prioritas chat AI ke Gemini Flash-Lite + circuit-breaker HTTP 404 & cooldown 120 dtk agar respons APK cepat (1,5–5 dtk) tanpa pesan "server padat".',
+    summaryEn:
+      'Added deterministic daily & yesterday-vs-today growth delta math (cumulative delta & daily compounded return), 14-day trading timeline, strategy breakdown, and complete TradeVault feature mastery (Compounding, Monte Carlo, Lot/Risk Calculator, Playbook, Dual-Horizon News, Fundamental Gold) with adaptive plain-language explanations. Switched AI Desk chat priority to Gemini Flash-Lite with HTTP 404 circuit-breaker & 120s provider cooldown for fast 1.5–5s APK replies without "busy server" fallbacks.',
+  },
   {
     version: '1.3.9',
     changeCode: 'VLO-2611-SPC12',
