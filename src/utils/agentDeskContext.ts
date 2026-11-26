@@ -13,7 +13,21 @@
 import { Trade } from '../types/trade';
 import { AppSettings } from '../types/settings';
 import { calculatePerformance, computeTradeNetProfit } from './calculations';
-import { getTradeLifecycleStatus } from './tradeLifecycle';
+import {
+  getTradeLifecycleStatus,
+  resolveTradeLifecycle,
+  stripLifecycleMetaFromExecutionNotes,
+} from './tradeLifecycle';
+import { resolveTradeBehavior } from './journalExtras';
+import {
+  calculateAstronacciCycle,
+  getSessionLabelId,
+  getSessionWIB,
+  loadStoredManualAmdOverride,
+  loadStoredSessionHoursWib,
+  loadStoredTradingConfluenceMode,
+} from './confluenceEngine';
+import { computeMonthlySeasonalityStats } from '../data/xauusdSeasonality';
 import {
   getApiEndpointCandidates,
   isNewsCycleOfflineMode,
@@ -790,18 +804,645 @@ function readLatestSmcSignalCompact(): Record<string, unknown> | null {
   }
 }
 
+const INDONESIAN_WEEKDAYS = [
+  'Minggu',
+  'Senin',
+  'Selasa',
+  'Rabu',
+  'Kamis',
+  'Jumat',
+  'Sabtu',
+] as const;
+
+const ENGLISH_WEEKDAYS = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+] as const;
+
+const INDONESIAN_MONTHS = [
+  'Januari',
+  'Februari',
+  'Maret',
+  'April',
+  'Mei',
+  'Juni',
+  'Juli',
+  'Agustus',
+  'September',
+  'Oktober',
+  'November',
+  'Desember',
+] as const;
+
+function formatLocalYmd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function getLocalDayNameFromYmd(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return INDONESIAN_WEEKDAYS[d.getDay()] || '';
+}
+
+function formatReadableIndonesianDate(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return ymd;
+  const year = Number(m[1]);
+  const monthIdx = Number(m[2]) - 1;
+  const day = Number(m[3]);
+  const d = new Date(year, monthIdx, day);
+  const dayName = INDONESIAN_WEEKDAYS[d.getDay()] || '';
+  const monthName = INDONESIAN_MONTHS[monthIdx] || m[2];
+  return `${dayName}, ${day} ${monthName} ${year}`;
+}
+
+function buildLocalClockSnapshot(nowDate: Date) {
+  const tzOffsetMin = -nowDate.getTimezoneOffset(); // e.g., +420 for WIB
+  const sign = tzOffsetMin >= 0 ? '+' : '-';
+  const absMin = Math.abs(tzOffsetMin);
+  const hh = String(Math.floor(absMin / 60)).padStart(2, '0');
+  const mm = String(absMin % 60).padStart(2, '0');
+  const tzLabel =
+    tzOffsetMin === 420
+      ? 'WIB (UTC+07:00)'
+      : tzOffsetMin === 480
+      ? 'WITA (UTC+08:00)'
+      : tzOffsetMin === 540
+      ? 'WIT (UTC+09:00)'
+      : `UTC${sign}${hh}:${mm}`;
+
+  const yesterdayDate = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 1);
+  const todayDateKey = formatLocalYmd(nowDate);
+  const yesterdayDateKey = formatLocalYmd(yesterdayDate);
+
+  return {
+    localDateKey: todayDateKey,
+    localReadableId: formatReadableIndonesianDate(todayDateKey),
+    localDayNameId: INDONESIAN_WEEKDAYS[nowDate.getDay()],
+    localDayNameEn: ENGLISH_WEEKDAYS[nowDate.getDay()],
+    localTimeHHMM: `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`,
+    timezone: tzLabel,
+    isEarlyMorningLocal: nowDate.getHours() < 6,
+    yesterdayDateKey,
+    yesterdayReadableId: formatReadableIndonesianDate(yesterdayDateKey),
+    yesterdayDayNameId: INDONESIAN_WEEKDAYS[yesterdayDate.getDay()],
+  };
+}
+
+type MicroCloseClassification =
+  | 'HIT_TP'
+  | 'HIT_SL'
+  | 'MANUAL_PROFIT'
+  | 'MANUAL_LOSS'
+  | 'MANUAL_BE'
+  | 'UNKNOWN';
+
+interface MicroTradeRecord {
+  date: string;
+  dayName: string;
+  time: string;
+  exitTime: string | null;
+  instrument: string;
+  position: 'BUY' | 'SELL';
+  orderType: string;
+  session: string;
+  strategy: string;
+  lotSize: number;
+  entryPrice: number;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  exitPrice: number | null;
+  closeType: MicroCloseClassification;
+  plannedRR: number | null;
+  realizedR: number | null;
+  tpCompletionPct: number | null;
+  riskPercentage: number;
+  riskAmount: number;
+  grossProfit: number;
+  commission: number;
+  swap: number;
+  netProfit: number;
+  outcome: 'WIN' | 'LOSS' | 'BREAKEVEN';
+  disciplineRating: number | null;
+  checklistPassed: boolean | null;
+  ruleCompliant: boolean | null;
+  emotionTag: string | null;
+  mistakeTags: string[];
+  microAuditFlags: string[];
+  entryReason: string | null;
+  notes: string | null;
+  postTradeEvaluation: string | null;
+  executionNotes: string | null;
+}
+
+function classifyMicroTradeCloseType(
+  t: Trade,
+  explicitCloseType: string | undefined,
+  entry: number,
+  sl: number | null,
+  tp: number | null,
+  exit: number | null,
+  netProfit: number
+): MicroCloseClassification {
+  if (explicitCloseType === 'TP') return 'HIT_TP';
+  if (explicitCloseType === 'SL') return 'HIT_SL';
+  if (explicitCloseType === 'Manual') {
+    if (netProfit > 0.005) return 'MANUAL_PROFIT';
+    if (netProfit < -0.005) return 'MANUAL_LOSS';
+    return 'MANUAL_BE';
+  }
+
+  // Infer from exitPrice vs TP/SL if explicit closeType wasn't saved
+  if (exit !== null && Number.isFinite(exit) && exit > 0) {
+    const isBuy = t.position === 'BUY';
+    const tpDist = tp !== null && Number.isFinite(tp) ? Math.abs(tp - entry) : 0;
+    const slDist = sl !== null && Number.isFinite(sl) ? Math.abs(entry - sl) : 0;
+    const tol = Math.max(0.05, Math.min(tpDist, slDist) * 0.06 || 0.25);
+
+    if (tp !== null && Number.isFinite(tp)) {
+      if ((isBuy && exit >= tp - tol) || (!isBuy && exit <= tp + tol)) {
+        return 'HIT_TP';
+      }
+    }
+    if (sl !== null && Number.isFinite(sl)) {
+      if ((isBuy && exit <= sl + tol) || (!isBuy && exit >= sl - tol)) {
+        return 'HIT_SL';
+      }
+    }
+    if (tp !== null || sl !== null) {
+      if (netProfit > 0.005) return 'MANUAL_PROFIT';
+      if (netProfit < -0.005) return 'MANUAL_LOSS';
+      return 'MANUAL_BE';
+    }
+  }
+  return 'UNKNOWN';
+}
+
+function buildMicroTradeRecord(
+  t: Trade,
+  settings: AppSettings,
+  toLocalDateKey: (iso?: string) => string
+): MicroTradeRecord {
+  const lifecycle = resolveTradeLifecycle(t);
+  const behavior = resolveTradeBehavior(t);
+  const netProfit = Number(computeTradeNetProfit(t).toFixed(2));
+  const grossProfit = Number((Number(t.grossProfit) || 0).toFixed(2));
+  const commission = Number((Number(t.commission) || 0).toFixed(2));
+  const swap = Number((Number(t.swap) || 0).toFixed(2));
+  const riskAmount = Number((Number(t.riskAmount) || 0).toFixed(2));
+  const riskPercentage = Number((Number(t.riskPercentage) || 0).toFixed(2));
+
+  const entry = Number(lifecycle.actualEntry ?? t.entryPrice ?? 0);
+  const sl =
+    typeof (lifecycle.plannedStopLoss ?? t.stopLoss) === 'number' &&
+    Number.isFinite(lifecycle.plannedStopLoss ?? t.stopLoss) &&
+    Number(lifecycle.plannedStopLoss ?? t.stopLoss) > 0
+      ? Number(lifecycle.plannedStopLoss ?? t.stopLoss)
+      : null;
+  const tp =
+    typeof (lifecycle.plannedTakeProfit ?? t.takeProfit) === 'number' &&
+    Number.isFinite(lifecycle.plannedTakeProfit ?? t.takeProfit) &&
+    Number(lifecycle.plannedTakeProfit ?? t.takeProfit) > 0
+      ? Number(lifecycle.plannedTakeProfit ?? t.takeProfit)
+      : null;
+  const exit =
+    typeof (lifecycle.actualExit ?? t.exitPrice) === 'number' &&
+    Number.isFinite(lifecycle.actualExit ?? t.exitPrice) &&
+    Number(lifecycle.actualExit ?? t.exitPrice) > 0
+      ? Number(lifecycle.actualExit ?? t.exitPrice)
+      : null;
+
+  const closeType = classifyMicroTradeCloseType(t, lifecycle.closeType, entry, sl, tp, exit, netProfit);
+
+  let plannedRR: number | null = null;
+  if (entry > 0 && sl !== null && tp !== null) {
+    const slDist = Math.abs(entry - sl);
+    const tpDist = Math.abs(tp - entry);
+    if (slDist > 0) {
+      plannedRR = Number((tpDist / slDist).toFixed(2));
+    }
+  }
+
+  let realizedR: number | null = null;
+  if (typeof t.rMultiple === 'number' && Number.isFinite(t.rMultiple)) {
+    realizedR = Number(t.rMultiple.toFixed(2));
+  } else if (riskAmount > 0) {
+    realizedR = Number((netProfit / riskAmount).toFixed(2));
+  }
+
+  let tpCompletionPct: number | null = null;
+  if (entry > 0 && tp !== null && exit !== null) {
+    const tpVec = tp - entry;
+    if (Math.abs(tpVec) > 0) {
+      const progress = ((exit - entry) / tpVec) * 100;
+      if (Number.isFinite(progress)) {
+        tpCompletionPct = Number(Math.max(-300, Math.min(300, progress)).toFixed(0));
+      }
+    }
+  }
+
+  const microAuditFlags: string[] = [];
+  if (sl === null) microAuditFlags.push('NO_SL');
+  if (plannedRR !== null && plannedRR < 1.0) {
+    microAuditFlags.push(`INVERTED_RR(1:${plannedRR})`);
+  }
+  if (closeType === 'MANUAL_PROFIT' && tpCompletionPct !== null && tpCompletionPct > 0 && tpCompletionPct < 75) {
+    microAuditFlags.push(`EARLY_MANUAL_PROFIT(${tpCompletionPct}%_of_TP)`);
+  }
+  if (closeType === 'MANUAL_LOSS') {
+    microAuditFlags.push('MANUAL_CUT_LOSS');
+  }
+  if (riskPercentage > (settings.maxTradeRiskPercent ?? 2)) {
+    microAuditFlags.push(`OVER_RISK(${riskPercentage}%>max_${settings.maxTradeRiskPercent ?? 2}%)`);
+  }
+  if (behavior.ruleCompliant === false) microAuditFlags.push('RULE_VIOLATED');
+  if (behavior.checklistPassed === false) microAuditFlags.push('CHECKLIST_SKIPPED');
+  if (grossProfit > 0 && Math.abs(commission) + Math.abs(swap) > grossProfit * 0.25) {
+    microAuditFlags.push('HIGH_FEE_DRAG');
+  }
+  if (Array.isArray(lifecycle.activityLog)) {
+    if (lifecycle.activityLog.some((ev) => ev.type === 'SL_CHANGED')) microAuditFlags.push('SL_MODIFIED');
+    if (lifecycle.activityLog.some((ev) => ev.type === 'TP_CHANGED')) microAuditFlags.push('TP_MODIFIED');
+  }
+
+  const dateKey = toLocalDateKey(t.dateTime);
+  const dtObj = t.dateTime ? new Date(t.dateTime) : null;
+  const timeStr =
+    dtObj && !Number.isNaN(dtObj.getTime())
+      ? `${String(dtObj.getHours()).padStart(2, '0')}:${String(dtObj.getMinutes()).padStart(2, '0')}`
+      : '';
+
+  const cleanExecNotes = stripLifecycleMetaFromExecutionNotes(t.executionNotes);
+
+  return {
+    date: dateKey,
+    dayName: getLocalDayNameFromYmd(dateKey),
+    time: timeStr,
+    exitTime: lifecycle.exitTime || null,
+    instrument: t.instrument,
+    position: t.position,
+    orderType: lifecycle.orderType || 'Market',
+    session: t.session || 'Other',
+    strategy: (t.strategy || 'Unspecified').trim() || 'Unspecified',
+    lotSize: Number(lifecycle.actualLot ?? t.lotSize ?? 0),
+    entryPrice: entry,
+    stopLoss: sl,
+    takeProfit: tp,
+    exitPrice: exit,
+    closeType,
+    plannedRR,
+    realizedR,
+    tpCompletionPct,
+    riskPercentage,
+    riskAmount,
+    grossProfit,
+    commission,
+    swap,
+    netProfit,
+    outcome: t.outcome,
+    disciplineRating: typeof t.disciplineRating === 'number' ? t.disciplineRating : null,
+    checklistPassed: typeof behavior.checklistPassed === 'boolean' ? behavior.checklistPassed : null,
+    ruleCompliant: typeof behavior.ruleCompliant === 'boolean' ? behavior.ruleCompliant : null,
+    emotionTag: behavior.emotionTag || null,
+    mistakeTags: behavior.mistakeTags.slice(0, 4),
+    microAuditFlags,
+    entryReason: t.entryReason ? t.entryReason.trim().slice(0, 140) : null,
+    notes: t.notes ? t.notes.trim().slice(0, 140) : null,
+    postTradeEvaluation: t.postTradeEvaluation ? t.postTradeEvaluation.trim().slice(0, 160) : null,
+    executionNotes: cleanExecNotes ? cleanExecNotes.slice(0, 120) : null,
+  };
+}
+
+interface ResolvedDateQuery {
+  label: string;
+  startDate: string;
+  endDate: string;
+}
+
+const MONTH_NAME_TO_INDEX: Record<string, number> = {
+  jan: 0,
+  januari: 0,
+  january: 0,
+  feb: 1,
+  februari: 1,
+  february: 1,
+  mar: 2,
+  maret: 2,
+  march: 2,
+  apr: 3,
+  april: 3,
+  mei: 4,
+  may: 4,
+  jun: 5,
+  juni: 5,
+  june: 5,
+  jul: 6,
+  juli: 6,
+  july: 6,
+  agu: 7,
+  agt: 7,
+  agustus: 7,
+  aug: 7,
+  august: 7,
+  sep: 8,
+  sept: 8,
+  september: 8,
+  okt: 9,
+  oktober: 9,
+  oct: 9,
+  october: 9,
+  nov: 10,
+  november: 10,
+  des: 11,
+  desember: 11,
+  dec: 11,
+  december: 11,
+};
+
+const WEEKDAY_WORD_TO_NUM: Record<string, number> = {
+  minggu: 0,
+  sunday: 0,
+  senin: 1,
+  monday: 1,
+  selasa: 2,
+  tuesday: 2,
+  rabu: 3,
+  wednesday: 3,
+  kamis: 4,
+  thursday: 4,
+  jumat: 5,
+  "jum'at": 5,
+  friday: 5,
+  sabtu: 6,
+  saturday: 6,
+};
+
+function parseDateRangeFromText(text: string, nowDate: Date): ResolvedDateQuery | null {
+  if (!text || !text.trim()) return null;
+  const q = text.toLowerCase();
+  const y = nowDate.getFullYear();
+  const mo = nowDate.getMonth();
+  const da = nowDate.getDate();
+
+  // 1. Explicit ISO YYYY-MM-DD
+  const isoMatch = q.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/);
+  if (isoMatch) {
+    const key = `${isoMatch[1]}-${isoMatch[2].padStart(2, '0')}-${isoMatch[3].padStart(2, '0')}`;
+    return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+  }
+
+  // 2. Day + Month name (e.g., "26 nov", "26 november", "26 nov 2026")
+  const dayMonthMatch = q.match(
+    /\b(\d{1,2})\s+(jan(?:uari|uary)?|feb(?:ruari|ruary)?|mar(?:et|ch)?|apr(?:il)?|mei|may|jun(?:i|e)?|jul(?:i|y)?|agu(?:stus)?|agt|aug(?:ust)?|sep(?:t|tember)?|okt(?:ober)?|oct(?:ober)?|nov(?:ember)?|des(?:ember)?|dec(?:ember)?)(?:\s+(20\d{2}))?\b/i
+  );
+  if (dayMonthMatch) {
+    const dayNum = Number(dayMonthMatch[1]);
+    const mIdx = MONTH_NAME_TO_INDEX[dayMonthMatch[2].toLowerCase()];
+    if (dayNum >= 1 && dayNum <= 31 && typeof mIdx === 'number') {
+      let targetYear = dayMonthMatch[3] ? Number(dayMonthMatch[3]) : y;
+      if (!dayMonthMatch[3] && mIdx > mo + 1) targetYear = y - 1;
+      const key = `${targetYear}-${String(mIdx + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+    }
+  }
+
+  // 3. DD/MM or DD-MM (e.g., "26/11")
+  const slashMatch = q.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](20\d{2}))?\b/);
+  if (slashMatch) {
+    const dayNum = Number(slashMatch[1]);
+    const monthNum = Number(slashMatch[2]);
+    if (dayNum >= 1 && dayNum <= 31 && monthNum >= 1 && monthNum <= 12) {
+      const targetYear = slashMatch[3] ? Number(slashMatch[3]) : y;
+      const key = `${targetYear}-${String(monthNum).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+    }
+  }
+
+  // 4. "tgl 26" / "tanggal 26"
+  const tglMatch = q.match(/\b(?:tgl|tanggal)\s*(\d{1,2})\b/i);
+  if (tglMatch) {
+    const dayNum = Number(tglMatch[1]);
+    if (dayNum >= 1 && dayNum <= 31) {
+      let targetMonth = mo;
+      let targetYear = y;
+      if (dayNum > da) {
+        targetMonth -= 1;
+        if (targetMonth < 0) {
+          targetMonth = 11;
+          targetYear -= 1;
+        }
+      }
+      const key = `${targetYear}-${String(targetMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+      return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+    }
+  }
+
+  // 5. Explicit weekday with "minggu lalu" / "pekan lalu" vs most recent weekday
+  const weekdayLastWeek = q.match(
+    /\b(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|minggu|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s+(?:minggu|pekan)\s+(?:lalu|kemarin|kemaren)\b/i
+  );
+  if (weekdayLastWeek) {
+    const targetDow = WEEKDAY_WORD_TO_NUM[weekdayLastWeek[1].toLowerCase()];
+    if (typeof targetDow === 'number') {
+      let diff = (nowDate.getDay() - targetDow + 7) % 7;
+      if (diff === 0) diff = 7;
+      const d = new Date(y, mo, da - diff - 7);
+      const key = formatLocalYmd(d);
+      return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+    }
+  }
+
+  // 6. Relative keywords
+  if (/\b(minggu\s+lalu|pekan\s+lalu|minggu\s+kemarin|minggu\s+kemaren|last\s+week)\b/i.test(q)) {
+    const dow = (nowDate.getDay() + 6) % 7; // Mon=0..Sun=6
+    const thisMon = new Date(y, mo, da - dow);
+    const prevMon = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 7);
+    const prevSun = new Date(thisMon.getFullYear(), thisMon.getMonth(), thisMon.getDate() - 1);
+    const s = formatLocalYmd(prevMon);
+    const e = formatLocalYmd(prevSun);
+    return { label: `Minggu Lalu (${s} s/d ${e})`, startDate: s, endDate: e };
+  }
+
+  if (/\b(minggu\s+ini|pekan\s+ini|this\s+week)\b/i.test(q)) {
+    const dow = (nowDate.getDay() + 6) % 7;
+    const thisMon = new Date(y, mo, da - dow);
+    const s = formatLocalYmd(thisMon);
+    const e = formatLocalYmd(nowDate);
+    return { label: `Minggu Ini (${s} s/d ${e})`, startDate: s, endDate: e };
+  }
+
+  if (/\b(bulan\s+lalu|bulan\s+kemarin|last\s+month)\b/i.test(q)) {
+    const firstPrev = new Date(y, mo - 1, 1);
+    const lastPrev = new Date(y, mo, 0);
+    const s = formatLocalYmd(firstPrev);
+    const e = formatLocalYmd(lastPrev);
+    return {
+      label: `Bulan Lalu (${INDONESIAN_MONTHS[firstPrev.getMonth()]} ${firstPrev.getFullYear()})`,
+      startDate: s,
+      endDate: e,
+    };
+  }
+
+  if (/\b(bulan\s+ini|this\s+month)\b/i.test(q)) {
+    const firstCur = new Date(y, mo, 1);
+    const s = formatLocalYmd(firstCur);
+    const e = formatLocalYmd(nowDate);
+    return { label: `Bulan Ini (${INDONESIAN_MONTHS[mo]} ${y})`, startDate: s, endDate: e };
+  }
+
+  if (/\b(2\s*hari\s+lalu|dua\s+hari\s+lalu|kemarin\s+lusa|two\s+days\s+ago)\b/i.test(q)) {
+    const d = new Date(y, mo, da - 2);
+    const key = formatLocalYmd(d);
+    return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+  }
+
+  if (/\b(kemarin|kemaren|kmrn|yesterday)\b/i.test(q)) {
+    const d = new Date(y, mo, da - 1);
+    const key = formatLocalYmd(d);
+    return { label: `Kemarin (${formatReadableIndonesianDate(key)})`, startDate: key, endDate: key };
+  }
+
+  if (/\b(hari\s+ini|hr\s+ini|today)\b/i.test(q)) {
+    const key = formatLocalYmd(nowDate);
+    return { label: `Hari Ini (${formatReadableIndonesianDate(key)})`, startDate: key, endDate: key };
+  }
+
+  // 7. Standalone weekday name (e.g., "trade kamis", "hari rabu") — avoid matching generic "minggu" alone
+  const singleWeekday = q.match(
+    /\b(?:hari\s+)?(senin|selasa|rabu|kamis|jumat|jum'at|sabtu|monday|tuesday|wednesday|thursday|friday|saturday)\b/i
+  );
+  if (singleWeekday) {
+    const targetDow = WEEKDAY_WORD_TO_NUM[singleWeekday[1].toLowerCase()];
+    if (typeof targetDow === 'number') {
+      const diff = (nowDate.getDay() - targetDow + 7) % 7;
+      const d = new Date(y, mo, da - diff);
+      const key = formatLocalYmd(d);
+      return { label: formatReadableIndonesianDate(key), startDate: key, endDate: key };
+    }
+  }
+
+  return null;
+}
+
+function summarizeMicroPeriod(
+  label: string,
+  startDate: string,
+  endDate: string,
+  matchedFrom: 'current_message' | 'conversation_history' | 'default_latest_active_day',
+  allMicroClosed: MicroTradeRecord[],
+  startingBal: number
+) {
+  const matched = allMicroClosed.filter((t) => t.date >= startDate && t.date <= endDate);
+  let wins = 0;
+  let losses = 0;
+  let breakeven = 0;
+  let totalGrossProfit = 0;
+  let totalCommission = 0;
+  let totalSwap = 0;
+  let totalNetProfit = 0;
+  let totalR = 0;
+  let rCount = 0;
+  let plannedRRSum = 0;
+  let plannedRRCount = 0;
+
+  const closeTypeCounts = {
+    hitTP: 0,
+    hitSL: 0,
+    manualProfit: 0,
+    manualLoss: 0,
+    manualBE: 0,
+    unknown: 0,
+  };
+  const auditSummary = {
+    invertedRRCount: 0,
+    earlyManualProfitCount: 0,
+    overRiskCount: 0,
+    ruleViolatedCount: 0,
+    noSlCount: 0,
+  };
+
+  for (const t of matched) {
+    if (t.outcome === 'WIN') wins += 1;
+    else if (t.outcome === 'LOSS') losses += 1;
+    else breakeven += 1;
+
+    totalGrossProfit += t.grossProfit;
+    totalCommission += t.commission;
+    totalSwap += t.swap;
+    totalNetProfit += t.netProfit;
+
+    if (typeof t.realizedR === 'number') {
+      totalR += t.realizedR;
+      rCount += 1;
+    }
+    if (typeof t.plannedRR === 'number') {
+      plannedRRSum += t.plannedRR;
+      plannedRRCount += 1;
+    }
+
+    if (t.closeType === 'HIT_TP') closeTypeCounts.hitTP += 1;
+    else if (t.closeType === 'HIT_SL') closeTypeCounts.hitSL += 1;
+    else if (t.closeType === 'MANUAL_PROFIT') closeTypeCounts.manualProfit += 1;
+    else if (t.closeType === 'MANUAL_LOSS') closeTypeCounts.manualLoss += 1;
+    else if (t.closeType === 'MANUAL_BE') closeTypeCounts.manualBE += 1;
+    else closeTypeCounts.unknown += 1;
+
+    if (t.microAuditFlags.some((f) => f.startsWith('INVERTED_RR'))) auditSummary.invertedRRCount += 1;
+    if (t.microAuditFlags.some((f) => f.startsWith('EARLY_MANUAL_PROFIT'))) auditSummary.earlyManualProfitCount += 1;
+    if (t.microAuditFlags.some((f) => f.startsWith('OVER_RISK'))) auditSummary.overRiskCount += 1;
+    if (t.microAuditFlags.includes('RULE_VIOLATED')) auditSummary.ruleViolatedCount += 1;
+    if (t.microAuditFlags.includes('NO_SL')) auditSummary.noSlCount += 1;
+  }
+
+  return {
+    label,
+    startDate,
+    endDate,
+    matchedFrom,
+    tradesCount: matched.length,
+    wins,
+    losses,
+    breakeven,
+    winRatePct: matched.length > 0 ? Number(((wins / matched.length) * 100).toFixed(1)) : 0,
+    totalGrossProfit: Number(totalGrossProfit.toFixed(2)),
+    totalCommission: Number(totalCommission.toFixed(2)),
+    totalSwap: Number(totalSwap.toFixed(2)),
+    totalNetProfit: Number(totalNetProfit.toFixed(2)),
+    periodGainDeltaOnStartingBalancePct:
+      startingBal > 0 ? Number(((totalNetProfit / startingBal) * 100).toFixed(2)) : 0,
+    totalR: Number(totalR.toFixed(2)),
+    avgR: rCount > 0 ? Number((totalR / rCount).toFixed(2)) : null,
+    avgPlannedRR: plannedRRCount > 0 ? Number((plannedRRSum / plannedRRCount).toFixed(2)) : null,
+    closeTypeCounts,
+    auditSummary,
+    trades: matched.slice(0, 25),
+  };
+}
+
 export function buildAgentDeskContext(
   trades: Trade[],
   settings: AppSettings,
-  language: 'id' | 'en'
+  language: 'id' | 'en',
+  options?: {
+    message?: string;
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+  }
 ): {
   context: Record<string, unknown>;
   absorbedSummary: AgentDeskAbsorbedSummary;
 } {
   const isOfflineMode = isNewsCycleOfflineMode();
   const isNavigatorOnline = typeof navigator !== 'undefined' ? navigator.onLine !== false : true;
+  const nowDate = new Date();
+  const localClock = buildLocalClockSnapshot(nowDate);
 
-  // 1. Offline Journal & Risk Context
+  // 1. Offline Journal & Micro-Forensic Risk Context
   const { metrics } = calculatePerformance(trades, settings);
   const sortedTrades = [...trades].sort(
     (a, b) => new Date(b.dateTime || 0).getTime() - new Date(a.dateTime || 0).getTime()
@@ -812,38 +1453,36 @@ export function buildAgentDeskContext(
       const st = getTradeLifecycleStatus(t);
       return st === 'OPEN' || st === 'PLANNED';
     })
-    .slice(0, 8)
-    .map((t) => ({
-      lifecycle: getTradeLifecycleStatus(t),
-      instrument: t.instrument,
-      position: t.position,
-      lotSize: t.lotSize,
-      entryPrice: t.entryPrice,
-      stopLoss: t.stopLoss ?? null,
-      takeProfit: t.takeProfit ?? null,
-      riskPercentage: t.riskPercentage,
-      strategy: t.strategy,
-      dateTime: t.dateTime,
-    }));
-
-  const closedTrades = sortedTrades.filter((t) => getTradeLifecycleStatus(t) === 'CLOSED');
-  const recentClosed = closedTrades.slice(0, 14).map((t) => ({
-    dateTime: t.dateTime,
-    instrument: t.instrument,
-    position: t.position,
-    session: t.session || 'Other',
-    strategy: t.strategy,
-    lotSize: t.lotSize,
-    outcome: t.outcome,
-    netProfit: Number(computeTradeNetProfit(t).toFixed(2)),
-    rMultiple: typeof t.rMultiple === 'number' ? Number(t.rMultiple.toFixed(2)) : null,
-    emotionTag: t.emotionTag || null,
-    mistakeTags: Array.isArray(t.mistakeTags) ? t.mistakeTags.slice(0, 3) : [],
-    ruleCompliant: typeof t.ruleCompliant === 'boolean' ? t.ruleCompliant : null,
-  }));
+    .slice(0, 10)
+    .map((t) => {
+      const lc = resolveTradeLifecycle(t);
+      const entry = Number(lc.actualEntry ?? t.entryPrice ?? 0);
+      const sl = lc.plannedStopLoss ?? t.stopLoss ?? null;
+      const tp = lc.plannedTakeProfit ?? t.takeProfit ?? null;
+      let plannedRR: number | null = null;
+      if (entry > 0 && typeof sl === 'number' && sl > 0 && typeof tp === 'number' && tp > 0) {
+        const slDist = Math.abs(entry - sl);
+        if (slDist > 0) plannedRR = Number((Math.abs(tp - entry) / slDist).toFixed(2));
+      }
+      return {
+        lifecycle: getTradeLifecycleStatus(t),
+        orderType: lc.orderType,
+        instrument: t.instrument,
+        position: t.position,
+        lotSize: lc.actualLot ?? t.lotSize,
+        entryPrice: entry,
+        stopLoss: sl,
+        takeProfit: tp,
+        plannedRR,
+        riskPercentage: t.riskPercentage,
+        strategy: t.strategy,
+        session: t.session || 'Other',
+        entryReason: t.entryReason ? t.entryReason.trim().slice(0, 120) : null,
+        dateTime: t.dateTime,
+      };
+    });
 
   // Deterministic Local Calendar Date Keys & Daily/Period Growth Comparison
-  // Ensures AI NEVER guesses "selisih total grow kemarin vs hari ini"!
   const toLocalDateKeyFromIso = (isoStr: string | undefined): string => {
     if (!isoStr) return '';
     const d = new Date(isoStr);
@@ -851,25 +1490,26 @@ export function buildAgentDeskContext(
       const m = isoStr.match(/^(\d{4}-\d{2}-\d{2})/);
       return m ? m[1] : '';
     }
-    const y = d.getFullYear();
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const da = String(d.getDate()).padStart(2, '0');
-    return `${y}-${mo}-${da}`;
+    return formatLocalYmd(d);
   };
 
-  const nowDate = new Date();
-  const todayDateKey = getTodayLocalDateKey();
-  const yesterdayObj = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - 1);
-  const yesterdayDateKey = `${yesterdayObj.getFullYear()}-${String(yesterdayObj.getMonth() + 1).padStart(2, '0')}-${String(
-    yesterdayObj.getDate()
-  ).padStart(2, '0')}`;
-
+  const todayDateKey = localClock.localDateKey;
+  const yesterdayDateKey = localClock.yesterdayDateKey;
   const startingBal = settings.startingBalance > 0 ? settings.startingBalance : metrics.startingBalance;
-  const closedChrono = [...closedTrades].sort(
+
+  const closedTradesDesc = sortedTrades.filter((t) => getTradeLifecycleStatus(t) === 'CLOSED');
+  const closedChrono = [...closedTradesDesc].sort(
     (a, b) => new Date(a.dateTime || 0).getTime() - new Date(b.dateTime || 0).getTime()
   );
 
-  // Aggregate mistakes, emotions, sessions, strategies, and chronological daily growth
+  // Build full micro-forensic records for ALL closed trades chronologically
+  const allMicroClosedChrono: MicroTradeRecord[] = closedChrono.map((t) =>
+    buildMicroTradeRecord(t, settings, toLocalDateKeyFromIso)
+  );
+  const allMicroClosedDesc = [...allMicroClosedChrono].reverse();
+  const recentClosed = allMicroClosedDesc.slice(0, 12);
+
+  // Aggregate mistakes, emotions, sessions, strategies, micro patterns, and chronological daily growth
   const mistakeCounts: Record<string, { count: number; netImpact: number }> = {};
   const sessionStats: Record<string, { count: number; wins: number; netProfit: number }> = {};
   const strategyStats: Record<
@@ -878,7 +1518,20 @@ export function buildAgentDeskContext(
   > = {};
   const dailyBucketMap = new Map<
     string,
-    { date: string; trades: number; wins: number; losses: number; netProfit: number }
+    {
+      date: string;
+      trades: number;
+      wins: number;
+      losses: number;
+      breakeven: number;
+      grossProfit: number;
+      commission: number;
+      swap: number;
+      netProfit: number;
+      hitTP: number;
+      hitSL: number;
+      manualClose: number;
+    }
   >();
 
   let profitBeforeToday = 0;
@@ -889,15 +1542,34 @@ export function buildAgentDeskContext(
   let yesterdayNetProfit = 0;
   let yesterdayClosedCount = 0;
 
-  for (const t of closedChrono) {
-    const net = computeTradeNetProfit(t);
-    const dKey = toLocalDateKeyFromIso(t.dateTime);
+  let totalHitTP = 0;
+  let totalHitSL = 0;
+  let totalManualProfit = 0;
+  let totalManualLoss = 0;
+  let totalEarlyManualProfit = 0;
+  let totalInvertedRR = 0;
+  let totalOverRisk = 0;
+  let totalNoSl = 0;
+  let disciplineSum = 0;
+  let disciplineCount = 0;
+  let checklistChecked = 0;
+  let checklistPassedCount = 0;
+  let ruleChecked = 0;
+  let ruleCompliantCount = 0;
+  let plannedRRSumAll = 0;
+  let plannedRRCountAll = 0;
+  let realizedRSumAll = 0;
+  let realizedRCountAll = 0;
+
+  for (const rec of allMicroClosedChrono) {
+    const net = rec.netProfit;
+    const dKey = rec.date;
 
     if (dKey === todayDateKey) {
       todayNetProfit += net;
       todayClosedCount += 1;
-      if (t.outcome === 'WIN') todayWins += 1;
-      else if (t.outcome === 'LOSS') todayLosses += 1;
+      if (rec.outcome === 'WIN') todayWins += 1;
+      else if (rec.outcome === 'LOSS') todayLosses += 1;
     } else if (dKey && dKey < todayDateKey) {
       profitBeforeToday += net;
     }
@@ -907,49 +1579,98 @@ export function buildAgentDeskContext(
       yesterdayClosedCount += 1;
     }
 
+    if (rec.closeType === 'HIT_TP') totalHitTP += 1;
+    else if (rec.closeType === 'HIT_SL') totalHitSL += 1;
+    else if (rec.closeType === 'MANUAL_PROFIT') totalManualProfit += 1;
+    else if (rec.closeType === 'MANUAL_LOSS') totalManualLoss += 1;
+
+    if (rec.microAuditFlags.some((f) => f.startsWith('EARLY_MANUAL_PROFIT'))) totalEarlyManualProfit += 1;
+    if (rec.microAuditFlags.some((f) => f.startsWith('INVERTED_RR'))) totalInvertedRR += 1;
+    if (rec.microAuditFlags.some((f) => f.startsWith('OVER_RISK'))) totalOverRisk += 1;
+    if (rec.microAuditFlags.includes('NO_SL')) totalNoSl += 1;
+
+    if (rec.disciplineRating !== null) {
+      disciplineSum += rec.disciplineRating;
+      disciplineCount += 1;
+    }
+    if (rec.checklistPassed !== null) {
+      checklistChecked += 1;
+      if (rec.checklistPassed) checklistPassedCount += 1;
+    }
+    if (rec.ruleCompliant !== null) {
+      ruleChecked += 1;
+      if (rec.ruleCompliant) ruleCompliantCount += 1;
+    }
+    if (rec.plannedRR !== null) {
+      plannedRRSumAll += rec.plannedRR;
+      plannedRRCountAll += 1;
+    }
+    if (rec.realizedR !== null) {
+      realizedRSumAll += rec.realizedR;
+      realizedRCountAll += 1;
+    }
+
     if (dKey) {
       const existing = dailyBucketMap.get(dKey) || {
         date: dKey,
         trades: 0,
         wins: 0,
         losses: 0,
+        breakeven: 0,
+        grossProfit: 0,
+        commission: 0,
+        swap: 0,
         netProfit: 0,
+        hitTP: 0,
+        hitSL: 0,
+        manualClose: 0,
       };
       existing.trades += 1;
-      if (t.outcome === 'WIN') existing.wins += 1;
-      else if (t.outcome === 'LOSS') existing.losses += 1;
+      if (rec.outcome === 'WIN') existing.wins += 1;
+      else if (rec.outcome === 'LOSS') existing.losses += 1;
+      else existing.breakeven += 1;
+      existing.grossProfit += rec.grossProfit;
+      existing.commission += rec.commission;
+      existing.swap += rec.swap;
       existing.netProfit += net;
+      if (rec.closeType === 'HIT_TP') existing.hitTP += 1;
+      else if (rec.closeType === 'HIT_SL') existing.hitSL += 1;
+      else if (
+        rec.closeType === 'MANUAL_PROFIT' ||
+        rec.closeType === 'MANUAL_LOSS' ||
+        rec.closeType === 'MANUAL_BE'
+      ) {
+        existing.manualClose += 1;
+      }
       dailyBucketMap.set(dKey, existing);
     }
 
-    const sess = t.session || 'Other';
+    const sess = rec.session || 'Other';
     if (!sessionStats[sess]) sessionStats[sess] = { count: 0, wins: 0, netProfit: 0 };
     sessionStats[sess].count += 1;
-    if (t.outcome === 'WIN') sessionStats[sess].wins += 1;
+    if (rec.outcome === 'WIN') sessionStats[sess].wins += 1;
     sessionStats[sess].netProfit += net;
 
-    const strat = (t.strategy || 'Unspecified').trim() || 'Unspecified';
+    const strat = rec.strategy;
     if (!strategyStats[strat]) {
       strategyStats[strat] = { count: 0, wins: 0, netProfit: 0, rSum: 0, rCount: 0 };
     }
     strategyStats[strat].count += 1;
-    if (t.outcome === 'WIN') strategyStats[strat].wins += 1;
+    if (rec.outcome === 'WIN') strategyStats[strat].wins += 1;
     strategyStats[strat].netProfit += net;
-    if (typeof t.rMultiple === 'number' && Number.isFinite(t.rMultiple)) {
-      strategyStats[strat].rSum += t.rMultiple;
+    if (rec.realizedR !== null) {
+      strategyStats[strat].rSum += rec.realizedR;
       strategyStats[strat].rCount += 1;
     }
 
-    if (Array.isArray(t.mistakeTags)) {
-      for (const m of t.mistakeTags) {
-        if (!mistakeCounts[m]) mistakeCounts[m] = { count: 0, netImpact: 0 };
-        mistakeCounts[m].count += 1;
-        mistakeCounts[m].netImpact += net;
-      }
+    for (const m of rec.mistakeTags) {
+      if (!mistakeCounts[m]) mistakeCounts[m] = { count: 0, netImpact: 0 };
+      mistakeCounts[m].count += 1;
+      mistakeCounts[m].netImpact += net;
     }
   }
 
-  // Build chronological cumulative daily growth timeline (last 14 active trading days)
+  // Build chronological cumulative daily growth timeline (last 30 active trading days)
   const sortedDayKeys = Array.from(dailyBucketMap.keys()).sort();
   let runningEq = startingBal;
   const allDailyGrowth = sortedDayKeys.map((date) => {
@@ -961,20 +1682,70 @@ export function buildAgentDeskContext(
     const cumulativeGainPct = startingBal > 0 ? ((runningEq - startingBal) / startingBal) * 100 : 0;
     return {
       date,
+      dayName: getLocalDayNameFromYmd(date),
       trades: b.trades,
       wins: b.wins,
       losses: b.losses,
+      breakeven: b.breakeven,
+      grossProfit: Number(b.grossProfit.toFixed(2)),
+      commission: Number(b.commission.toFixed(2)),
+      swap: Number(b.swap.toFixed(2)),
       netProfit: Number(b.netProfit.toFixed(2)),
       dayGainDeltaPct: Number(dayCumulativeDeltaPct.toFixed(2)),
       dayCompoundedReturnPct: Number(dayCompoundedPct.toFixed(2)),
       endEquity: Number(runningEq.toFixed(2)),
       cumulativeGainPct: Number(cumulativeGainPct.toFixed(2)),
+      hitTP: b.hitTP,
+      hitSL: b.hitSL,
+      manualClose: b.manualClose,
     };
   });
 
+  const dailyHistory = allDailyGrowth.slice(-30);
   const last14TradingDays = allDailyGrowth.slice(-14);
   const lastActiveDayBeforeToday =
     [...allDailyGrowth].reverse().find((d) => d.date < todayDateKey) || null;
+  const latestActiveDay = allDailyGrowth.length > 0 ? allDailyGrowth[allDailyGrowth.length - 1] : null;
+
+  // Smart Conversational Period Resolver: scans current message FIRST, then last 4 history turns!
+  let focusedPeriod: ReturnType<typeof summarizeMicroPeriod> | null = null;
+  const currentMsgDate = options?.message ? parseDateRangeFromText(options.message, nowDate) : null;
+  if (currentMsgDate) {
+    focusedPeriod = summarizeMicroPeriod(
+      currentMsgDate.label,
+      currentMsgDate.startDate,
+      currentMsgDate.endDate,
+      'current_message',
+      allMicroClosedChrono,
+      startingBal
+    );
+  } else if (Array.isArray(options?.history) && options.history.length > 0) {
+    const recentTurns = options.history.slice(-4).reverse();
+    for (const turn of recentTurns) {
+      const histDate = parseDateRangeFromText(turn.content, nowDate);
+      if (histDate) {
+        focusedPeriod = summarizeMicroPeriod(
+          histDate.label,
+          histDate.startDate,
+          histDate.endDate,
+          'conversation_history',
+          allMicroClosedChrono,
+          startingBal
+        );
+        break;
+      }
+    }
+  }
+  if (!focusedPeriod && latestActiveDay) {
+    focusedPeriod = summarizeMicroPeriod(
+      `Hari Trading Aktif Terakhir (${formatReadableIndonesianDate(latestActiveDay.date)})`,
+      latestActiveDay.date,
+      latestActiveDay.date,
+      'default_latest_active_day',
+      allMicroClosedChrono,
+      startingBal
+    );
+  }
 
   const beforeTodayEquity = Number((startingBal + profitBeforeToday).toFixed(2));
   const beforeTodayCumulativeGainPct =
@@ -1008,9 +1779,29 @@ export function buildAgentDeskContext(
     lastActiveDayBeforeToday,
   };
 
+  const microPatternsSummary = {
+    totalClosedAnalyzed: allMicroClosedChrono.length,
+    hitTPCount: totalHitTP,
+    hitSLCount: totalHitSL,
+    manualProfitCount: totalManualProfit,
+    manualLossCount: totalManualLoss,
+    earlyManualProfitCount: totalEarlyManualProfit,
+    invertedPlannedRRCount: totalInvertedRR,
+    overRiskCount: totalOverRisk,
+    noStopLossCount: totalNoSl,
+    avgPlannedRR: plannedRRCountAll > 0 ? Number((plannedRRSumAll / plannedRRCountAll).toFixed(2)) : null,
+    avgRealizedR: realizedRCountAll > 0 ? Number((realizedRSumAll / realizedRCountAll).toFixed(2)) : null,
+    avgDisciplineRating:
+      disciplineCount > 0 ? Number((disciplineSum / disciplineCount).toFixed(2)) : null,
+    checklistPassRatePct:
+      checklistChecked > 0 ? Number(((checklistPassedCount / checklistChecked) * 100).toFixed(1)) : null,
+    ruleComplianceRatePct:
+      ruleChecked > 0 ? Number(((ruleCompliantCount / ruleChecked) * 100).toFixed(1)) : null,
+  };
+
   const topMistakes = Object.entries(mistakeCounts)
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 5)
+    .slice(0, 6)
     .map(([tag, st]) => ({
       tag,
       count: st.count,
@@ -1034,6 +1825,15 @@ export function buildAgentDeskContext(
       netProfit: Number(st.netProfit.toFixed(2)),
       avgR: st.rCount > 0 ? Number((st.rSum / st.rCount).toFixed(2)) : null,
     }));
+
+  const playbooksCompact = Array.isArray(settings.playbooks)
+    ? settings.playbooks.slice(0, 8).map((p) => ({
+        name: p.name,
+        session: p.session,
+        minRR: p.minRR,
+        summary: (p.summary || '').slice(0, 120),
+      }))
+    : [];
 
   // 2. Online / Cached Market Intelligence (Macro News, Fundamental Gold, FedWatch, Polymarket, SMC)
   const macro = loadLocalCachedMacroSnapshotSync();
@@ -1253,15 +2053,76 @@ export function buildAgentDeskContext(
         : null),
   };
 
+  // 3. Dedicated Cycle & Confluence Snapshot (strictly separate from Trade News & Fundamental Gold!)
+  const astroCycle = calculateAstronacciCycle(nowDate);
+  const seasonalityStats = computeMonthlySeasonalityStats(nowDate.getMonth(), xauQuote?.price ?? null);
+  const sessionConfigWib = loadStoredSessionHoursWib();
+  const activeSessionCode = getSessionWIB(Math.floor(nowDate.getTime() / 1000), sessionConfigWib);
+  const cycleConfluenceCompact = {
+    moduleName: 'Cycle & Confluence (Siklus & Confluence)',
+    activeTradingMode: loadStoredTradingConfluenceMode(),
+    manualAmdOverride: loadStoredManualAmdOverride(),
+    activeSessionWib: {
+      code: activeSessionCode,
+      label: getSessionLabelId(activeSessionCode),
+    },
+    astronacciCycle: {
+      lunarPhase: astroCycle.lunarPhase,
+      lunarPhaseLabel: astroCycle.lunarPhaseLabelId,
+      lunarAgeDays: Number(astroCycle.lunarAgeDays.toFixed(1)),
+      illuminationPct: astroCycle.illuminationPct,
+      nextLunarEvent: astroCycle.nextLunarEvent,
+      daysUntilNextLunarEvent: Number(astroCycle.daysUntilNextLunarEvent.toFixed(1)),
+      isSolarCardinalMonth: astroCycle.isSolarCardinalMonth,
+      solarCardinalLabel: astroCycle.solarCardinalLabelId,
+      isFibTimeCluster: astroCycle.isFibTimeCluster,
+      astroScore: astroCycle.astroScore,
+      summary: astroCycle.summaryId,
+    },
+    monthlySeasonalityXauUsd: {
+      month: seasonalityStats.monthFullName,
+      historicalWinRatePct: seasonalityStats.winRatePct,
+      historicalAvgReturnPct: seasonalityStats.avgReturnPct,
+      liveMonthReturnPct: seasonalityStats.liveMomPct,
+      overextensionDirection: seasonalityStats.overextensionDirection,
+    },
+    latestSmcSignal: smcSignal,
+  };
+
+  // Lightweight peripheral market alert badge so Alfred knows whether there is impactful news today
+  // WITHOUT drowning pure journal conversations in full news payloads!
+  const primaryImpact = String(macroCompact?.primaryEvent?.impact || macroCompact?.impactLevel || '').toUpperCase();
+  const hasHighImpactNews = Boolean(
+    macroCompact &&
+      (primaryImpact === 'HIGH' ||
+        primaryImpact === 'EXTREME' ||
+        macroCompact.dualHorizon?.movementType === 'TWO_WAY_SWEEP_FIRST' ||
+        macroCompact.dualHorizon?.hasSpeechEvent)
+  );
+  const marketAlertBadge = {
+    hasHighImpactNews,
+    primaryEventTitle: macroCompact?.primaryEvent?.title || null,
+    primaryEventDate: macroCompact?.primaryEvent?.date || null,
+    primaryEventImpact: macroCompact?.primaryEvent?.impact || macroCompact?.impactLevel || null,
+    tradeNewsBias: macroCompact?.dominantBias || null,
+    tradeNewsMovementType: macroCompact?.dualHorizon?.movementType || null,
+    fundamentalGoldBias: fundamentalCompact?.overallBias || null,
+    cycleActiveSession: cycleConfluenceCompact.activeSessionWib.label,
+    cycleLunarPhase: cycleConfluenceCompact.astronacciCycle.lunarPhaseLabel,
+    xauSpotPrice: xauQuote?.price ?? null,
+  };
+
   const context: Record<string, unknown> = {
     runtime: {
-      capturedAt: new Date().toISOString(),
+      capturedAtUtc: nowDate.toISOString(),
+      localClock,
       isOfflineMode,
       isNavigatorOnline,
       currency: settings.currency,
       currencySymbol: settings.currencySymbol,
     },
     liveMarketQuote,
+    marketAlertBadge,
     memoryNotes: savedMemories.slice(0, 20).map((m) => ({
       category: m.category,
       text: m.text,
@@ -1296,7 +2157,10 @@ export function buildAgentDeskContext(
         isDailyLossExceeded: metrics.isDailyLossExceeded,
         isAccountInCriticalDrawdown: metrics.isAccountInCriticalDrawdown,
       },
+      focusedPeriod,
       growthComparison,
+      microPatternsSummary,
+      dailyHistory,
       last14TradingDays,
       riskGuardrails: {
         defaultRiskPercent: settings.defaultRiskPercent,
@@ -1311,9 +2175,11 @@ export function buildAgentDeskContext(
       strategyBreakdown,
       sessionBreakdown,
       topMistakes,
+      playbooks: playbooksCompact,
     },
     macroNews: macroCompact,
     fundamentalGold: fundamentalCompact,
+    cycleConfluence: cycleConfluenceCompact,
     cmeFedWatch: fedWatch
       ? {
           dominantOutcome: fedWatch.dominantOutcome,
@@ -1437,12 +2303,17 @@ function classifyClientSyncNeed(message: string): {
     return { intentKind: 'SMALL_TALK', needsPrice: false, needsMarket: false };
   }
 
-  // Only run background market/news sync when the question genuinely asks about market/news/XAU —
-  // NOT on pure journal growth, compounding, Monte Carlo, or concept explanation questions!
-  const asksMacroOrMarket =
-    /\b(xau|xauusd|gold|emas|market|pasar|news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|dxy|yield|us10y|us02y|oil|usoil|polymarket|cycle|confluence|smc|heatmap|spike|sweep|whipsaw|arah|buy|sell|bullish|bearish|harga|price|spot)\b/i.test(
+  // Only run background market/news sync when the question genuinely asks about market outlook/news/live XAU —
+  // NOT when the user is analyzing their own journal trades (even if those trades are on XAU/gold/buy/sell)!
+  const explicitJournalCue =
+    /\b(jurnal|journal|trade\s+(?:saya|ku|aku|kemarin|kemaren|hari\s+ini|tgl|tanggal|minggu|bulan)|evaluasi\s+trade|rekap|total\s+(?:profit|loss|grow|growth|trade)|selisih|hit\s*tp|hit\s*sl|manual\s*close|rasio|r[\s-]?multiple|win\s?rate|profit\s?factor|drawdown|monte\s?carlo|compound|compounding|kalkulator|playbook|cara\s+pakai|cara\s+menggunakan|fitur|menu)\b/i.test(
       q
     );
+  const explicitMarketOutlookCue =
+    /\b(news|berita|makro|macro|fundamental|fomc|fed|fedwatch|cpi|ppi|nfp|pmi|dxy|yield|us10y|us02y|oil|usoil|polymarket|cycle|siklus|confluence|astronacci|lunar|seasonality|smc|heatmap|spike|sweep|whipsaw|arah\s+(?:emas|gold|xau|market|pasar)|(?:emas|gold|xau)\s+(?:mau\s+)?(?:kemana|ke\s+mana|naik|turun|hari\s+ini)|market\s+hari\s+ini|harga\s+(?:emas|gold|xau)|spot|bullish|bearish)\b/i.test(
+      q
+    );
+  const asksMacroOrMarket = explicitMarketOutlookCue && (!explicitJournalCue || /\b(news|berita|fundamental|fomc|cpi|nfp|cycle|siklus|confluence|arah|kemana|ke\s+mana)\b/i.test(q));
 
   return {
     intentKind: 'MARKET_OR_JOURNAL',
@@ -1538,7 +2409,9 @@ export function buildOfflineAgentDeskReply(params: {
     };
   }
 
-  const { context } = buildAgentDeskContext(params.trades, params.settings, params.language);
+  const { context } = buildAgentDeskContext(params.trades, params.settings, params.language, {
+    message: params.message,
+  });
   const liveQuote = (context.liveMarketQuote as any)?.xauusd || null;
 
   // Path 3: Live price check (concise, warm, human — ZERO news/fundamental dump!)
@@ -1596,17 +2469,20 @@ export function buildOfflineAgentDeskReply(params: {
   const asksMonteCarlo = /\b(monte\s?carlo|simulasi\s+trade)\b/i.test(q);
   const asksCompounding = /\b(compound|compounding|gulung\s+modal|growth\s+plan)\b/i.test(q);
   const asksGrowthDelta =
-    /\b(grow|growth|pertumbuhan|selisih|beda|perbandingan|kemarin|kemaren|hari ini)\b/i.test(q) &&
+    /\b(grow|growth|pertumbuhan|selisih|beda|perbandingan)\b/i.test(q) &&
     !/\b(news|berita|fomc|cpi|nfp|dxy|harga|price|spot)\b/i.test(q);
-  const asksMacro =
-    /\b(news|berita|makro|macro|fundamental|gold|emas|xau|spike|sweep|arah|buy|sell|ambil|fomc|cpi|nfp|dxy|bearish|bullish|market|pasar|kemana|ke mana)\b/i.test(
+  const explicitMarketNewsCue =
+    /\b(news|berita|makro|macro|fundamental|spike|sweep|arah|fomc|cpi|nfp|dxy|bearish|bullish|market|pasar|kemana|ke mana|cycle|siklus|confluence|astronacci|seasonality|smc)\b/i.test(
       q
     );
   const asksJournal =
     asksGrowthDelta ||
-    /\b(jurnal|journal|trade|win|profit|loss|rugi|drawdown|lot|risiko|risk|posisi|open|planned|evaluasi|kesalahan|sesi|equity|saldo|grow|growth|selisih|persen|strategi)\b/i.test(
+    /\b(jurnal|journal|trade|win|profit|loss|rugi|drawdown|lot|risiko|risk|posisi|open|planned|evaluasi|kesalahan|sesi|equity|saldo|grow|growth|selisih|persen|strategi|kemarin|kemaren|tgl|tanggal|hit\s*tp|hit\s*sl|manual|rasio|rr|disiplin)\b/i.test(
       q
     );
+  const asksMacro =
+    explicitMarketNewsCue ||
+    (/\b(gold|emas|xau|xauusd|buy|sell|ambil)\b/i.test(q) && !asksJournal);
 
   // Instant accurate local answers for App Concepts (Monte Carlo / Compounding) when truly offline
   if (asksMonteCarlo && !asksMacro) {
@@ -1755,6 +2631,7 @@ export function buildOfflineAgentDeskReply(params: {
 
   if (asksJournal || !asksMacro) {
     const gc = journal.growthComparison || null;
+    const fp = journal.focusedPeriod || null;
     if (asksGrowthDelta && gc) {
       const signDelta = gc.todayCumulativeGainDeltaPct >= 0 ? '+' : '';
       const signComp = gc.todayCompoundedReturnPct >= 0 ? '+' : '';
@@ -1763,6 +2640,19 @@ export function buildOfflineAgentDeskReply(params: {
         isEn
           ? `Comparing your cumulative growth up to yesterday (**${gc.beforeTodayCumulativeGainPct}%**, equity ${sym}${gc.beforeTodayEquity}) vs today (**${gc.currentTotalGainPct}%**, equity ${sym}${gc.currentEquity}): today's **${gc.todayClosedTradesCount}** closed trade(s) (${signPnl}${sym}${gc.todayNetProfit}) changed your total cumulative growth by **${signDelta}${gc.todayCumulativeGainDeltaPct}%** (or **${signComp}${gc.todayCompoundedReturnPct}%** daily return relative to yesterday's closing equity).`
           : `Perbandingan total growth jurnalmu sampai kemarin (**${gc.beforeTodayCumulativeGainPct}%**, ekuitas ${sym}${gc.beforeTodayEquity}) dengan hari ini (**${gc.currentTotalGainPct}%**, ekuitas ${sym}${gc.currentEquity}): dari **${gc.todayClosedTradesCount}** trade selesai hari ini (${signPnl}${sym}${gc.todayNetProfit}), **selisih total persen growth-nya adalah ${signDelta}${gc.todayCumulativeGainDeltaPct}%** (atau **${signComp}${gc.todayCompoundedReturnPct}%** jika dihitung sebagai return harian terhadap ekuitas penutupan kemarin).`
+      );
+    } else if (fp && fp.matchedFrom === 'current_message') {
+      const signNet = fp.totalNetProfit >= 0 ? '+' : '';
+      const ct = fp.closeTypeCounts || {};
+      const manualTotal = (ct.manualProfit ?? 0) + (ct.manualLoss ?? 0) + (ct.manualBE ?? 0);
+      paragraphs.push(
+        fp.tradesCount === 0
+          ? isEn
+            ? `For **${fp.label}** (${fp.startDate}${fp.endDate !== fp.startDate ? ` to ${fp.endDate}` : ''}), there are **0 closed trades** logged in your journal.`
+            : `Untuk periode **${fp.label}** (${fp.startDate}${fp.endDate !== fp.startDate ? ` s/d ${fp.endDate}` : ''}), belum ada trade selesai yang tercatat di jurnalmu.`
+          : isEn
+          ? `For **${fp.label}**: **${fp.tradesCount}** closed trade(s) (${fp.wins}W / ${fp.losses}L / ${fp.breakeven}BE, Win Rate **${fp.winRatePct}%**), Net PnL **${signNet}${sym}${fp.totalNetProfit}** (Gross ${sym}${fp.totalGrossProfit}, Comm ${sym}${fp.totalCommission}, Swap ${sym}${fp.totalSwap}). Breakdown: Hit TP ${ct.hitTP ?? 0}, Hit SL ${ct.hitSL ?? 0}, Manual Close ${manualTotal}.`
+          : `Rekap **${fp.label}**: ada **${fp.tradesCount}** trade selesai (${fp.wins} menang, ${fp.losses} kalah, ${fp.breakeven} BE · Win Rate **${fp.winRatePct}%**), total Net PnL **${signNet}${sym}${fp.totalNetProfit}** (Gross ${sym}${fp.totalGrossProfit}, Komisi ${sym}${fp.totalCommission}, Swap ${sym}${fp.totalSwap}). Detail eksekusi: Hit TP ${ct.hitTP ?? 0}x, Hit SL ${ct.hitSL ?? 0}x, Manual Close ${manualTotal}x.`
       );
     } else {
       const openList = Array.isArray(journal.openOrPlannedTrades) ? journal.openOrPlannedTrades : [];
@@ -1859,7 +2749,6 @@ export async function sendAgentDeskChatMessage(params: {
     });
   }
 
-  const { context } = buildAgentDeskContext(params.trades, params.settings, params.language);
   const compactHistory = params.history
     .filter(
       (m) =>
@@ -1875,6 +2764,11 @@ export async function sendAgentDeskChatMessage(params: {
       role: m.role,
       content: m.content.slice(0, 800),
     }));
+
+  const { context } = buildAgentDeskContext(params.trades, params.settings, params.language, {
+    message: params.message,
+    history: compactHistory,
+  });
 
   const payload = {
     message: params.message.trim(),

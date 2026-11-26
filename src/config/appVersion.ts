@@ -19,8 +19,8 @@ declare const __BUILD_RUN_NUMBER__: string | undefined;
 declare const __TESSERACT_VERSION__: string | undefined;
 declare const __TESSERACT_CORE_VERSION__: string | undefined;
 
-export const APP_VERSION = '1.4.0';
-export const APP_CHANGE_CODE = 'VLO-2611-JRN13';
+export const APP_VERSION = '1.5.0';
+export const APP_CHANGE_CODE = 'VLO-2611-ALF14';
 export const APP_RELEASE_DATE = '2026-11-26';
 export const OCR_PIPELINE_VERSION = 'offline-mt5-ocr-v3.2-lossless-png';
 
@@ -71,6 +71,17 @@ export function getAppBuildIdentity(): AppBuildIdentity {
 }
 
 export const APP_VERSION_HISTORY: AppVersionEntry[] = [
+  {
+    version: '1.5.0',
+    changeCode: 'VLO-2611-ALF14',
+    date: '2026-11-26',
+    titleId: 'Asisten Hidup Alfred/Jarvis: Jam Lokal & Tanggal Presisi, Forensik Mikro Jurnal, Pemisahan 3 Modul Pasar & Obrolan Non-Linear',
+    titleEn: 'Living Alfred/Jarvis Companion: Exact Local Clock & Date Math, Micro-Forensic Journal Audit, 3-Module Market Separation & Non-Linear Chat',
+    summaryId:
+      'Menambahkan jam lokal & zona waktu presisi (WIB/WITA/WIT) plus resolver tanggal/periode lintas riwayat chat (anti salah minggu saat chat dini hari & 0% salah hitung total profit), audit mikro setiap trade (Hit TP vs Hit SL vs Manual Close kepagian, Planned RR vs Realized R, rasio RR terbalik, over-risk, tanpa SL, fee drag, disiplin & playbook), pemisahan tegas 3 modul pasar (Berita Trading vs Fundamental Emas vs Siklus & Confluence), deteksi proaktif berita penting tanpa memaksakan narasi news di obrolan jurnal murni, serta penguasaan lengkap struktur & cara pakai seluruh menu TradeVault.',
+    summaryEn:
+      'Added exact local clock & timezone awareness plus cross-turn conversational date/period resolution (eliminating wrong-week early-morning lookups and profit-sum errors), micro-forensic per-trade auditing (Hit TP vs Hit SL vs early Manual Close, Planned RR vs Realized R, inverted RR, over-risk, missing SL, fee drag, discipline & playbooks), strict separation of the 3 market intelligence modules (Trade News vs Fundamental Gold vs Cycle & Confluence), proactive high-impact news alerts without forcing news into pure journal discussions, and complete app navigation & how-to mastery.',
+  },
   {
     version: '1.4.0',
     changeCode: 'VLO-2611-JRN13',
